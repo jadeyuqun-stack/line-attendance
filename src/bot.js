@@ -247,6 +247,7 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
       const approvers = await db.findApprovers(emp.id);
       if (approvers.length > 0) {
         var hours = leaveHours(state.startDateTime, state.endDateTime);
+        var st2 = new Date(state.startDateTime), et2 = new Date(state.endDateTime);
         for (const appr of approvers) {
           await client.pushMessage(appr.line_user_id, [{
             type: 'flex', altText: '📋 ' + emp.name + ' 請假申請',

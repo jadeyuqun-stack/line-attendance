@@ -387,17 +387,39 @@ async function setupRichMenu() {
 }
 function makePng() {
   const zlib = require('zlib'); const w = 2500, h = 843;
-  const rawData = Buffer.alloc(h * (1 + w * 4));
-  for (let y = 0; y < h; y++) { const ro = y * (1 + w * 4); rawData[ro] = 0;
-    for (let x = 0; x < w; x++) { const o = ro + 1 + x * 4;
-      if (y < 421) { rawData[o]=x<1250?0x06:0xf3; rawData[o+1]=x<1250?0xc7:0x9c; rawData[o+2]=x<1250?0x55:0x12; }
-      else { if(x<833){rawData[o]=0x34;rawData[o+1]=0x98;rawData[o+2]=0xdb;}else if(x<1667){rawData[o]=0x95;rawData[o+1]=0xa5;rawData[o+2]=0xa6;}else{rawData[o]=0xb0;rawData[o+1]=0xbe;rawData[o+2]=0xc5;} }
-      rawData[o+3] = 255;
-    }
+  const d = Buffer.alloc(h * (1 + w * 4));
+  for (let y = 0; y < h; y++) { const ro = y * (1 + w * 4); d[ro] = 0;
+    for (let x = 0; x < w; x++) { const o = ro + 1 + x * 4; d[o]=255;d[o+1]=255;d[o+2]=255;d[o+3]=255; }
   }
-  const def = zlib.deflateSync(rawData);
+  // Helper: draw pixel
+  function p(x,y,r,g,b) { if(x<0||x>=w||y<0||y>=h)return; const o=y*(1+w*4)+1+x*4; d[o]=r;d[o+1]=g;d[o+2]=b;d[o+3]=255; }
+  // Helper: fill rect
+  function fr(x,y,w2,h2,r,g,b) { for(let yy=y;yy<y+h2;yy++)for(let xx=x;xx<x+w2;xx++)p(xx,yy,r,g,b); }
+  // Helper: draw circle
+  function circle(cx,cy,rad,r,g,b) { for(let y2=cy-rad;y2<=cy+rad;y2++)for(let x2=cx-rad;x2<=cx+rad;x2++)if((x2-cx)**2+(y2-cy)**2<=rad**2)p(x2,y2,r,g,b); }
+
+  var bg=248;fr(0,0,w,h,bg,bg,bg); // light gray bg
+  // Top row: 上班(0,0,1250x421), 下班(1250,0,1250x421)
+  fr(0,0,1250,421,6,199,85); fr(1250,0,1250,421,243,156,18);
+  // Bottom row: 查詢(0,421,833x422), 請假(833,421,834x422), 幫助(1667,421,833x422)
+  fr(0,421,833,422,52,152,219); fr(833,421,834,422,149,165,166); fr(1667,421,833,422,176,190,197);
+
+  // Draw simple white icons
+  // Green area: "上" as arrow-up
+  fr(560,120,130,20,255,255,255); fr(560,120,70,80,255,255,255); // simplified
+  // Orange area: "下" as arrow-down
+  fr(1790,320,130,20,255,255,255); fr(1790,240,70,80,255,255,255);
+  // Blue area: "查" as magnifying
+  circle(416,632,70,255,255,255); fr(460,670,50,20,255,255,255);
+  // Gray area: "請" as calendar
+  fr(1150,550,120,100,255,255,255); fr(1150,550,120,20,6,199,85);
+  // Light gray area: "?"
+  circle(1850,632,50,255,255,255);
+  fr(1840,590,20,60,255,255,255); fr(1840,655,20,15,176,190,197);
+
+  const def = zlib.deflateSync(d);
   function crc(b) { let c=0xffffffff; const t=new Uint32Array(256); for(let n=0;n<256;n++){let cc=n;for(let k=0;k<8;k++)cc=cc&1?0xedb88320^(cc>>>1):cc>>>1;t[n]=cc;} for(let i=0;i<b.length;i++)c=t[(c^b[i])&0xff]^(c>>>8); return (c^0xffffffff)>>>0; }
-  function ch(type, d) { const l=Buffer.alloc(4);l.writeUInt32BE(d.length); const tt=Buffer.from(type), a=Buffer.concat([l,tt,d]); const cc=Buffer.alloc(4);cc.writeUInt32BE(crc(Buffer.concat([tt,d]))); return Buffer.concat([a,cc]); }
+  function ch(type, dd) { const l=Buffer.alloc(4);l.writeUInt32BE(dd.length); const tt=Buffer.from(type), a=Buffer.concat([l,tt,dd]); const cc=Buffer.alloc(4);cc.writeUInt32BE(crc(Buffer.concat([tt,dd]))); return Buffer.concat([a,cc]); }
   const sig = Buffer.from([137,80,78,71,13,10,26,10]); const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w,0); ihdr.writeUInt32BE(h,4); ihdr[8]=8; ihdr[9]=6;
   return Buffer.concat([sig,ch('IHDR',ihdr),ch('IDAT',def),ch('IEND',Buffer.alloc(0))]);
 }

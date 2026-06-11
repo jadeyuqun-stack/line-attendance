@@ -50,12 +50,12 @@ async function initDatabase() {
       id SERIAL PRIMARY KEY,
       employee_id INTEGER REFERENCES employees(id),
       leave_type VARCHAR(20) NOT NULL,
-      start_date DATE NOT NULL,
-      end_date DATE NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
       reason TEXT DEFAULT '',
       status VARCHAR(20) DEFAULT 'pending',
       approved_by INTEGER REFERENCES employees(id),
-      approved_at TIMESTAMPTZ,
+      approved_at TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);

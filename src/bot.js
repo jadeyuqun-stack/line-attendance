@@ -165,15 +165,17 @@ async function doQuery(emp, client, replyToken) {
   }
   contents.push({ type: 'text', text: punchText, margin: 'md', size: 'sm', wrap: true });
 
-  // 請假區
-  var leaves = myLeaves.filter(function(l) { return l.start_date && l.start_date.indexOf(thisMonth) === 0; });
+  // 請假區（安全轉換日期 → 字串）
+  function sd(v) { return typeof v === 'string' ? v : (v ? new Date(v).toISOString().split('T')[0] : ''); }
+  var leaves = myLeaves.filter(function(l) { var s = sd(l.start_date); return s && s.indexOf(thisMonth) === 0; });
   var monthHours = 0, totalHours = 0;
   for (var i = 0; i < myLeaves.length; i++) {
     var l = myLeaves[i];
     if (l.status !== 'approved') continue;
-    var diff = new Date(l.end_date || l.start_date) - new Date(l.start_date);
-    var h2 = Math.max(1, Math.ceil(Math.max(0, diff) / 3600000)); // 至少 1h
-    if (l.start_date && l.start_date.indexOf(thisMonth) === 0) monthHours += h2;
+    var st = sd(l.start_date), et = sd(l.end_date);
+    var diff = new Date(et || st) - new Date(st);
+    var h2 = Math.max(1, Math.ceil(Math.max(0, diff) / 3600000));
+    if (st && st.indexOf(thisMonth) === 0) monthHours += h2;
     totalHours += h2;
   }
   if (myLeaves.length > 0) {

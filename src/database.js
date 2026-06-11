@@ -44,6 +44,11 @@ async function initDatabase() {
   try { await pool.query('ALTER TABLE checkins ADD COLUMN in_range BOOLEAN DEFAULT true'); } catch(e) {}
   try { await pool.query('ALTER TABLE checkins ADD COLUMN distance_meters NUMERIC(10,1) DEFAULT 0'); } catch(e) {}
 
+  // 補加 leave_requests 用 TEXT
+  try { await pool.query("ALTER TABLE leave_requests ALTER COLUMN start_date TYPE TEXT"); } catch(e) {}
+  try { await pool.query("ALTER TABLE leave_requests ALTER COLUMN end_date TYPE TEXT"); } catch(e) {}
+  try { await pool.query("ALTER TABLE leave_requests ALTER COLUMN approved_at TYPE TEXT"); } catch(e) {}
+
   // 請假
   await pool.query(`
     CREATE TABLE IF NOT EXISTS leave_requests (

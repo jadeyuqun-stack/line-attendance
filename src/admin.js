@@ -139,15 +139,17 @@ router.get('/employees', auth, async (_, res) => {
       }
       document.getElementById('f').onsubmit = async e => {
         e.preventDefault();
-        const r = await fetch('/admin/api/employees', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-          employee_no:document.getElementById('no').value,
-          name:document.getElementById('name').value,
-          department:document.getElementById('dept').value,
-          role:document.getElementById('role').value || '員工',
-          can_approve:document.getElementById('canApprove').checked
-        })});
-        const j = await r.json();
-        j.success ? location.reload() : alert(j.error);
+        try {
+          const r = await fetch('/admin/api/employees', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+            employee_no:document.getElementById('no').value,
+            name:document.getElementById('name').value,
+            department:document.getElementById('dept').value,
+            role:document.getElementById('role').value || '員工',
+            can_approve:document.getElementById('canApprove').checked
+          })});
+          const j = await r.json();
+          if (j.success) { location.reload(); } else { alert(j.error || '新增失敗'); }
+        } catch(err) { alert('網路錯誤，請重試'); }
       };
       async function toggleApprove(id, current) {
         await fetch('/admin/api/employees/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({can_approve:!current})});
@@ -164,9 +166,9 @@ router.get('/employees', auth, async (_, res) => {
         await fetch('/admin/api/employees/'+id+'/approver', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({approver_id:approverId||null})});
       }
       async function removeEmp(id, name) {
-        if (!confirm('確定刪除 ' + name + '？\n\n此操作將永久刪除該員工的所有打卡記錄，無法復原！')) return;
-        await fetch('/admin/api/employees/'+id, {method:'DELETE'});
-        location.reload();
+        if (!confirm('確定移除 ' + name + '？\n\n打卡和請假記錄會保留，員工將從列表中隱藏。')) return;
+        const r = await fetch('/admin/api/employees/'+id+'/deactivate', {method:'PUT'});
+        if (r.ok) location.reload(); else alert('操作失敗');
       }
     </script>`));
 });
@@ -183,8 +185,8 @@ router.put('/api/employees/:id', auth, express.json(), async (req, res) => {
   res.json({ success: true });
 });
 
-router.delete('/api/employees/:id', auth, async (req, res) => {
-  await db.deleteEmployee(parseInt(req.params.id));
+router.put('/api/employees/:id/deactivate', auth, async (req, res) => {
+  await db.deactivateEmployee(parseInt(req.params.id));
   res.json({ success: true });
 });
 

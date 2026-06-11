@@ -94,11 +94,19 @@ router.get('/employees', auth, async (_, res) => {
   try {
     var inactiveEmps = await db.listInactiveEmployees();
     if (inactiveEmps.length > 0) {
-      inactiveList = '<div class="card"><h3>📦 離職員工（點擊復原）</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>操作</th></tr>';
+      inactiveList = '<div class="card"><h3>📦 離職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>簽核</th><th>操作</th></tr>';
       for (var k = 0; k < inactiveEmps.length; k++) {
         var ie = inactiveEmps[k];
-        inactiveList += '<tr><td>'+h(ie.employee_no)+'</td><td>'+h(ie.name)+'</td><td>'+h(ie.department||'')+'</td>'
-          + '<td><button onclick="reactivateEmp('+ie.id+',\''+h(ie.name)+'\')" style="background:#f39c12;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">復原</button></td></tr>';
+        var ieDeptEsc = (ie.department||'').replace(/'/g,"\\'");
+        var ieRoleEsc = (ie.role||'員工').replace(/'/g,"\\'");
+        inactiveList += '<tr>'
+          + '<td>'+h(ie.employee_no)+'</td>'
+          + '<td>'+h(ie.name)+'</td>'
+          + '<td><span class="editable" onclick="editField('+ie.id+',\'department\',\''+ieDeptEsc+'\')">'+(ie.department||'點此設定')+'</span></td>'
+          + '<td><span class="editable" onclick="editField('+ie.id+',\'role\',\''+ieRoleEsc+'\')">'+(ie.role||'員工')+'</span></td>'
+          + '<td><button onclick="toggleApprove('+ie.id+','+ie.can_approve+')" style="background:'+(ie.can_approve?'#06c755':'#ddd')+';color:'+(ie.can_approve?'#fff':'#666')+';border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:11px">'+(ie.can_approve?'可簽核':'設為簽核人')+'</button></td>'
+          + '<td><button onclick="reactivateEmp('+ie.id+',\''+h(ie.name)+'\')" style="background:#f39c12;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">復原</button></td>'
+          + '</tr>';
       }
       inactiveList += '</table></div>';
     }

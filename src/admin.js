@@ -293,7 +293,9 @@ router.get('/leaves', auth, async (req, res) => {
     if (l.status === 'pending') {
       actionHtml = '<button onclick="approveLeave('+l.id+')" class="btn-sm btn">核准</button> <button onclick="rejectLeave('+l.id+')" class="btn-sm btn-red">駁回</button>';
     }
-    rows += '<tr><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+l.start_date+' ~ '+l.end_date+'</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+'</td><td>'+actionHtml+'</td></tr>';
+    var leaveTime = l.start_date;
+    if (l.end_date) leaveTime += ' ~ ' + l.end_date;
+    rows += '<tr><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+'</td><td>'+actionHtml+'</td></tr>';
   }
   var body = '<div class="tabs">'
     + '<a href="?status=" class="'+(status===''?'active':'')+'">全部</a>'

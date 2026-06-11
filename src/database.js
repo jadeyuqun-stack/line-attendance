@@ -89,11 +89,18 @@ async function getEmployeeByNo(no) {
   return rows[0] || null;
 }
 async function bindLineUser(no, uid, name) {
-  const { rowCount } = await pool.query(
-    "UPDATE employees SET line_user_id=$1, name=CASE WHEN name='' THEN $2 ELSE name END, updated_at=NOW() WHERE employee_no=$3 AND status='active'",
-    [uid, name, no]
+  // 先找 active 員工
+  var { rowCount } = await pool.query(
+    "UPDATE employees SET line_user_id=$1, name=CASE WHEN name='' THEN $2 ELSE name END, updated_at=NOW() WHERE TRIM(employee_no)=$3 AND status='active'",
+    [uid, name, no.trim()]
   );
-  return rowCount > 0;
+  if (rowCount > 0) return true;
+  // 找不到 active → 嘗試找 inactive，自動復原
+  var { rowCount: rc2 } = await pool.query(
+    "UPDATE employees SET line_user_id=$1, status='active', name=CASE WHEN name='' THEN $2 ELSE name END, updated_at=NOW() WHERE TRIM(employee_no)=$3 AND status='inactive'",
+    [uid, name, no.trim()]
+  );
+  return rc2 > 0;
 }
 async function updateLineUserId(employeeId, lineUserId) {
   try {
@@ -110,19 +117,34 @@ async function listActiveEmployees() {
 }
 async function createEmployee(no, name, dept, role, canApprove) {
   try {
-    const { rows } = await pool.query(
+    // 先檢查是否有 inactive 的同編號員工 → 復原
+    var { rows: inactive } = await pool.query(
+      "SELECT id FROM employees WHERE TRIM(employee_no)=$1 AND status='inactive'",
+      [no.trim()]
+    );
+    if (inactive.length > 0) {
+      await pool.query(
+        "UPDATE employees SET name=$1, department=$2, role=$3, can_approve=$4, status='active', line_user_id=NULL, updated_at=NOW() WHERE id=$5",
+        [name, dept || '', role || '員工', canApprove || false, inactive[0].id]
+      );
+      return { success: true, id: inactive[0].id, reactivated: true };
+    }
+    // 新增
+    var { rows } = await pool.query(
       'INSERT INTO employees (employee_no, name, department, role, can_approve) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-      [no, name, dept || '', role || '員工', canApprove || false]
+      [no.trim(), name, dept || '', role || '員工', canApprove || false]
     );
     return { success: true, id: rows[0].id };
   } catch (e) {
-    if (e.code === '23505') return { success: false, error: '員工編號已存在' };
+    if (e.code === '23505') return { success: false, error: '員工編號已存在（在職中）' };
     throw e;
   }
 }
 async function deactivateEmployee(id) {
-  // 軟刪除：保留打卡和請假記錄，只標記離職
   await pool.query("UPDATE employees SET status='inactive', line_user_id=NULL, updated_at=NOW() WHERE id=$1", [id]);
+}
+async function reactivateEmployee(id) {
+  await pool.query("UPDATE employees SET status='active', updated_at=NOW() WHERE id=$1", [id]);
 }
 async function listInactiveEmployees() {
   const { rows } = await pool.query("SELECT * FROM employees WHERE status='inactive' ORDER BY employee_no");
@@ -264,7 +286,7 @@ async function listApprovers() {
 module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
-  listActiveEmployees, listInactiveEmployees, createEmployee, deactivateEmployee, updateEmployee,
+  listActiveEmployees, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, updateEmployee,
   recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,

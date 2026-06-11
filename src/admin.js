@@ -89,6 +89,21 @@ router.get('/employees', auth, async (_, res) => {
   }
   if (rows === '') rows = '<tr><td colspan="8">尚無員工，請用下方表單新增</td></tr>';
 
+  // 離職員工
+  var inactiveList = '';
+  try {
+    var inactiveEmps = await db.listInactiveEmployees();
+    if (inactiveEmps.length > 0) {
+      inactiveList = '<div class="card"><h3>📦 離職員工（點擊復原）</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>操作</th></tr>';
+      for (var k = 0; k < inactiveEmps.length; k++) {
+        var ie = inactiveEmps[k];
+        inactiveList += '<tr><td>'+h(ie.employee_no)+'</td><td>'+h(ie.name)+'</td><td>'+h(ie.department||'')+'</td>'
+          + '<td><button onclick="reactivateEmp('+ie.id+',\''+h(ie.name)+'\')" style="background:#f39c12;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">復原</button></td></tr>';
+      }
+      inactiveList += '</table></div>';
+    }
+  } catch(e) {}
+
   var html = '<div class="card"><h3>新增員工</h3>'
     + '<form id="empForm" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">'
     + '<div><label>員工編號</label><input id="no" required style="width:120px"></div>'
@@ -108,6 +123,7 @@ router.get('/employees', auth, async (_, res) => {
     + '<button onclick="closeModal()" style="background:#ddd;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">取消</button>'
     + '<button onclick="saveLine()" class="btn">儲存</button>'
     + '</div></div></div>'
+    + inactiveList
     + '<a href="/admin">🏠 返回</a>';
 
   html += '<script>'
@@ -120,6 +136,7 @@ router.get('/employees', auth, async (_, res) => {
     + 'async function editField(id,field,current){var val=prompt("修改 "+field,current);if(val===null)return;var body={};body[field]=val;await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});location.reload();}'
     + 'async function setApprover(id,approverId){await fetch("/admin/api/employees/"+id+"/approver",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver_id:approverId||null})});}'
     + 'async function removeEmp(id,name){if(!confirm("確定移除 "+name+"？\\n打卡和請假記錄會保留。"))return;var r=await fetch("/admin/api/employees/"+id+"/deactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
+    + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + '</script>';
 
   res.send(page('員工管理', html));
@@ -165,6 +182,11 @@ router.put('/api/employees/:id/lineid', auth, express.json(), async (req, res) =
 
 router.put('/api/employees/:id/deactivate', auth, async (req, res) => {
   await db.deactivateEmployee(parseInt(req.params.id));
+  res.json({ success: true });
+});
+
+router.put('/api/employees/:id/reactivate', auth, async (req, res) => {
+  await db.reactivateEmployee(parseInt(req.params.id));
   res.json({ success: true });
 });
 

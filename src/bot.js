@@ -182,16 +182,12 @@ async function doQuery(emp, client, replyToken) {
 // ===== Leave flow (unchanged) =====
 const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official' };
 
-// 產生 30 分鐘間隔時段選項（08:00 ~ 20:30）
+// 產生 30 分鐘間隔時段選項（LINE Quick Reply 最多 12 項 + 取消 = 13）
 function timeSlots() {
-  var items = [];
-  for (var h = 8; h <= 20; h++) {
-    for (var m = 0; m < 60; m += 30) {
-      var t = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-      items.push({ type: 'action', action: { type: 'message', label: t, text: 'TIME_' + t } });
-    }
-  }
+  var times = ['08:00','08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'];
+  var items = times.map(function(t) { return { type: 'action', action: { type: 'message', label: t, text: 'TIME_' + t } }; });
   items.push({ type: 'action', action: { type: 'message', label: '取消', text: '取消' } });
+  items.push({ type: 'action', action: { type: 'message', label: '其他時間', text: '其他時間' } });
   return items;
 }
 
@@ -222,6 +218,17 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
       type: 'template', altText: '請選擇開始日期',
       template: { type: 'buttons', text: '📅 請選擇「開始日期」', actions: [{ type: 'datetimepicker', label: '選擇日期', data: 'leave_start', mode: 'date' }] }
     }]);
+  }
+  // 其他時間 → 改為手動輸入
+  if (text === '其他時間') {
+    if (state.step === 'start_time') { state.step = 'start_time_manual'; return client.replyMessage(replyToken, [{ type: 'text', text: '請輸入開始時間（例如 14:00）：' }]); }
+    if (state.step === 'end_time') { state.step = 'end_time_manual'; return client.replyMessage(replyToken, [{ type: 'text', text: '請輸入結束時間（例如 18:00）：' }]); }
+  }
+  // 手動輸入時間（HH:MM 格式）
+  if (/^\d{1,2}:\d{2}$/.test(text)) {
+    var hh = parseInt(text.split(':')[0]), mm = parseInt(text.split(':')[1]);
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 時間格式錯誤，請輸入 HH:MM（例如 14:00）' }]);
+    text = 'TIME_' + text;
   }
   // TIME_ 開頭 = 時段選擇結果
   if (text.startsWith('TIME_')) {

@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const session = require('express-session');
-const { Client, middleware } = require('@line/bot-sdk');
+const { Client } = require('@line/bot-sdk');
 const db = require('./database');
 const bot = require('./bot');
 const admin = require('./admin');
@@ -18,6 +18,9 @@ async function main() {
   const app = express();
   const PORT = process.env.PORT || 3000;
 
+  // JSON parsing（LINE webhook 需要）
+  app.use(express.json());
+
   app.use(session({
     secret: process.env.SESSION_SECRET || 'dev-secret',
     resave: false,
@@ -25,14 +28,20 @@ async function main() {
     cookie: { httpOnly: true, maxAge: 8 * 60 * 60 * 1000 },
   }));
 
+  // 健康檢查
   app.get('/health', (_, res) => res.json({ status: 'ok' }));
+  app.get('/', (_, res) => res.send('LINE Attendance System OK'));
+  app.post('/', (req, res) => { res.status(200).send('OK'); });
 
-  app.post('/webhook', middleware({
-    channelSecret: process.env.LINE_CHANNEL_SECRET,
-  }), (req, res) => {
-    const events = req.body.events;
-    if (events && events.length > 0) {
-      bot.handleEvents(events, client).catch(e => console.error(e));
+  // LINE Webhook（不用 middleware，直接處理）
+  app.post('/webhook', (req, res) => {
+    try {
+      const events = req.body && req.body.events;
+      if (events && events.length > 0) {
+        bot.handleEvents(events, client).catch(e => console.error(e));
+      }
+    } catch (e) {
+      console.error('[webhook] error:', e.message);
     }
     res.status(200).send('OK');
   });

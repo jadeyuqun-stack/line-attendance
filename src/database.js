@@ -152,9 +152,10 @@ async function deactivateEmployee(id) {
   await pool.query("UPDATE employees SET status='inactive', line_user_id=NULL, updated_at=NOW() WHERE id=$1", [id]);
 }
 async function hardDeleteEmployee(id) {
-  // 保留打卡和請假記錄，只刪除員工本人
+  // 保留打卡和請假記錄，只刪除員工本人（清除所有外鍵參照）
   await pool.query('UPDATE checkins SET employee_id=NULL WHERE employee_id=$1', [id]);
   await pool.query('UPDATE leave_requests SET employee_id=NULL WHERE employee_id=$1', [id]);
+  await pool.query('UPDATE leave_requests SET approved_by=NULL WHERE approved_by=$1', [id]);
   await pool.query('DELETE FROM employees WHERE id=$1', [id]);
 }
 async function reactivateEmployee(id) {

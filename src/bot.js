@@ -267,7 +267,7 @@ async function doCheckIn(emp, client, replyToken, loc, gps) {
   const r = await db.recordCheckin(emp.id, 'check_in', loc, gps ? gps.inRange : true, gps ? gps.distance : 0);
   const now = r.check_time ? new Date(r.check_time) : new Date();
   let msg = '✅ 上班打卡成功！\n⏰ ' + fmt(now);
-  const late = checkLate(now);
+  const late = await checkLate(now);
   if (late > 0) msg += '\n⚠️ 遲到 ' + late + ' 分鐘';
   if (loc) msg += '\n📍 ' + (loc.address || loc.latitude + ',' + loc.longitude);
   if (gps && !gps.inRange) msg += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
@@ -308,9 +308,9 @@ function fmt(d) {
   return ap + ' ' + String(h12).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }
 
-function checkLate(now) {
-  const start = parseInt(process.env.WORK_START_HOUR || '9');
-  const buf = parseInt(process.env.LATE_BUFFER_MINUTES || '10');
+async function checkLate(now) {
+  const start = parseInt(await db.getSetting('work_start_hour') || process.env.WORK_START_HOUR || '9');
+  const buf = parseInt(await db.getSetting('late_buffer_minutes') || process.env.LATE_BUFFER_MINUTES || '10');
   return Math.max(0, now.getHours() * 60 + now.getMinutes() - (start * 60 + buf));
 }
 

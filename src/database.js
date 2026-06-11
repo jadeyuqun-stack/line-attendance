@@ -69,6 +69,9 @@ async function initDatabase() {
   // 預設設定
   const defaults = [
     ['company_name', process.env.COMPANY_NAME || '公司'],
+    ['work_start_hour', process.env.WORK_START_HOUR || '8'],
+    ['work_end_hour', process.env.WORK_END_HOUR || '17'],
+    ['late_buffer_minutes', process.env.LATE_BUFFER_MINUTES || '30'],
     ['office_lat', ''],
     ['office_lng', ''],
     ['gps_range_meters', '200'],
@@ -142,6 +145,12 @@ async function createEmployee(no, name, dept, role, canApprove) {
 }
 async function deactivateEmployee(id) {
   await pool.query("UPDATE employees SET status='inactive', line_user_id=NULL, updated_at=NOW() WHERE id=$1", [id]);
+}
+async function hardDeleteEmployee(id) {
+  // 保留打卡和請假記錄，只刪除員工本人
+  await pool.query('UPDATE checkins SET employee_id=NULL WHERE employee_id=$1', [id]);
+  await pool.query('UPDATE leave_requests SET employee_id=NULL WHERE employee_id=$1', [id]);
+  await pool.query('DELETE FROM employees WHERE id=$1', [id]);
 }
 async function reactivateEmployee(id) {
   await pool.query("UPDATE employees SET status='active', updated_at=NOW() WHERE id=$1", [id]);
@@ -286,7 +295,7 @@ async function listApprovers() {
 module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
-  listActiveEmployees, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, updateEmployee,
+  listActiveEmployees, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, hardDeleteEmployee, updateEmployee,
   recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,

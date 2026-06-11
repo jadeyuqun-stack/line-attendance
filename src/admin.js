@@ -105,7 +105,10 @@ router.get('/employees', auth, async (_, res) => {
           + '<td><span class="editable" onclick="editField('+ie.id+',\'department\',\''+ieDeptEsc+'\')">'+(ie.department||'點此設定')+'</span></td>'
           + '<td><span class="editable" onclick="editField('+ie.id+',\'role\',\''+ieRoleEsc+'\')">'+(ie.role||'員工')+'</span></td>'
           + '<td><button onclick="toggleApprove('+ie.id+','+ie.can_approve+')" style="background:'+(ie.can_approve?'#06c755':'#ddd')+';color:'+(ie.can_approve?'#fff':'#666')+';border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:11px">'+(ie.can_approve?'可簽核':'設為簽核人')+'</button></td>'
-          + '<td><button onclick="reactivateEmp('+ie.id+',\''+h(ie.name)+'\')" style="background:#f39c12;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">復原</button></td>'
+          + '<td>'
+          + '<button onclick="reactivateEmp('+ie.id+',\''+h(ie.name)+'\')" style="background:#f39c12;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px">復原</button>'
+          + '<button onclick="hardDeleteEmp('+ie.id+',\''+h(ie.name)+'\')" style="background:#c0392b;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px">永久刪除</button>'
+          + '</td>'
           + '</tr>';
       }
       inactiveList += '</table></div>';
@@ -145,6 +148,7 @@ router.get('/employees', auth, async (_, res) => {
     + 'async function setApprover(id,approverId){await fetch("/admin/api/employees/"+id+"/approver",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver_id:approverId||null})});}'
     + 'async function removeEmp(id,name){if(!confirm("確定移除 "+name+"？\\n打卡和請假記錄會保留。"))return;var r=await fetch("/admin/api/employees/"+id+"/deactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
+    + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n此操作無法復原！\\n打卡和請假記錄會保留（匿名化）。"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}'
     + '</script>';
 
   res.send(page('員工管理', html));
@@ -155,8 +159,17 @@ router.get('/settings', auth, async (_, res) => {
   var officeLat = await db.getSetting('office_lat') || '';
   var officeLng = await db.getSetting('office_lng') || '';
   var gpsRange = await db.getSetting('gps_range_meters') || '200';
-  var company = await db.getSetting('company_name') || process.env.COMPANY_NAME || '公司';
-  var html = '<div class="card"><h3>📍 GPS 打卡設定</h3><p style="color:#888;margin:8px 0">設定公司座標後，打卡會自動計算距離，超出範圍標示警告但不阻擋。</p>'
+  var workStart = await db.getSetting('work_start_hour') || '8';
+  var workEnd = await db.getSetting('work_end_hour') || '17';
+  var lateBuf = await db.getSetting('late_buffer_minutes') || '30';
+  var html = '<div class="card"><h3>⏰ 上下班時間</h3>'
+    + '<form id="hourForm" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">'
+    + '<div><label>上班時間（最早）</label><input id="workStart" value="'+h(workStart)+'" style="width:80px" placeholder="8"></div>'
+    + '<div><label>遲到緩衝（分鐘）</label><input id="lateBuf" value="'+h(lateBuf)+'" style="width:80px" placeholder="30"></div>'
+    + '<div><label>下班時間</label><input id="workEnd" value="'+h(workEnd)+'" style="width:80px" placeholder="17"></div>'
+    + '<button type="submit" class="btn">儲存</button><span id="hourMsg" style="color:#06c755;margin-left:8px"></span>'
+    + '</form><p style="color:#888;font-size:12px;margin-top:8px">目前設定：彈性上班 '+h(workStart)+':00 ~ '+(parseInt(workStart)+Math.ceil(parseInt(lateBuf)/60))+':'+String(parseInt(lateBuf)%60).padStart(2,"0")+'，下班 '+h(workEnd)+':00 起</p></div>'
+    + '<div class="card"><h3>📍 GPS 打卡設定</h3><p style="color:#888;margin:8px 0">設定公司座標後，打卡會自動計算距離，超出範圍標示警告但不阻擋。</p>'
     + '<form id="gpsForm"><label>辦公室緯度</label><input id="lat" value="'+h(officeLat)+'" placeholder="例如：25.033964">'
     + '<label>辦公室經度</label><input id="lng" value="'+h(officeLng)+'" placeholder="例如：121.564468">'
     + '<label>允許半徑（公尺）</label><input id="range" value="'+h(gpsRange)+'" placeholder="200">'
@@ -164,9 +177,14 @@ router.get('/settings', auth, async (_, res) => {
     + '<p style="color:#888;margin:16px 0">💡 <a href="https://www.google.com/maps" target="_blank">Google Maps</a> → 右鍵點公司位置 → 複製座標</p>'
     + '<p style="color:#888">其他設定（公司名稱、上班時間）請修改 Render 上的 Environment Variables。</p>'
     + '<a href="/admin">🏠 返回</a>'
-    + '<script>document.getElementById("gpsForm").onsubmit=async function(e){e.preventDefault();'
+    + '<script>'
+    + 'document.getElementById("gpsForm").onsubmit=async function(e){e.preventDefault();'
     + 'var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({office_lat:document.getElementById("lat").value,office_lng:document.getElementById("lng").value,gps_range_meters:document.getElementById("range").value})});'
-    + 'if(r.ok)document.getElementById("msg").textContent="✅已儲存";};</script>';
+    + 'if(r.ok)document.getElementById("msg").textContent="✅已儲存";};'
+    + 'document.getElementById("hourForm").onsubmit=async function(e){e.preventDefault();'
+    + 'var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({work_start_hour:document.getElementById("workStart").value,work_end_hour:document.getElementById("workEnd").value,late_buffer_minutes:document.getElementById("lateBuf").value})});'
+    + 'if(r.ok)document.getElementById("hourMsg").textContent="✅已儲存";};'
+    + '</script>';
   res.send(page('系統設定', html));
 });
 
@@ -195,6 +213,11 @@ router.put('/api/employees/:id/deactivate', auth, async (req, res) => {
 
 router.put('/api/employees/:id/reactivate', auth, async (req, res) => {
   await db.reactivateEmployee(parseInt(req.params.id));
+  res.json({ success: true });
+});
+
+router.delete('/api/employees/:id/hard', auth, async (req, res) => {
+  await db.hardDeleteEmployee(parseInt(req.params.id));
   res.json({ success: true });
 });
 

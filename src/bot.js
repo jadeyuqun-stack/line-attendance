@@ -46,7 +46,7 @@ async function handleEvents(events, client) {
   }
 }
 
-// ===== 文字指令 =====
+// ===== Text commands =====
 async function handleText(text, uid, client, replyToken) {
   const emp = await db.getEmployeeByLineId(uid);
   const cmd = text.trim();
@@ -67,10 +67,7 @@ async function handleText(text, uid, client, replyToken) {
     return client.replyMessage(replyToken, [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
-  if (cmd === '取消' && states.has(uid)) {
-    states.delete(uid);
-    return client.replyMessage(replyToken, [withMenu('已取消操作。')]);
-  }
+  if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消操作。')]); }
   if (states.has(uid)) return handleLeaveFlow(cmd, uid, client, replyToken, emp);
   if (cmd.includes('上班')) return doCheckIn(emp, client, replyToken);
   if (cmd.includes('下班')) return doCheckOut(emp, client, replyToken);
@@ -79,7 +76,7 @@ async function handleText(text, uid, client, replyToken) {
   return client.replyMessage(replyToken, [withMenu('❓ 請點下方選單或輸入指令')]);
 }
 
-// ===== 請假流程 =====
+// ===== Leave flow =====
 const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official' };
 
 async function startLeaveFlow(uid, client, replyToken) {
@@ -100,30 +97,21 @@ async function startLeaveFlow(uid, client, replyToken) {
 
 async function handleLeaveFlow(text, uid, client, replyToken, emp) {
   const state = states.get(uid);
-
   if (state.step === 'type') {
     if (text === '取消') { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消請假。')]); }
     const type = LEAVE_TYPES[text];
     if (!type) return client.replyMessage(replyToken, [{ type: 'text', text: '請選擇假別，或點「取消」退出' }]);
-    state.type = type;
-    state.typeLabel = text;
-    state.step = 'start_date';
+    state.type = type; state.typeLabel = text; state.step = 'start_date';
     return client.replyMessage(replyToken, [{
       type: 'template', altText: '請選擇開始日期',
-      template: {
-        type: 'buttons',
-        text: '📅 請選擇「開始日期」',
-        actions: [{ type: 'datetimepicker', label: '選擇開始日期', data: 'leave_start', mode: 'date' }]
-      }
+      template: { type: 'buttons', text: '📅 請選擇「開始日期」', actions: [{ type: 'datetimepicker', label: '選擇開始日期', data: 'leave_start', mode: 'date' }] }
     }]);
   }
-
   if (state.step === 'reason') {
     state.reason = text;
     try {
       const leaveId = await db.createLeaveRequest(emp.id, state.type, state.startDate, state.endDate, state.reason);
       states.delete(uid);
-
       const approvers = await db.findApprovers(emp.id);
       if (approvers.length > 0) {
         const days = Math.ceil((new Date(state.endDate) - new Date(state.startDate)) / 86400000) + 1;
@@ -132,33 +120,23 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
             type: 'flex', altText: '📋 ' + emp.name + ' 請假申請',
             contents: {
               type: 'bubble',
-              body: {
-                type: 'box', layout: 'vertical',
-                contents: [
-                  { type: 'text', text: '📋 請假申請', weight: 'bold', size: 'lg' },
-                  { type: 'text', text: '員工：' + emp.name + '（' + emp.employee_no + '）', margin: 'md' },
-                  { type: 'text', text: '假別：' + state.typeLabel, margin: 'sm' },
-                  { type: 'text', text: '日期：' + state.startDate + ' ~ ' + state.endDate + '（' + days + '天）', margin: 'sm' },
-                  { type: 'text', text: '原因：' + state.reason, margin: 'sm', wrap: true },
-                ]
-              },
-              footer: {
-                type: 'box', layout: 'horizontal', spacing: 'sm',
-                contents: [
-                  { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'leave_approve_' + leaveId }, flex: 1 },
-                  { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'leave_reject_' + leaveId }, flex: 1 },
-                ]
-              }
+              body: { type: 'box', layout: 'vertical', contents: [
+                { type: 'text', text: '📋 請假申請', weight: 'bold', size: 'lg' },
+                { type: 'text', text: '員工：' + emp.name + '（' + emp.employee_no + '）', margin: 'md' },
+                { type: 'text', text: '假別：' + state.typeLabel, margin: 'sm' },
+                { type: 'text', text: '日期：' + state.startDate + ' ~ ' + state.endDate + '（' + days + '天）', margin: 'sm' },
+                { type: 'text', text: '原因：' + state.reason, margin: 'sm', wrap: true },
+              ]},
+              footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+                { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'leave_approve_' + leaveId }, flex: 1 },
+                { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'leave_reject_' + leaveId }, flex: 1 },
+              ]}
             }
           }]);
         }
-      } else {
-        console.log('[leave] no approvers configured');
       }
-
       return client.replyMessage(replyToken, [{
-        type: 'text',
-        text: '✅ 請假申請已送出！\n\n假別：' + state.typeLabel + '\n日期：' + state.startDate + ' ~ ' + state.endDate + '\n原因：' + state.reason + '\n\n狀態：等待簽核 ⏳',
+        type: 'text', text: '✅ 請假申請已送出！\n\n假別：' + state.typeLabel + '\n日期：' + state.startDate + ' ~ ' + state.endDate + '\n原因：' + state.reason + '\n\n狀態：等待簽核 ⏳',
         quickReply: MENU_BUTTONS
       }]);
     } catch (e) {
@@ -174,55 +152,36 @@ async function handlePostback(postback, uid, client, replyToken) {
   const data = postback.data || '';
   const params = postback.params || {};
 
-  // 日期選擇器
   if (data === 'leave_start') {
     const state = states.get(uid);
     if (!state || state.step !== 'start_date') return;
-    state.startDate = params.date;
-    state.step = 'end_date';
+    state.startDate = params.date; state.step = 'end_date';
     return client.replyMessage(replyToken, [{
       type: 'template', altText: '請選擇結束日期',
-      template: {
-        type: 'buttons',
-        text: '📅 開始日期：' + params.date + '\n請選擇「結束日期」',
-        actions: [{ type: 'datetimepicker', label: '選擇結束日期', data: 'leave_end', mode: 'date' }]
-      }
+      template: { type: 'buttons', text: '📅 開始：' + params.date + '\n請選擇「結束日期」', actions: [{ type: 'datetimepicker', label: '選擇結束日期', data: 'leave_end', mode: 'date' }] }
     }]);
   }
-
   if (data === 'leave_end') {
     const state = states.get(uid);
     if (!state || state.step !== 'end_date') return;
-    state.endDate = params.date;
-    state.step = 'reason';
+    state.endDate = params.date; state.step = 'reason';
     return client.replyMessage(replyToken, [{ type: 'text', text: '📅 ' + state.startDate + ' ~ ' + params.date + '\n\n📝 請輸入請假原因：' }]);
   }
-
-  // 簽核
   if (data.startsWith('leave_approve_') || data.startsWith('leave_reject_')) {
     const leaveId = parseInt(data.split('_').pop());
     const mgr = await db.getEmployeeByLineId(uid);
-    if (!mgr || !mgr.can_approve) {
-      return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 你沒有簽核權限。' }]);
-    }
+    if (!mgr || !mgr.can_approve) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 你沒有簽核權限。' }]);
     const leave = await db.getLeaveById(leaveId);
-    if (!leave || leave.status !== 'pending') {
-      return client.replyMessage(replyToken, [{ type: 'text', text: '此申請已處理過。' }]);
-    }
-
+    if (!leave || leave.status !== 'pending') return client.replyMessage(replyToken, [{ type: 'text', text: '此申請已處理過。' }]);
     if (data.startsWith('leave_approve_')) {
       await db.updateLeaveStatus(leaveId, 'approved', mgr.id);
       const e = await db.getEmployeeById(leave.employee_id);
-      if (e && e.line_user_id) {
-        await client.pushMessage(e.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + leave.start_date + ' ~ ' + leave.end_date }]);
-      }
+      if (e && e.line_user_id) await client.pushMessage(e.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + leave.start_date + ' ~ ' + leave.end_date }]);
       return client.replyMessage(replyToken, [{ type: 'text', text: '✅ 已核准。' }]);
     } else {
       await db.updateLeaveStatus(leaveId, 'rejected', mgr.id);
       const e = await db.getEmployeeById(leave.employee_id);
-      if (e && e.line_user_id) {
-        await client.pushMessage(e.line_user_id, [{ type: 'text', text: '❌ 請假被駁回。\n' + leave.start_date + ' ~ ' + leave.end_date }]);
-      }
+      if (e && e.line_user_id) await client.pushMessage(e.line_user_id, [{ type: 'text', text: '❌ 請假被駁回。\n' + leave.start_date + ' ~ ' + leave.end_date }]);
       return client.replyMessage(replyToken, [{ type: 'text', text: '已駁回。' }]);
     }
   }
@@ -231,9 +190,7 @@ async function handlePostback(postback, uid, client, replyToken) {
 // ===== GPS =====
 function haversineDistance(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return null;
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const R = 6371000, dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
@@ -247,7 +204,7 @@ async function checkGpsRange(lat, lng) {
   return { inRange: dist <= range, distance: dist };
 }
 
-// ===== 打卡 =====
+// ===== Check-in/out =====
 async function handleLocation(msg, uid, client, replyToken) {
   const emp = await db.getEmployeeByLineId(uid);
   if (!emp) return client.replyMessage(replyToken, [withMenu('請先綁定員工編號。')]);
@@ -269,8 +226,12 @@ async function doCheckIn(emp, client, replyToken, loc, gps) {
   let msg = '✅ 上班打卡成功！\n⏰ ' + fmt(now);
   const late = await checkLate(now);
   if (late > 0) msg += '\n⚠️ 遲到 ' + late + ' 分鐘';
-  if (loc) msg += '\n📍 ' + (loc.address || loc.latitude + ',' + loc.longitude);
-  if (gps && !gps.inRange) msg += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
+  if (loc) {
+    msg += '\n📍 ' + (loc.address || loc.latitude + ',' + loc.longitude);
+    if (gps && !gps.inRange) msg += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
+  } else {
+    msg += '\n⚠️ 未提供 GPS 位置\n💡 請使用「位置訊息」打卡';
+  }
   return client.replyMessage(replyToken, [withMenu(msg)]);
 }
 
@@ -282,15 +243,17 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   const ci = new Date(today.find(r => r.type === 'check_in').check_time);
   const co = r.check_time ? new Date(r.check_time) : new Date();
   const h = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
-
-  // 計算最早可下班時間（上班打卡 + 9 小時）
   const requiredHours = 9;
   const earliestLeave = new Date(ci.getTime() + requiredHours * 3600000);
 
   let msg = '✅ 下班打卡成功！\n⏰ ' + fmt(co) + '\n📊 工時：約 ' + h + ' 小時';
-  if (loc) msg += '\n📍 ' + (loc.address || loc.latitude + ',' + loc.longitude);
-  if (gps && !gps.inRange) msg += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
-  if (co < earliestLeave) msg += '\n⚠️ 提早下班！需滿 ' + requiredHours + ' 小時\n最早可於 ' + fmt(earliestLeave) + ' 離開';
+  if (loc) {
+    msg += '\n📍 ' + (loc.address || loc.latitude + ',' + loc.longitude);
+    if (gps && !gps.inRange) msg += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
+  } else {
+    msg += '\n⚠️ 未提供 GPS 位置';
+  }
+  if (co < earliestLeave) msg += '\n⚠️ 工時不足 ' + requiredHours + ' 小時，請記得申請請假補足時數';
   msg += '\n\n辛苦了！🏠';
   return client.replyMessage(replyToken, [withMenu(msg)]);
 }
@@ -303,6 +266,14 @@ async function doQuery(emp, client, replyToken) {
     msg += (r.type === 'check_in' ? '🔵上班' : '🔴下班') + '：' + fmt(new Date(r.check_time)) + '\n';
     if (r.address) msg += '   📍' + r.address + '\n';
     if (r.in_range === false) msg += '   ⚠️ 超出範圍\n';
+  }
+  const checkIn = records.find(r => r.type === 'check_in');
+  const checkOut = records.find(r => r.type === 'check_out');
+  if (checkIn && checkOut) {
+    const ci = new Date(checkIn.check_time), co = new Date(checkOut.check_time);
+    const workH = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
+    msg += '\n📊 工時：約 ' + workH + ' 小時';
+    if (workH < 9) msg += '\n⚠️ 不足 9 小時，請記得申請請假';
   }
   return client.replyMessage(replyToken, [withMenu(msg)]);
 }
@@ -325,16 +296,13 @@ async function setupRichMenu() {
   try {
     const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
     const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
-
     const existing = await fetch('https://api.line.me/v2/bot/richmenu/list', { headers });
     const list = await existing.json();
     for (const rm of (list.richmenus || [])) {
       await fetch('https://api.line.me/v2/bot/richmenu/' + rm.richMenuId, { method: 'DELETE', headers });
     }
-
     const menu = {
-      size: { width: 2500, height: 843 },
-      selected: true, name: '主選單', chatBarText: '📋 點此開啟功能選單',
+      size: { width: 2500, height: 843 }, selected: true, name: '主選單', chatBarText: '📋 點此開啟功能選單',
       areas: [
         { bounds: { x: 0, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '上班' } },
         { bounds: { x: 1250, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '下班' } },
@@ -343,26 +311,14 @@ async function setupRichMenu() {
         { bounds: { x: 1667, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '幫助' } },
       ]
     };
-    const res1 = await fetch('https://api.line.me/v2/bot/richmenu', {
-      method: 'POST', headers, body: JSON.stringify(menu)
-    });
+    const res1 = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu) });
     const data = await res1.json();
-    console.log('[RichMenu] created:', data.richMenuId);
-
     const png = makePng();
     const imgHeaders = { 'Content-Type': 'image/png', 'Authorization': 'Bearer ' + token };
-    await fetch('https://api.line.me/v2/bot/richmenu/' + data.richMenuId + '/content', {
-      method: 'POST', headers: imgHeaders, body: png
-    });
-    console.log('[RichMenu] image uploaded');
-
+    await fetch('https://api.line.me/v2/bot/richmenu/' + data.richMenuId + '/content', { method: 'POST', headers: imgHeaders, body: png });
     await fetch('https://api.line.me/v2/bot/user/all/richmenu/' + data.richMenuId, { method: 'POST', headers });
-    console.log('[RichMenu] set as default ✅');
     return data.richMenuId;
-  } catch (e) {
-    console.error('[RichMenu] error:', e.message);
-    return null;
-  }
+  } catch (e) { console.error('[RichMenu] error:', e.message); return null; }
 }
 
 function makePng() {
@@ -370,45 +326,20 @@ function makePng() {
   const w = 2500, h = 843;
   const rawData = Buffer.alloc(h * (1 + w * 4));
   for (let y = 0; y < h; y++) {
-    const rowOff = y * (1 + w * 4);
-    rawData[rowOff] = 0;
+    const rowOff = y * (1 + w * 4); rawData[rowOff] = 0;
     for (let x = 0; x < w; x++) {
       const off = rowOff + 1 + x * 4;
-      if (y < 421) {
-        rawData[off] = x < 1250 ? 0x06 : 0xf3;
-        rawData[off+1] = x < 1250 ? 0xc7 : 0x9c;
-        rawData[off+2] = x < 1250 ? 0x55 : 0x12;
-      } else {
-        if (x < 833) { rawData[off]=0x34; rawData[off+1]=0x98; rawData[off+2]=0xdb; }
-        else if (x < 1667) { rawData[off]=0x95; rawData[off+1]=0xa5; rawData[off+2]=0xa6; }
-        else { rawData[off]=0xb0; rawData[off+1]=0xbe; rawData[off+2]=0xc5; }
-      }
+      if (y < 421) { rawData[off]=x<1250?0x06:0xf3; rawData[off+1]=x<1250?0xc7:0x9c; rawData[off+2]=x<1250?0x55:0x12; }
+      else { if(x<833){rawData[off]=0x34;rawData[off+1]=0x98;rawData[off+2]=0xdb;}else if(x<1667){rawData[off]=0x95;rawData[off+1]=0xa5;rawData[off+2]=0xa6;}else{rawData[off]=0xb0;rawData[off+1]=0xbe;rawData[off+2]=0xc5;} }
       rawData[off+3] = 255;
     }
   }
   const deflated = zlib.deflateSync(rawData);
-
-  function crc(buf) {
-    let c = 0xffffffff;
-    const table = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) { let cc = n; for (let k = 0; k < 8; k++) cc = cc & 1 ? 0xedb88320 ^ (cc >>> 1) : cc >>> 1; table[n] = cc; }
-    for (let i = 0; i < buf.length; i++) c = table[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-  }
-  function chunk(type, data) {
-    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
-    const t = Buffer.from(type);
-    const all = Buffer.concat([len, t, data]);
-    const c = Buffer.alloc(4); c.writeUInt32BE(crc(Buffer.concat([t, data])));
-    return Buffer.concat([all, c]);
-  }
-
+  function crc(buf) { let c=0xffffffff; const t=new Uint32Array(256); for(let n=0;n<256;n++){let cc=n;for(let k=0;k<8;k++)cc=cc&1?0xedb88320^(cc>>>1):cc>>>1;t[n]=cc;} for(let i=0;i<buf.length;i++)c=t[(c^buf[i])&0xff]^(c>>>8); return (c^0xffffffff)>>>0; }
+  function chunk(type, data) { const len=Buffer.alloc(4);len.writeUInt32BE(data.length); const tt=Buffer.from(type); const all=Buffer.concat([len,tt,data]); const c=Buffer.alloc(4);c.writeUInt32BE(crc(Buffer.concat([tt,data]))); return Buffer.concat([all,c]); }
   const sig = Buffer.from([137,80,78,71,13,10,26,10]);
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
-  ihdr[8] = 8; ihdr[9] = 6;
-
-  return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', deflated), chunk('IEND', Buffer.alloc(0))]);
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w,0); ihdr.writeUInt32BE(h,4); ihdr[8]=8; ihdr[9]=6;
+  return Buffer.concat([sig,chunk('IHDR',ihdr),chunk('IDAT',deflated),chunk('IEND',Buffer.alloc(0))]);
 }
 
 module.exports = { handleEvents, setupRichMenu };

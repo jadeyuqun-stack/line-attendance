@@ -34,17 +34,39 @@ router.get('/records', auth, async (req, res) => {
   const d = req.query.date || new Date().toISOString().split('T')[0];
   const records = await db.queryCheckins(req.query.eid ? parseInt(req.query.eid) : null, d, d);
   const emps = await db.listActiveEmployees();
-  var rows = '';
-  if (records.length === 0) rows = '<tr><td colspan="8">無記錄</td></tr>';
-  else for (var i = 0; i < records.length; i++) {
+  // 同員工合併到一列
+  var empMap = {};
+  for (var i = 0; i < records.length; i++) {
     var r = records[i];
-    var t = new Date(r.check_time);
-    var gps = r.in_range === false ? ' ⚠️超出範圍('+(r.distance_meters||0)+'m)' : '';
-    rows += '<tr><td>'+t.toLocaleDateString('zh-TW')+'</td><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+h(r.department||'')+'</td><td>'+(r.type==='check_in'?'🔵上班':'🔴下班')+'</td><td>'+t.toLocaleTimeString('zh-TW')+'</td><td>'+h(r.address||'-')+gps+'</td></tr>';
+    var key = r.employee_id;
+    if (!empMap[key]) empMap[key] = { emp: r, checkIn: null, checkOut: null };
+    if (r.type === 'check_in') empMap[key].checkIn = r;
+    else empMap[key].checkOut = r;
+  }
+  var rows = '';
+  var keys = Object.keys(empMap);
+  if (keys.length === 0) rows = '<tr><td colspan="7">無記錄</td></tr>';
+  else for (var k = 0; k < keys.length; k++) {
+    var d2 = empMap[keys[k]];
+    var e = d2.emp;
+    var inHtml = d2.checkIn
+      ? '<span style="color:#06c755">🔵 '+new Date(d2.checkIn.check_time).toLocaleTimeString('zh-TW')+'</span>'+(d2.checkIn.address?'<br><small>📍 '+h(d2.checkIn.address||'')+'</small>':'')+(d2.checkIn.in_range===false?' <span style="color:#e74c3c">⚠️超出</span>':'')
+      : '<span style="color:#ccc">--:--</span>';
+    var outHtml = d2.checkOut
+      ? '<span style="color:#e74c3c">🔴 '+new Date(d2.checkOut.check_time).toLocaleTimeString('zh-TW')+'</span>'+(d2.checkOut.address?'<br><small>📍 '+h(d2.checkOut.address||'')+'</small>':'')+(d2.checkOut.in_range===false?' <span style="color:#e74c3c">⚠️超出</span>':'')
+      : '<span style="color:#ccc">--:--</span>';
+    var hours = '';
+    if (d2.checkIn && d2.checkOut) {
+      var ci = new Date(d2.checkIn.check_time), co = new Date(d2.checkOut.check_time);
+      var workH = Math.round(Math.max(0, (co-ci)/3600000)*10)/10;
+      hours = Math.round(workH*10)/10 + 'h';
+      if (workH < 9) hours += ' ⚠️';
+    } else hours = '-';
+    rows += '<tr><td>'+h(e.employee_no)+'</td><td>'+h(e.name)+'</td><td>'+h(e.department||'')+'</td><td>'+inHtml+'</td><td>'+outHtml+'</td><td>'+hours+'</td><td></td></tr>';
   }
   var opts = '';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'">'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
-  res.send(page('打卡記錄','<div class="card"><form method="GET"><input type="date" name="date" value="'+d+'" style="width:auto;display:inline"> <select name="eid" style="width:auto;display:inline"><option value="">全部</option>'+opts+'</select> <button class="btn">查詢</button></form></div><div class="card"><table><tr><th>日期</th><th>編號</th><th>姓名</th><th>部門</th><th>類型</th><th>時間</th><th>位置</th></tr>'+rows+'</table></div><a href="/admin">🏠 返回</a>'));
+  res.send(page('打卡記錄','<div class="card"><form method="GET"><input type="date" name="date" value="'+d+'" style="width:auto;display:inline"> <select name="eid" style="width:auto;display:inline"><option value="">全部</option>'+opts+'</select> <button class="btn">查詢</button></form></div><div class="card"><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th></tr>'+rows+'</table></div><a href="/admin">🏠 返回</a>'));
 });
 
 // ===== 員工管理 =====

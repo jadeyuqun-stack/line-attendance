@@ -112,7 +112,7 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   const ci = new Date(today.find(r => r.type === 'check_in').check_time);
   const co = r.check_time ? new Date(r.check_time) : new Date();
   const h = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
-  const requiredHours = 9;
+  const requiredHours = 8;
 
   var contents = [
     { type: 'text', text: '🏠 下班打卡成功', weight: 'bold', size: 'lg', color: '#3498db' },
@@ -161,7 +161,7 @@ async function doQuery(emp, client, replyToken) {
   if (checkOut && checkOut.address) punchText += '\n   📍' + checkOut.address;
   if (checkIn && checkOut) {
     var workH = Math.round(Math.max(0, (new Date(checkOut.check_time) - new Date(checkIn.check_time)) / 3600000) * 10) / 10;
-    punchText += '\n📊 ' + workH + 'h' + (workH < 9 ? ' ⚠️不足9h' : '');
+    punchText += '\n📊 ' + workH + 'h' + (workH < 8 ? ' ⚠️不足8h' : '');
   }
   contents.push({ type: 'text', text: punchText, margin: 'md', size: 'sm', wrap: true });
 

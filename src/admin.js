@@ -179,7 +179,7 @@ router.get('/records', auth, async (req, res) => {
       var ci = new Date(d2.checkIn.check_time), co = new Date(d2.checkOut.check_time);
       workH = Math.round(Math.max(0,(co-ci)/3600000)*10)/10;
       hours = workH + 'h';
-      if (workH < 9) hours += ' <span class="badge badge-warn">⚠️</span>';
+      if (workH < 8) hours += ' <span class="badge badge-warn">⚠️</span>';
     }
     rows += '<tr><td>'+h(e.employee_no)+'</td><td>'+h(e.name)+'</td><td>'+h(e.department||'')+'</td><td>'+inHtml+'</td><td>'+outHtml+'</td><td>'+hours+'</td></tr>';
   }
@@ -287,6 +287,7 @@ router.get('/leaves', auth, async (req, res) => {
   var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var rows = '';
   var monthHours = 0, totalHours = 0;
+  function sd(d) { return typeof d === 'string' ? d : (d ? d.toISOString().split('T')[0] : ''); }
   for (var i = 0; i < leaves.length; i++) {
     var l = leaves[i];
     var statusBadge = l.status === 'pending' ? '<span class="badge badge-warn">待審核</span>'
@@ -296,13 +297,15 @@ router.get('/leaves', auth, async (req, res) => {
     if (l.status === 'pending') {
       actionHtml = '<button onclick="approveLeave('+l.id+')" class="btn-sm btn">核准</button> <button onclick="rejectLeave('+l.id+')" class="btn-sm btn-red">駁回</button>';
     }
-    var leaveTime = l.start_date;
-    if (l.end_date) leaveTime += ' ~ ' + l.end_date;
+    var startStr = sd(l.start_date);
+    var endStr = sd(l.end_date);
+    var leaveTime = startStr;
+    if (endStr) leaveTime += ' ~ ' + endStr;
     var hours = 0;
-    try { var diff = new Date(l.end_date||l.start_date) - new Date(l.start_date); hours = Math.max(1, Math.ceil(Math.max(0, diff) / 3600000)); } catch(e) {}
+    try { var diff = new Date(endStr||startStr) - new Date(startStr); hours = Math.max(1, Math.ceil(Math.max(0, diff) / 3600000)); } catch(e) {}
     if (l.status === 'approved') {
       totalHours += hours;
-      if (l.start_date && l.start_date.indexOf(thisMonth) === 0) monthHours += hours;
+      if (startStr && startStr.indexOf(thisMonth) === 0) monthHours += hours;
     }
     rows += '<tr><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+'</td><td>'+actionHtml+'</td></tr>';
   }
@@ -341,7 +344,7 @@ router.get('/settings', auth, async (_, res) => {
   var lateBuf = await db.getSetting('late_buffer_minutes') || '30';
 
   var body = '<div class="card"><h3>⏰ 上下班時間</h3>'
-    + '<p style="color:#999;font-size:13px;margin-bottom:12px">目前：彈性上班 '+workStart+':00 ~ '+(parseInt(workStart)+Math.ceil(parseInt(lateBuf)/60))+':'+String(parseInt(lateBuf)%60).padStart(2,'0')+'，下班 '+workEnd+':00 起，需滿 9 小時</p>'
+    + '<p style="color:#999;font-size:13px;margin-bottom:12px">目前：彈性上班 '+workStart+':00 ~ '+(parseInt(workStart)+Math.ceil(parseInt(lateBuf)/60))+':'+String(parseInt(lateBuf)%60).padStart(2,'0')+'，下班 '+workEnd+':00 起，需滿 8 小時</p>'
     + '<form id="hourForm" class="inline">'
     + '<div><label>上班最早時間</label><input id="workStart" value="'+workStart+'" style="width:80px"></div>'
     + '<div><label>遲到緩衝（分）</label><input id="lateBuf" value="'+lateBuf+'" style="width:80px"></div>'

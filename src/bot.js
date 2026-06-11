@@ -15,8 +15,9 @@ const MENU_BUTTONS = {
 function withMenu(text) { return { type: 'text', text: text, quickReply: MENU_BUTTONS }; }
 // 文字 + 選單 + 日期時間選擇器（保留選單按鈕）
 function withDatePicker(text, data) {
-  var items = MENU_BUTTONS.items.slice();
-  items.push({ type: 'action', action: { type: 'datetimepicker', label: '📅 選日期時間', data: data, mode: 'datetime' } });
+  var items = [];
+  items.push({ type: 'action', action: { type: 'datetimepicker', label: '📅 點我選日期時間', data: data, mode: 'datetime' } });
+  items = items.concat(MENU_BUTTONS.items);
   return { type: 'text', text: text, quickReply: { items: items } };
 }
 
@@ -202,11 +203,15 @@ const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick'
 function ceilHours(diffMs) { return Math.ceil(Math.max(0, diffMs) / 3600000); }
 // 請假時數：取整後，跨天每日最多 8 小時
 function leaveHours(startStr, endStr) {
-  var diff = new Date(endStr||startStr) - new Date(startStr);
-  if (diff <= 0) return 0;
+  if (!startStr) return 0;
+  var s = new Date(startStr), e = new Date(endStr||startStr);
+  var diff = e - s;
+  if (diff <= 0) return 1;
   var raw = Math.ceil(diff / 3600000);
   var days = Math.ceil(diff / 86400000);
-  return Math.min(raw, days * 8);
+  var cap = Math.min(raw, days * 8);
+  if (days <= 1 && s.getHours() < 12 && e.getHours() >= 13) cap = Math.max(1, cap - 1);
+  return cap;
 }
 
 async function startLeaveFlow(uid, client, replyToken) {

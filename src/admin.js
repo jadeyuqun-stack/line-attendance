@@ -291,12 +291,16 @@ router.get('/leaves', auth, async (req, res) => {
   var companyMonth = 0, companyTotal = 0;
   // 個人時數彙整
   var personMap = {};
-  function calcLeaveHours(s, e) {
-    var diff = new Date(e||s) - new Date(s);
-    if (diff <= 0) return 0;
+  function calcLeaveHours(startStr, endStr) {
+    if (!startStr) return 0;
+    var s2 = new Date(startStr), e2 = new Date(endStr||startStr);
+    var diff = e2 - s2;
+    if (diff <= 0) return 1;
     var raw = Math.ceil(diff / 3600000);
     var days = Math.ceil(diff / 86400000);
-    return Math.min(raw, days * 8);
+    var cap = Math.min(raw, days * 8);
+    if (days <= 1 && s2.getHours() < 12 && e2.getHours() >= 13) cap = Math.max(1, cap - 1);
+    return cap;
   }
   function sd(d) { return typeof d === 'string' ? d : (d ? d.toISOString().split('T')[0] : ''); }
   for (var i = 0; i < leaves.length; i++) {

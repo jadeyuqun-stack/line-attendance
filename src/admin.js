@@ -8,7 +8,7 @@ function auth(req, res, next) {
 }
 
 // =========== 登入 ===========
-router.get('/login', (_, res) => {
+router.get('/login', (req, res) => {
   res.send(`<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登入</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#f0f2f5;display:flex;justify-content:center;align-items:center;min-height:100vh}.box{background:#fff;padding:40px;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.1);width:100%;max-width:380px}h1{text-align:center;margin-bottom:24px;font-size:22px}label{display:block;margin-bottom:6px;font-weight:600;font-size:14px}input{width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:16px;font-size:16px}button{width:100%;padding:14px;background:#06c755;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer}.err{background:#fff0f0;color:#e74c3c;padding:10px;border-radius:8px;margin-bottom:16px;text-align:center}</style></head><body><div class="box"><h1>📋 打卡管理系統</h1>` + (req.query.err ? '<div class="err">帳號或密碼錯誤</div>' : '') + `<form method="POST" action="/admin/login"><label>帳號</label><input name="username" required autofocus><label>密碼</label><input type="password" name="password" required><button type="submit">登入</button></form></div></body></html>`);
 });
 

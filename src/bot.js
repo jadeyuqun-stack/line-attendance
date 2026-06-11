@@ -1,23 +1,24 @@
 const db = require('./database');
 const states = new Map();
 
-const MENU_BUTTONS = {
+const GPS_BUTTONS = {
   items: [
-    { type: 'action', action: { type: 'message', label: '上班', text: '上班' } },
-    { type: 'action', action: { type: 'message', label: '下班', text: '下班' } },
-    { type: 'action', action: { type: 'message', label: '查詢', text: '查詢' } },
-    { type: 'action', action: { type: 'message', label: '請假', text: '請假' } },
-    { type: 'action', action: { type: 'message', label: '幫助', text: '幫助' } },
-    { type: 'action', action: { type: 'message', label: '我的ID', text: '我的ID' } },
+    { type: 'action', action: { type: 'location', label: '📍 傳送位置打卡' } },
+    { type: 'action', action: { type: 'message', label: '上班(無GPS)', text: '上班' } },
+    { type: 'action', action: { type: 'message', label: '下班(無GPS)', text: '下班' } },
+    { type: 'action', action: { type: 'message', label: '📋 查詢', text: '查詢' } },
+    { type: 'action', action: { type: 'message', label: '🏖 請假', text: '請假' } },
+    { type: 'action', action: { type: 'message', label: '🆔 我的ID', text: '我的ID' } },
+    { type: 'action', action: { type: 'message', label: '❓ 幫助', text: '幫助' } },
   ]
 };
 
-function withMenu(text) { return { type: 'text', text: text, quickReply: MENU_BUTTONS }; }
+function withMenu(text) { return { type: 'text', text: text, quickReply: GPS_BUTTONS }; }
 // 文字 + 選單 + 日期時間選擇器（保留選單按鈕）
 function withDatePicker(text, data) {
   var items = [];
   items.push({ type: 'action', action: { type: 'datetimepicker', label: '📅 點我選日期時間', data: data, mode: 'datetime' } });
-  items = items.concat(MENU_BUTTONS.items);
+  items = items.concat(GPS_BUTTONS.items);
   return { type: 'text', text: text, quickReply: { items: items } };
 }
 
@@ -32,7 +33,7 @@ async function handleEvents(events, client) {
         if (emp) {
           await client.pushMessage(uid, [withMenu('歡迎回來，' + emp.name + '！🎉\n\n📍 傳送位置訊息 → GPS 打卡\n💬 下方選單可直接點選')]);
         } else {
-          await client.pushMessage(uid, [{ type: 'text', text: '👋 歡迎使用公司打卡系統！\n\n🔹 請輸入「員工編號」綁定帳號\n🔹 或輸入「我的ID」取得 LINE ID\n\n📌 請洽管理員取得員工編號', quickReply: MENU_BUTTONS }]);
+          await client.pushMessage(uid, [{ type: 'text', text: '👋 歡迎使用公司打卡系統！\n\n🔹 請輸入「員工編號」綁定帳號\n🔹 或輸入「我的ID」取得 LINE ID\n\n📌 請洽管理員取得員工編號', quickReply: GPS_BUTTONS }]);
         }
       }
       if (evt.type === 'message' && evt.message) {
@@ -101,7 +102,7 @@ async function doCheckIn(emp, client, replyToken, loc, gps) {
   return client.replyMessage(replyToken, [{
     type: 'flex', altText: '✅ 上班打卡成功 ' + fmt(now),
     contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } },
-    quickReply: MENU_BUTTONS
+    quickReply: GPS_BUTTONS
   }]);
 }
 
@@ -136,7 +137,7 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   return client.replyMessage(replyToken, [{
     type: 'flex', altText: '🏠 下班打卡成功 ' + fmt(co),
     contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } },
-    quickReply: MENU_BUTTONS
+    quickReply: GPS_BUTTONS
   }]);
 }
 
@@ -194,7 +195,7 @@ async function doQuery(emp, client, replyToken) {
   return client.replyMessage(replyToken, [{
     type: 'flex', altText: '📋 今日打卡記錄',
     contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } },
-    quickReply: MENU_BUTTONS
+    quickReply: GPS_BUTTONS
   }]);
 }
 
@@ -281,7 +282,7 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
               { type: 'text', text: '⏳ 等待簽核中...', margin: 'md', size: 'sm', color: '#f39c12' }
             ]}
 	          },
-	          quickReply: MENU_BUTTONS
+	          quickReply: GPS_BUTTONS
 	        }
       ]);
     } catch (e) {

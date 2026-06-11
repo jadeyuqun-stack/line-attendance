@@ -22,6 +22,7 @@ function withDatePicker(text, data) {
 }
 
 async function handleEvents(events, client) {
+  console.log('[bot] events:', events.length, events.map(function(e){return e.type+':'+(e.message?e.message.type:'');}));
   for (const evt of events) {
     try {
       if (evt.source.type !== 'user') continue;

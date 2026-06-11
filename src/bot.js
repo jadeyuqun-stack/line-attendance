@@ -182,14 +182,7 @@ async function doQuery(emp, client, replyToken) {
 // ===== Leave flow (unchanged) =====
 const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official' };
 
-// 產生 30 分鐘間隔時段選項（LINE Quick Reply 最多 12 項 + 取消 = 13）
-function timeSlots() {
-  var times = ['08:00','08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'];
-  var items = times.map(function(t) { return { type: 'action', action: { type: 'message', label: t, text: 'TIME_' + t } }; });
-  items.push({ type: 'action', action: { type: 'message', label: '取消', text: '取消' } });
-  items.push({ type: 'action', action: { type: 'message', label: '其他時間', text: '其他時間' } });
-  return items;
-}
+function ceilHours(diffMs) { return Math.ceil(Math.max(0, diffMs) / 3600000); }
 
 async function startLeaveFlow(uid, client, replyToken) {
   states.set(uid, { step: 'type' });
@@ -215,48 +208,19 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
     if (!type) return client.replyMessage(replyToken, [{ type: 'text', text: '請選擇假別，或點「取消」退出' }]);
     state.type = type; state.typeLabel = text; state.step = 'start_date';
     return client.replyMessage(replyToken, [{
-      type: 'template', altText: '請選擇開始日期',
-      template: { type: 'buttons', text: '📅 請選擇「開始日期」', actions: [{ type: 'datetimepicker', label: '選擇日期', data: 'leave_start', mode: 'date' }] }
+      type: 'template', altText: '請選擇開始日期時間',
+      template: { type: 'buttons', text: '📅 請選擇「開始日期時間」', actions: [{ type: 'datetimepicker', label: '選擇時間', data: 'leave_start', mode: 'datetime' }] }
     }]);
-  }
-  // 其他時間 → 改為手動輸入
-  if (text === '其他時間') {
-    if (state.step === 'start_time') { state.step = 'start_time_manual'; return client.replyMessage(replyToken, [{ type: 'text', text: '請輸入開始時間（例如 14:00）：' }]); }
-    if (state.step === 'end_time') { state.step = 'end_time_manual'; return client.replyMessage(replyToken, [{ type: 'text', text: '請輸入結束時間（例如 18:00）：' }]); }
-  }
-  // 手動輸入時間（HH:MM 格式）
-  if (/^\d{1,2}:\d{2}$/.test(text)) {
-    var hh = parseInt(text.split(':')[0]), mm = parseInt(text.split(':')[1]);
-    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 時間格式錯誤，請輸入 HH:MM（例如 14:00）' }]);
-    text = 'TIME_' + text;
-  }
-  // TIME_ 開頭 = 時段選擇結果
-  if (text.startsWith('TIME_')) {
-    var timeVal = text.replace('TIME_', '');
-    if (state.step === 'start_time') {
-      state.startDateTime = state.startDate + ' ' + timeVal;
-      state.step = 'end_date';
-      return client.replyMessage(replyToken, [{
-        type: 'template', altText: '請選擇結束日期',
-        template: { type: 'buttons', text: '📅 開始：' + state.startDateTime + '\n請選擇「結束日期」', actions: [{ type: 'datetimepicker', label: '選擇日期', data: 'leave_end', mode: 'date' }] }
-      }]);
-    }
-    if (state.step === 'end_time') {
-      state.endDateTime = state.endDate + ' ' + timeVal;
-      state.step = 'reason';
-      return client.replyMessage(replyToken, [{ type: 'text', text: '📅 ' + state.startDateTime + ' ~ ' + state.endDateTime + '\n\n📝 請輸入請假原因：' }]);
-    }
   }
   if (state.step === 'reason') {
     state.reason = text;
     try {
-      const leaveId = await db.createLeaveRequest(emp.id, state.type, state.startDateTime || state.startDate, state.endDateTime || state.endDate, state.reason);
+      const leaveId = await db.createLeaveRequest(emp.id, state.type, state.startDateTime, state.endDateTime, state.reason);
       states.delete(uid);
       const approvers = await db.findApprovers(emp.id);
       if (approvers.length > 0) {
-        var st = state.startDateTime || state.startDate;
-        var et = state.endDateTime || state.endDate;
-        const leaveHours = Math.round((new Date(et) - new Date(st)) / 3600000 * 10) / 10;
+        var st2 = new Date(state.startDateTime), et2 = new Date(state.endDateTime);
+        var hours = ceilHours(et2 - st2);
         for (const appr of approvers) {
           await client.pushMessage(appr.line_user_id, [{
             type: 'flex', altText: '📋 ' + emp.name + ' 請假申請',
@@ -266,7 +230,7 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
                 { type: 'text', text: '📋 請假申請', weight: 'bold', size: 'lg', color: '#f39c12' },
                 { type: 'text', text: '員工：' + emp.name + '（' + emp.employee_no + '）', margin: 'md', size: 'sm', color: '#666666' },
                 { type: 'text', text: '假別：' + state.typeLabel, margin: 'sm', size: 'sm' },
-                { type: 'text', text: '時間：' + (st || '') + ' ~ ' + (et || ''), margin: 'sm', size: 'sm' },
+                { type: 'text', text: '時間：' + fmt(st2) + ' ~ ' + fmt(et2) + '（' + hours + ' 小時）', margin: 'sm', size: 'sm' },
                 { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', wrap: true, color: '#666666' },
                 { type: 'text', text: '申請時間：' + fmt(new Date()), margin: 'sm', size: 'xs', color: '#aaaaaa' },
               ]},
@@ -284,7 +248,7 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
             body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '✅ 請假申請已送出', weight: 'bold', size: 'lg', color: '#06c755' },
               { type: 'text', text: '假別：' + state.typeLabel, margin: 'md', size: 'sm' },
-              { type: 'text', text: '時間：' + (state.startDateTime || state.startDate) + ' ~ ' + (state.endDateTime || state.endDate), margin: 'sm', size: 'sm' },
+              { type: 'text', text: '時間：' + state.startDateTime + ' ~ ' + state.endDateTime, margin: 'sm', size: 'sm' },
               { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', color: '#666666', wrap: true },
               { type: 'text', text: '⏳ 等待簽核中...', margin: 'md', size: 'sm', color: '#f39c12' }
             ]}
@@ -306,24 +270,23 @@ async function handlePostback(postback, uid, client, replyToken) {
   if (data === 'leave_start') {
     var state = states.get(uid);
     if (!state || state.step !== 'start_date') return;
-    var date = params.date;
-    if (!date) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
-    state.startDate = date; state.step = 'start_time';
+    var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
+    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
+    state.startDateTime = dt; state.step = 'end_date';
     return client.replyMessage(replyToken, [{
-      type: 'text', text: '📅 開始日期：' + date + '\n\n請選擇「開始時間」：',
-      quickReply: { items: timeSlots() }
+      type: 'template', altText: '請選擇結束日期時間',
+      template: { type: 'buttons', text: '📅 開始：' + dt + '\n請選擇「結束日期時間」', actions: [{ type: 'datetimepicker', label: '選擇時間', data: 'leave_end', mode: 'datetime' }] }
     }]);
   }
   if (data === 'leave_end') {
     var state = states.get(uid);
     if (!state || state.step !== 'end_date') return;
-    var date = params.date;
-    if (!date) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
-    state.endDate = date; state.step = 'end_time';
-    return client.replyMessage(replyToken, [{
-      type: 'text', text: '📅 結束日期：' + date + '\n\n請選擇「結束時間」：',
-      quickReply: { items: timeSlots() }
-    }]);
+    var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
+    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
+    state.endDateTime = dt; state.step = 'reason';
+    var st = new Date(state.startDateTime), et2 = new Date(dt);
+    var hours = ceilHours(et2 - st);
+    return client.replyMessage(replyToken, [{ type: 'text', text: '📅 ' + state.startDateTime + ' ~ ' + dt + '（' + hours + ' 小時）\n\n📝 請輸入請假原因：' }]);
   }
   if (data.startsWith('leave_approve_') || data.startsWith('leave_reject_')) {
     const leaveId = parseInt(data.split('_').pop());

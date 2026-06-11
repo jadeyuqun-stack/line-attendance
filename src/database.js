@@ -6,6 +6,7 @@ const pool = new Pool({
 });
 
 async function initDatabase() {
+  // 員工
   await pool.query(`
     CREATE TABLE IF NOT EXISTS employees (
       id SERIAL PRIMARY KEY,
@@ -19,6 +20,7 @@ async function initDatabase() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // 打卡
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
       id SERIAL PRIMARY KEY,
@@ -28,24 +30,52 @@ async function initDatabase() {
       longitude DOUBLE PRECISION,
       address VARCHAR(500) DEFAULT '',
       photo_url VARCHAR(500) DEFAULT '',
+      in_range BOOLEAN DEFAULT true,
+      distance_meters NUMERIC(10,1) DEFAULT 0,
       check_time TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // 補加舊表缺少的欄位
+  try { await pool.query('ALTER TABLE checkins ADD COLUMN in_range BOOLEAN DEFAULT true'); } catch(e) {}
+  try { await pool.query('ALTER TABLE checkins ADD COLUMN distance_meters NUMERIC(10,1) DEFAULT 0'); } catch(e) {}
+
+  // 請假
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS leave_requests (
+      id SERIAL PRIMARY KEY,
+      employee_id INTEGER REFERENCES employees(id),
+      leave_type VARCHAR(20) NOT NULL,
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      reason TEXT DEFAULT '',
+      status VARCHAR(20) DEFAULT 'pending',
+      approved_by INTEGER REFERENCES employees(id),
+      approved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  // 設定
   await pool.query(`
     CREATE TABLE IF NOT EXISTS settings (
       key VARCHAR(100) PRIMARY KEY,
       value TEXT NOT NULL
     )
   `);
-  await pool.query(
-    "INSERT INTO settings (key, value) VALUES ('company_name', $1) ON CONFLICT DO NOTHING",
-    [process.env.COMPANY_NAME || '公司']
-  );
+  // 預設設定
+  const defaults = [
+    ['company_name', process.env.COMPANY_NAME || '公司'],
+    ['office_lat', ''],
+    ['office_lng', ''],
+    ['gps_range_meters', '200'],
+  ];
+  for (const [k, v] of defaults) {
+    await pool.query("INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT DO NOTHING", [k, v]);
+  }
   console.log('[DB] PostgreSQL 初始化完成');
 }
 
-// Employees
+// =========== Employees ===========
 async function getEmployeeByLineId(uid) {
   const { rows } = await pool.query("SELECT * FROM employees WHERE line_user_id=$1 AND status='active'", [uid]);
   return rows[0] || null;
@@ -60,6 +90,15 @@ async function bindLineUser(no, uid, name) {
     [uid, name, no]
   );
   return rowCount > 0;
+}
+async function updateLineUserId(employeeId, lineUserId) {
+  try {
+    await pool.query("UPDATE employees SET line_user_id=$1, updated_at=NOW() WHERE id=$2", [lineUserId || null, employeeId]);
+    return true;
+  } catch (e) {
+    if (e.code === '23505') return false; // UNIQUE conflict
+    throw e;
+  }
 }
 async function listActiveEmployees() {
   const { rows } = await pool.query("SELECT * FROM employees WHERE status='active' ORDER BY employee_no");
@@ -81,12 +120,14 @@ async function deactivateEmployee(id) {
   await pool.query("UPDATE employees SET status='inactive', updated_at=NOW() WHERE id=$1", [id]);
 }
 
-// Checkins
-async function recordCheckin(empId, type, loc) {
+// =========== Checkins ===========
+async function recordCheckin(empId, type, loc, inRange, dist) {
   const { rows } = await pool.query(
-    `INSERT INTO checkins (employee_id, type, latitude, longitude, address)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id, check_time`,
-    [empId, type, loc ? loc.latitude : null, loc ? loc.longitude : null, loc ? loc.address : null]
+    `INSERT INTO checkins (employee_id, type, latitude, longitude, address, in_range, distance_meters)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, check_time`,
+    [empId, type,
+      loc ? loc.latitude : null, loc ? loc.longitude : null, loc ? loc.address : null,
+      inRange !== false, dist || 0]
   );
   return { id: rows[0].id, check_time: rows[0].check_time, type };
 }
@@ -122,9 +163,62 @@ async function getTodaySummary() {
     not_checked_in: r1[0].total - r2[0].ci
   };
 }
+
+// =========== Settings ===========
 async function getSetting(key) {
   const { rows } = await pool.query('SELECT value FROM settings WHERE key=$1', [key]);
   return rows[0] ? rows[0].value : null;
 }
+async function setSetting(key, value) {
+  await pool.query("INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2", [key, value]);
+}
 
-module.exports = { initDatabase, getEmployeeByLineId, getEmployeeByNo, bindLineUser, listActiveEmployees, createEmployee, deactivateEmployee, recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary, getSetting };
+// =========== Leave ===========
+async function createLeaveRequest(empId, leaveType, startDate, endDate, reason) {
+  const { rows } = await pool.query(
+    `INSERT INTO leave_requests (employee_id, leave_type, start_date, end_date, reason)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [empId, leaveType, startDate, endDate, reason]
+  );
+  return rows[0].id;
+}
+async function getLeaveRequests(status, limit = 100) {
+  let sql = `SELECT lr.*, e.name, e.employee_no, e.department FROM leave_requests lr
+    JOIN employees e ON lr.employee_id=e.id WHERE 1=1`;
+  const p = [];
+  let i = 1;
+  if (status) { sql += ` AND lr.status=$${i++}`; p.push(status); }
+  sql += ` ORDER BY lr.created_at DESC LIMIT $${i++}`;
+  p.push(limit);
+  const { rows } = await pool.query(sql, p);
+  return rows;
+}
+async function updateLeaveStatus(id, status, approvedBy) {
+  await pool.query(
+    "UPDATE leave_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3",
+    [status, approvedBy, id]
+  );
+}
+async function getLeaveById(id) {
+  const { rows } = await pool.query("SELECT * FROM leave_requests WHERE id=$1", [id]);
+  return rows[0] || null;
+}
+async function getEmployeeById(id) {
+  const { rows } = await pool.query("SELECT * FROM employees WHERE id=$1", [id]);
+  return rows[0] || null;
+}
+async function findManager(employeeId) {
+  const { rows } = await pool.query(
+    "SELECT * FROM employees WHERE role IN ('manager','admin') AND status='active' AND line_user_id IS NOT NULL LIMIT 1"
+  );
+  return rows[0] || null;
+}
+
+module.exports = {
+  initDatabase,
+  getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
+  listActiveEmployees, createEmployee, deactivateEmployee,
+  recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
+  getSetting, setSetting,
+  createLeaveRequest, getLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findManager,
+};

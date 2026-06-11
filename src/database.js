@@ -14,12 +14,15 @@ async function initDatabase() {
       name VARCHAR(100) NOT NULL,
       department VARCHAR(100) DEFAULT '',
       line_user_id VARCHAR(100) UNIQUE,
-      role VARCHAR(20) DEFAULT 'employee',
+      role VARCHAR(50) DEFAULT '員工',
+      can_approve BOOLEAN DEFAULT false,
       status VARCHAR(20) DEFAULT 'active',
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // 補加舊表欄位
+  try { await pool.query('ALTER TABLE employees ADD COLUMN can_approve BOOLEAN DEFAULT false'); } catch(e) {}
   // 打卡
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
@@ -104,11 +107,11 @@ async function listActiveEmployees() {
   const { rows } = await pool.query("SELECT * FROM employees WHERE status='active' ORDER BY employee_no");
   return rows;
 }
-async function createEmployee(no, name, dept, role) {
+async function createEmployee(no, name, dept, role, canApprove) {
   try {
     const { rows } = await pool.query(
-      'INSERT INTO employees (employee_no, name, department, role) VALUES ($1,$2,$3,$4) RETURNING id',
-      [no, name, dept || '', role || 'employee']
+      'INSERT INTO employees (employee_no, name, department, role, can_approve) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [no, name, dept || '', role || '員工', canApprove || false]
     );
     return { success: true, id: rows[0].id };
   } catch (e) {
@@ -118,6 +121,22 @@ async function createEmployee(no, name, dept, role) {
 }
 async function deactivateEmployee(id) {
   await pool.query("UPDATE employees SET status='inactive', updated_at=NOW() WHERE id=$1", [id]);
+}
+async function updateEmployee(id, fields) {
+  const allowed = ['name', 'department', 'role', 'can_approve'];
+  const sets = [];
+  const vals = [];
+  let i = 1;
+  for (const k of allowed) {
+    if (fields[k] !== undefined) {
+      sets.push(k + '=$' + i++);
+      vals.push(fields[k]);
+    }
+  }
+  if (sets.length === 0) return;
+  sets.push("updated_at=NOW()");
+  vals.push(id);
+  await pool.query('UPDATE employees SET ' + sets.join(', ') + ' WHERE id=$' + i, vals);
 }
 
 // =========== Checkins ===========
@@ -207,18 +226,18 @@ async function getEmployeeById(id) {
   const { rows } = await pool.query("SELECT * FROM employees WHERE id=$1", [id]);
   return rows[0] || null;
 }
-async function findManager(employeeId) {
+async function findApprovers() {
   const { rows } = await pool.query(
-    "SELECT * FROM employees WHERE role IN ('manager','admin') AND status='active' AND line_user_id IS NOT NULL LIMIT 1"
+    "SELECT * FROM employees WHERE can_approve=true AND status='active' AND line_user_id IS NOT NULL"
   );
-  return rows[0] || null;
+  return rows;
 }
 
 module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
-  listActiveEmployees, createEmployee, deactivateEmployee,
+  listActiveEmployees, createEmployee, deactivateEmployee, updateEmployee,
   recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
   getSetting, setSetting,
-  createLeaveRequest, getLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findManager,
+  createLeaveRequest, getLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers,
 };

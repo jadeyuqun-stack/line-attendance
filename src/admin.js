@@ -61,30 +61,41 @@ router.get('/employees', auth, async (_, res) => {
   const emps = await db.listActiveEmployees();
   let rows = emps.map(e => {
     const lineStatus = e.line_user_id
-      ? '<span style="color:#06c755">✅ ' + e.line_user_id.substring(0, 10) + '...</span>'
+      ? '<span style="color:#06c755">✅ 已綁定</span>'
       : '<span style="color:#e74c3c">❌ 未綁定</span>';
+    const approveBadge = e.can_approve
+      ? '<span style="background:#e6f9ee;color:#06c755;padding:2px 8px;border-radius:10px;font-size:12px">簽核人</span>'
+      : '';
     return `<tr>
       <td>${e.employee_no}</td>
       <td>${e.name}</td>
-      <td>${e.department||''}</td>
-      <td>${e.role}</td>
+      <td><span class="editable" onclick="editField(${e.id},'department','${esc(e.department)}')">${e.department||'點此設定'}</span></td>
+      <td><span class="editable" onclick="editField(${e.id},'role','${esc(e.role||'員工')}')">${e.role||'員工'}</span></td>
       <td>${lineStatus}</td>
       <td>
-        <button onclick="editLine(${e.id},'${e.name}','${e.line_user_id||''}')" style="background:#3498db;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;margin-right:4px">綁定 LINE</button>
-        <button onclick="deactivate(${e.id},'${e.name}')" style="background:#e74c3c;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer">停用</button>
+        <button onclick="toggleApprove(${e.id},${e.can_approve})" style="background:${e.can_approve?'#06c755':'#ddd'};color:${e.can_approve?'#fff':'#666'};border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px">${e.can_approve?'✓ 可簽核':'設為簽核人'}</button>
+        ${approveBadge}
+      </td>
+      <td>
+        <button onclick="editLine(${e.id},'${e.name}','${e.line_user_id||''}')" style="background:#3498db;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;margin-right:4px;font-size:12px">綁定 LINE</button>
+        <button onclick="deactivate(${e.id},'${e.name}')" style="background:#e74c3c;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px">停用</button>
       </td></tr>`;
   }).join('');
 
   res.send(page('員工管理', `
     <div class="card"><h3>新增員工</h3>
-      <form id="f" style="display:flex;gap:8px;flex-wrap:wrap">
-        <input id="no" placeholder="員工編號" required style="width:auto"><input id="name" placeholder="姓名" required style="width:auto">
-        <input id="dept" placeholder="部門" style="width:auto"><button type="submit" class="btn">新增</button>
+      <form id="f" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+        <div><label>員工編號</label><input id="no" required style="width:120px"></div>
+        <div><label>姓名</label><input id="name" required style="width:120px"></div>
+        <div><label>部門</label><input id="dept" style="width:100px"></div>
+        <div><label>角色名稱</label><input id="role" placeholder="例如：主管、人資" style="width:120px"></div>
+        <div style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="canApprove" style="width:auto;margin:0"><label for="canApprove" style="margin:0;font-size:13px">設為簽核人</label></div>
+        <button type="submit" class="btn">新增</button>
       </form>
     </div>
     <div class="card">
       <h3>員工列表</h3>
-      <table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>LINE 綁定</th><th>操作</th></tr>${rows||'<tr><td colspan="6">無員工</td></tr>'}</table>
+      <table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>LINE</th><th>簽核</th><th>操作</th></tr>${rows||'<tr><td colspan="7">無員工</td></tr>'}</table>
     </div>
     <div id="modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;justify-content:center;align-items:center">
       <div style="background:#fff;padding:24px;border-radius:12px;width:90%;max-width:420px">
@@ -117,10 +128,27 @@ router.get('/employees', auth, async (_, res) => {
       }
       document.getElementById('f').onsubmit = async e => {
         e.preventDefault();
-        const r = await fetch('/admin/api/employees', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({employee_no:document.getElementById('no').value,name:document.getElementById('name').value,department:document.getElementById('dept').value})});
+        const r = await fetch('/admin/api/employees', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          employee_no:document.getElementById('no').value,
+          name:document.getElementById('name').value,
+          department:document.getElementById('dept').value,
+          role:document.getElementById('role').value || '員工',
+          can_approve:document.getElementById('canApprove').checked
+        })});
         const j = await r.json();
         j.success ? location.reload() : alert(j.error);
       };
+      async function toggleApprove(id, current) {
+        await fetch('/admin/api/employees/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({can_approve:!current})});
+        location.reload();
+      }
+      async function editField(id, field, current) {
+        const val = prompt('修改 ' + field + '：', current);
+        if (val === null) return;
+        const body = {}; body[field] = val;
+        await fetch('/admin/api/employees/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        location.reload();
+      }
       async function deactivate(id, name) {
         if (!confirm('確定停用 ' + name + '？')) return;
         await fetch('/admin/api/employees/' + id + '/deactivate', {method:'PUT'});
@@ -130,10 +158,15 @@ router.get('/employees', auth, async (_, res) => {
 });
 
 router.post('/api/employees', auth, express.json(), async (req, res) => {
-  const { employee_no, name, department, role } = req.body;
+  const { employee_no, name, department, role, can_approve } = req.body;
   if (!employee_no || !name) return res.status(400).json({ error: '必填' });
-  const r = await db.createEmployee(employee_no, name, department, role);
+  const r = await db.createEmployee(employee_no, name, department, role, can_approve);
   r.success ? res.json(r) : res.status(400).json(r);
+});
+
+router.put('/api/employees/:id', auth, express.json(), async (req, res) => {
+  await db.updateEmployee(parseInt(req.params.id), req.body);
+  res.json({ success: true });
 });
 
 router.put('/api/employees/:id/deactivate', auth, async (req, res) => {
@@ -192,8 +225,12 @@ router.post('/api/settings', auth, express.json(), async (req, res) => {
 });
 
 // =========== 共用 ===========
+function esc(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
 function page(title, body) {
-  return `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#f0f2f5;min-height:100vh;padding:24px}body>a{color:#06c755;text-decoration:none;margin-right:12px}.card{background:#fff;padding:20px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px}.card .n{font-size:32px;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.bar{background:#eee;border-radius:8px;height:20px;overflow:hidden}.bar div{height:100%;background:#06c755;border-radius:8px}table{width:100%;border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid #f0f0f0;font-size:14px}th{background:#fafafa}.btn{padding:10px 18px;background:#06c755;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;text-decoration:none;display:inline-block;margin:4px}input,select{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;width:100%;margin-bottom:12px}h2{margin-bottom:8px}label{display:block;margin-bottom:4px;font-weight:600;font-size:13px;color:#666}@media(max-width:768px){.grid{grid-template-columns:repeat(2,1fr)}}</style></head><body>${body}</body></html>`;
+  return `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#f0f2f5;min-height:100vh;padding:24px}body>a{color:#06c755;text-decoration:none;margin-right:12px}.card{background:#fff;padding:20px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px}.card .n{font-size:32px;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.bar{background:#eee;border-radius:8px;height:20px;overflow:hidden}.bar div{height:100%;background:#06c755;border-radius:8px}table{width:100%;border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid #f0f0f0;font-size:14px}th{background:#fafafa}.btn{padding:10px 18px;background:#06c755;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;text-decoration:none;display:inline-block;margin:4px}input,select{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;width:100%;margin-bottom:12px}h2{margin-bottom:8px}label{display:block;margin-bottom:4px;font-weight:600;font-size:13px;color:#666}.editable{cursor:pointer;border-bottom:1px dashed #aaa}.editable:hover{color:#06c755}@media(max-width:768px){.grid{grid-template-columns:repeat(2,1fr)}}</style></head><body>${body}</body></html>`;
 }
 
 module.exports = router;

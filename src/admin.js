@@ -172,8 +172,8 @@ router.get('/records', auth, async (req, res) => {
   if (keys.length === 0) rows = '<tr><td colspan="7">當日無打卡記錄</td></tr>';
   else for (var k = 0; k < keys.length; k++) {
     var d2 = empMap[keys[k]], e = d2.emp;
-    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 '+fmt(d2.checkIn.check_time)+'</span>'+(d2.checkIn.address?'<br><small style="color:#999">📍 '+h(d2.checkIn.address)+'</small>':'') : '<span style="color:#ccc">--:--</span>';
-    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 '+fmt(d2.checkOut.check_time)+'</span>'+(d2.checkOut.address?'<br><small style="color:#999">📍 '+h(d2.checkOut.address)+'</small>':'') : '<span style="color:#ccc">--:--</span>';
+    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 '+fmt(d2.checkIn.check_time)+'</span>'+(d2.checkIn.address?'<br><small style="color:#999">📍 '+h(d2.checkIn.address)+'</small>':'')+(d2.checkIn.in_range===false?' <span class="badge badge-warn">⚠️超出'+(d2.checkIn.distance_meters||0)+'m</span>':'') : '<span style="color:#ccc">--:--</span>';
+    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 '+fmt(d2.checkOut.check_time)+'</span>'+(d2.checkOut.address?'<br><small style="color:#999">📍 '+h(d2.checkOut.address)+'</small>':'')+(d2.checkOut.in_range===false?' <span class="badge badge-warn">⚠️超出'+(d2.checkOut.distance_meters||0)+'m</span>':'') : '<span style="color:#ccc">--:--</span>';
     var hours = '-', workH = 0;
     if (d2.checkIn && d2.checkOut) {
       var ci = new Date(d2.checkIn.check_time), co = new Date(d2.checkOut.check_time);

@@ -3,9 +3,8 @@ const states = new Map();
 
 const GPS_BUTTONS = {
   items: [
-    { type: 'action', action: { type: 'location', label: '📍 傳送位置打卡' } },
-    { type: 'action', action: { type: 'message', label: '上班(無GPS)', text: '上班' } },
-    { type: 'action', action: { type: 'message', label: '下班(無GPS)', text: '下班' } },
+    { type: 'action', action: { type: 'location', label: '📍 上班打卡' } },
+    { type: 'action', action: { type: 'location', label: '📍 下班打卡' } },
     { type: 'action', action: { type: 'message', label: '📋 查詢', text: '查詢' } },
     { type: 'action', action: { type: 'message', label: '🏖 請假', text: '請假' } },
     { type: 'action', action: { type: 'message', label: '🆔 我的ID', text: '我的ID' } },

@@ -36,7 +36,7 @@ async function handleEvents(events, client) {
       }
       if (evt.type === 'message' && evt.message) {
         if (evt.message.type === 'text') await handleText(evt.message.text, uid, client, evt.replyToken);
-        else if (evt.message.type === 'location') await handleLocation(evt.message, uid, client, evt.replyToken);
+        else if (evt.message.type === 'location') { console.log('[bot] location msg:', evt.message.latitude, evt.message.longitude, evt.message.address || 'no-addr'); await handleLocation(evt.message, uid, client, evt.replyToken); }
       }
       if (evt.type === 'postback') await handlePostback(evt.postback, uid, client, evt.replyToken);
     } catch (e) { console.error('[bot] error:', e.message, e.originalError && e.originalError.response && e.originalError.response.data ? JSON.stringify(e.originalError.response.data) : ''); }
@@ -66,8 +66,8 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
   if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消操作。')]); }
   if (states.has(uid)) return handleLeaveFlow(cmd, uid, client, replyToken, emp);
-  if (cmd.includes('上班')) return doCheckIn(emp, client, replyToken);
-  if (cmd.includes('下班')) return doCheckOut(emp, client, replyToken);
+  if (cmd.includes('上班')) { states.delete(uid); return doCheckIn(emp, client, replyToken); }
+  if (cmd.includes('下班')) { states.delete(uid); return doCheckOut(emp, client, replyToken); }
   if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken);
   if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 功能選單\n\n📍 傳送位置 → GPS 打卡\n💬「上班」「下班」→ 打卡\n📋「查詢」→ 記錄\n🏖「請假」→ 請假申請\n🆔「我的ID」→ LINE ID')]);
   return client.replyMessage(replyToken, [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 我的ID')]);

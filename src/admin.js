@@ -341,6 +341,7 @@ router.get('/leaves', auth, async (req, res) => {
   // 員工篩選
   var opts = '<option value="">全部員工</option>';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'"'+(filterEid===emps[j].id?' selected':'')+'>'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
+  var filterBar = '<div class="card"><form class="inline" method="GET"><div><label>員工篩選</label><select name="eid">'+opts+'</select></div><div><label>狀態</label><select name="status"><option value=""'+(status===''?' selected':'')+'>全部</option><option value="pending"'+(status==='pending'?' selected':'')+'>待審核</option><option value="approved"'+(status==='approved'?' selected':'')+'>已核准</option><option value="rejected"'+(status==='rejected'?' selected':'')+'>已駁回</option></select></div><button class="btn">篩選</button></form></div>';
   var body = filterBar + '<div class="card" style="display:flex;gap:16px;padding:16px"><div><span style="font-size:24px;font-weight:700">'+companyMonth+'h</span><br><span style="color:#999;font-size:12px">全公司本月</span></div><div><span style="font-size:24px;font-weight:700">'+companyTotal+'h</span><br><span style="color:#999;font-size:12px">全公司累計</span></div></div>' + personSummary
     + '<div class="tabs">'
     + '<a href="?status=" class="'+(status===''?'active':'')+'">全部</a>'

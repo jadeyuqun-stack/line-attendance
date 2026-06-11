@@ -48,6 +48,16 @@ async function main() {
 
   app.use('/admin', admin);
 
+  // Rich Menu 設定（一次性）
+  app.get('/admin/setup-richmenu', async (_, res) => {
+    try {
+      const id = await bot.setupRichMenu();
+      res.json(id ? { success: true, richMenuId: id } : { error: '失敗，請看 Render logs' });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.listen(PORT, () => console.log(`[Server] http://localhost:${PORT}`));
 }
 

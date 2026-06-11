@@ -13,6 +13,12 @@ const MENU_BUTTONS = {
 };
 
 function withMenu(text) { return { type: 'text', text: text, quickReply: MENU_BUTTONS }; }
+// 文字 + 選單 + 日期時間選擇器（保留選單按鈕）
+function withDatePicker(text, data) {
+  var items = MENU_BUTTONS.items.slice();
+  items.push({ type: 'action', action: { type: 'datetimepicker', label: '📅 選日期時間', data: data, mode: 'datetime' } });
+  return { type: 'text', text: text, quickReply: { items: items } };
+}
 
 async function handleEvents(events, client) {
   for (const evt of events) {
@@ -134,43 +140,52 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
 
 // ===== Query Flex =====
 async function doQuery(emp, client, replyToken) {
-  const records = await db.getTodayCheckins(emp.id);
-  if (records.length === 0) {
-    return client.replyMessage(replyToken, [withMenu('📋 ' + emp.name + '\n今日尚無打卡記錄\n\n📍 傳送位置訊息開始打卡')]);
-  }
+  var now = new Date();
+  var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+
+  // 打卡記錄
+  var records = await db.getTodayCheckins(emp.id);
+  // 請假記錄
+  var myLeaves = await db.getEmployeeLeaveRequests(emp.id, null, 50);
 
   var contents = [
-    { type: 'text', text: '📋 今日打卡記錄', weight: 'bold', size: 'lg', color: '#06c755' },
-    { type: 'text', text: '👤 ' + emp.name + '  ' + emp.employee_no, margin: 'md', size: 'sm', color: '#666666' },
+    { type: 'text', text: '📋 ' + emp.name + ' 今日概況', weight: 'bold', size: 'lg', color: '#06c755' },
   ];
 
-  const checkIn = records.find(r => r.type === 'check_in');
-  const checkOut = records.find(r => r.type === 'check_out');
-
-  if (checkIn) {
-    var inText = '🔵 上班：' + fmt(new Date(checkIn.check_time));
-    if (checkIn.address) inText += '\n   📍 ' + checkIn.address;
-    if (checkIn.in_range === false) inText += ' ⚠️超出範圍';
-    contents.push({ type: 'text', text: inText, margin: 'md', size: 'sm', wrap: true });
-  }
-  if (checkOut) {
-    var outText = '🔴 下班：' + fmt(new Date(checkOut.check_time));
-    if (checkOut.address) outText += '\n   📍 ' + checkOut.address;
-    if (checkOut.in_range === false) outText += ' ⚠️超出範圍';
-    contents.push({ type: 'text', text: outText, margin: 'sm', size: 'sm', wrap: true });
-  }
-
+  // 打卡區
+  var checkIn = records.find(r => r.type === 'check_in');
+  var checkOut = records.find(r => r.type === 'check_out');
+  var punchText = '🔵 上班：' + (checkIn ? fmt(new Date(checkIn.check_time)) : '--:--');
+  if (checkIn && checkIn.address) punchText += '\n   📍' + checkIn.address;
+  punchText += '\n🔴 下班：' + (checkOut ? fmt(new Date(checkOut.check_time)) : '--:--');
+  if (checkOut && checkOut.address) punchText += '\n   📍' + checkOut.address;
   if (checkIn && checkOut) {
-    const ci = new Date(checkIn.check_time), co = new Date(checkOut.check_time);
-    const workH = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
-    var statusText = '📊 工時：' + workH + ' 小時';
-    if (workH < 9) statusText += ' ⚠️不足9h';
+    var workH = Math.round(Math.max(0, (new Date(checkOut.check_time) - new Date(checkIn.check_time)) / 3600000) * 10) / 10;
+    punchText += '\n📊 ' + workH + 'h' + (workH < 9 ? ' ⚠️不足9h' : '');
+  }
+  contents.push({ type: 'text', text: punchText, margin: 'md', size: 'sm', wrap: true });
+
+  // 請假區
+  var leaves = myLeaves.filter(function(l) { return l.start_date && l.start_date.indexOf(thisMonth) === 0; });
+  var monthHours = 0, totalHours = 0;
+  for (var i = 0; i < myLeaves.length; i++) {
+    var l = myLeaves[i];
+    if (l.status !== 'approved') continue;
+    var diff = new Date(l.end_date || l.start_date) - new Date(l.start_date);
+    var h2 = Math.max(1, Math.ceil(Math.max(0, diff) / 3600000)); // 至少 1h
+    if (l.start_date && l.start_date.indexOf(thisMonth) === 0) monthHours += h2;
+    totalHours += h2;
+  }
+  if (myLeaves.length > 0) {
     contents.push({ type: 'separator', margin: 'md' });
-    contents.push({ type: 'text', text: statusText, margin: 'md', size: 'sm', weight: 'bold', color: workH >= 9 ? '#06c755' : '#e74c3c' });
+    var leaveText = '🏖 本月請假：' + monthHours + ' 小時（已核准）\n📅 累計請假：' + totalHours + ' 小時';
+    var pendingCount = myLeaves.filter(function(l) { return l.status === 'pending'; }).length;
+    if (pendingCount > 0) leaveText += '\n⏳ 待審核：' + pendingCount + ' 筆';
+    contents.push({ type: 'text', text: leaveText, margin: 'md', size: 'sm', color: '#f39c12', wrap: true });
   }
 
   contents.push({ type: 'separator', margin: 'md' });
-  contents.push({ type: 'text', text: '⏰ 上班 ' + (await db.getSetting('work_start_hour') || '8') + ':00 │ 下班 ' + (await db.getSetting('work_end_hour') || '17') + ':00 │ 需滿9h', size: 'xs', color: '#aaaaaa', margin: 'md' });
+  contents.push({ type: 'text', text: '💡 輸入「請假」申請 │ 點下方選單操作', size: 'xs', color: '#aaaaaa', margin: 'md' });
 
   return client.replyMessage(replyToken, [{
     type: 'flex', altText: '📋 今日打卡記錄',
@@ -205,12 +220,9 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
   if (state.step === 'type') {
     if (text === '取消') { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消請假。')]); }
     const type = LEAVE_TYPES[text];
-    if (!type) return client.replyMessage(replyToken, [{ type: 'text', text: '請選擇假別，或點「取消」退出' }]);
+    if (!type) return client.replyMessage(replyToken, [withMenu('請選擇假別，或點「取消」退出')]);
     state.type = type; state.typeLabel = text; state.step = 'start_date';
-    return client.replyMessage(replyToken, [{
-      type: 'template', altText: '請選擇開始日期時間',
-      template: { type: 'buttons', text: '📅 請選擇「開始日期時間」', actions: [{ type: 'datetimepicker', label: '選擇時間', data: 'leave_start', mode: 'datetime' }] }
-    }]);
+    return client.replyMessage(replyToken, [withDatePicker('🏖 請假：選擇「開始日期時間」\n\n選日期時間後請點「傳送」', 'leave_start')]);
   }
   if (state.step === 'reason') {
     state.reason = text;
@@ -273,10 +285,7 @@ async function handlePostback(postback, uid, client, replyToken) {
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
     if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
     state.startDateTime = dt; state.step = 'end_date';
-    return client.replyMessage(replyToken, [{
-      type: 'template', altText: '請選擇結束日期時間',
-      template: { type: 'buttons', text: '📅 開始：' + dt + '\n請選擇「結束日期時間」', actions: [{ type: 'datetimepicker', label: '選擇時間', data: 'leave_end', mode: 'datetime' }] }
-    }]);
+    return client.replyMessage(replyToken, [withDatePicker('📅 開始：' + dt + '\n\n請選擇「結束日期時間」', 'leave_end')]);
   }
   if (data === 'leave_end') {
     var state = states.get(uid);
@@ -286,12 +295,12 @@ async function handlePostback(postback, uid, client, replyToken) {
     state.endDateTime = dt; state.step = 'reason';
     var st = new Date(state.startDateTime), et2 = new Date(dt);
     var hours = ceilHours(et2 - st);
-    return client.replyMessage(replyToken, [{ type: 'text', text: '📅 ' + state.startDateTime + ' ~ ' + dt + '（' + hours + ' 小時）\n\n📝 請輸入請假原因：' }]);
+    return client.replyMessage(replyToken, [withMenu('📅 ' + state.startDateTime + ' ~ ' + dt + '（' + hours + ' 小時）\n\n📝 請輸入請假原因：')]);
   }
   if (data.startsWith('leave_approve_') || data.startsWith('leave_reject_')) {
     const leaveId = parseInt(data.split('_').pop());
     const mgr = await db.getEmployeeByLineId(uid);
-    if (!mgr || !mgr.can_approve) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 無簽核權限' }]);
+    if (!mgr || !mgr.can_approve) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
     const leave = await db.getLeaveById(leaveId);
     if (!leave || leave.status !== 'pending') return client.replyMessage(replyToken, [{ type: 'text', text: '申請已處理過' }]);
 
@@ -308,7 +317,7 @@ async function handlePostback(postback, uid, client, replyToken) {
           ]}}
         }]);
       }
-      return client.replyMessage(replyToken, [{ type: 'text', text: '✅ 已核准' }]);
+      return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
       await db.updateLeaveStatus(leaveId, 'rejected', mgr.id);
       const e = await db.getEmployeeById(leave.employee_id);
@@ -322,7 +331,7 @@ async function handlePostback(postback, uid, client, replyToken) {
           ]}}
         }]);
       }
-      return client.replyMessage(replyToken, [{ type: 'text', text: '已駁回' }]);
+      return client.replyMessage(replyToken, [withMenu('已駁回')]);
     }
   }
 }

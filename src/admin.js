@@ -295,15 +295,28 @@ router.get('/leaves', auth, async (req, res) => {
     }
     var leaveTime = l.start_date;
     if (l.end_date) leaveTime += ' ~ ' + l.end_date;
-    rows += '<tr><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+'</td><td>'+actionHtml+'</td></tr>';
+    var hours = 0;
+    try { var diff = new Date(l.end_date||l.start_date) - new Date(l.start_date); hours = Math.max(1, Math.ceil(Math.max(0, diff) / 3600000)); } catch(e) {}
+    rows += '<tr><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+'</td><td>'+actionHtml+'</td></tr>';
   }
-  var body = '<div class="tabs">'
+  // 計算月/總時數
+  var monthHours = 0, totalHours = 0;
+  for (var i = 0; i < leaves.length; i++) {
+    var l = leaves[i];
+    if (l.status !== 'approved') continue;
+    try { var diff = new Date(l.end_date||l.start_date) - new Date(l.start_date); var h2 = Math.max(1, Math.ceil(Math.max(0, diff)/3600000)); } catch(e) { var h2 = 0; }
+    totalHours += h2;
+    var isThisMonth = (new Date().getMonth()+1+''+new Date().getFullYear()) === ((new Date(l.start_date).getMonth()+1)+''+new Date(l.start_date).getFullYear());
+    if (isThisMonth) monthHours += h2;
+  }
+  var body = '<div class="card" style="display:flex;gap:16px;padding:16px"><div><span style="font-size:24px;font-weight:700">'+monthHours+'h</span><br><span style="color:#999;font-size:12px">本月已核准</span></div><div><span style="font-size:24px;font-weight:700">'+totalHours+'h</span><br><span style="color:#999;font-size:12px">累計已核准</span></div></div>'
+    + '<div class="tabs">'
     + '<a href="?status=" class="'+(status===''?'active':'')+'">全部</a>'
     + '<a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a>'
     + '<a href="?status=approved" class="'+(status==='approved'?'active':'')+'">✅ 已核准</a>'
     + '<a href="?status=rejected" class="'+(status==='rejected'?'active':'')+'">❌ 已駁回</a>'
     + '</div>'
-    + '<div class="card"><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="8">無請假記錄</td></tr>')+'</table></div>'
+    + '<div class="card"><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期時間</th><th>時數</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="9">無請假記錄</td></tr>')+'</table></div>'
     + '<script>async function approveLeave(id){await fetch("/admin/api/leaves/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectLeave(id){await fetch("/admin/api/leaves/"+id+"/reject",{method:"PUT"});location.reload();}</script>';
   res.send(layout('請假管理', '請假管理', body));
 });

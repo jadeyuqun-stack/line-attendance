@@ -238,6 +238,17 @@ async function createLeaveRequest(empId, leaveType, startDate, endDate, reason) 
   );
   return rows[0].id;
 }
+async function getEmployeeLeaveRequests(employeeId, status, limit = 100) {
+  var sql = `SELECT lr.*, e.name, e.employee_no, e.department FROM leave_requests lr
+    JOIN employees e ON lr.employee_id=e.id WHERE lr.employee_id=$1`;
+  var p = [employeeId];
+  var i = 2;
+  if (status) { sql += ' AND lr.status=$' + i++; p.push(status); }
+  sql += ' ORDER BY lr.created_at DESC LIMIT $' + i; p.push(limit);
+  var { rows } = await pool.query(sql, p);
+  return rows;
+}
+
 async function getLeaveRequests(status, limit = 100) {
   let sql = `SELECT lr.*, e.name, e.employee_no, e.department FROM leave_requests lr
     JOIN employees e ON lr.employee_id=e.id WHERE 1=1`;
@@ -299,5 +310,5 @@ module.exports = {
   listActiveEmployees, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, hardDeleteEmployee, updateEmployee,
   recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
   getSetting, setSetting,
-  createLeaveRequest, getLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,
+  createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,
 };

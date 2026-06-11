@@ -59,6 +59,11 @@ router.get('/records', auth, async (req, res) => {
 // =========== 員工管理（含 LINE ID 綁定）==========
 router.get('/employees', auth, async (_, res) => {
   const emps = await db.listActiveEmployees();
+  const approvers = await db.listApprovers();
+  const approverOpts = '<option value="">無（預設）</option>' + approvers.map(a =>
+    '<option value="' + a.id + '">' + a.name + '（' + a.employee_no + '）</option>'
+  ).join('');
+
   let rows = emps.map(e => {
     const lineStatus = e.line_user_id
       ? '<span style="color:#06c755">✅ 已綁定</span>'
@@ -77,8 +82,14 @@ router.get('/employees', auth, async (_, res) => {
         ${approveBadge}
       </td>
       <td>
-        <button onclick="editLine(${e.id},'${e.name}','${e.line_user_id||''}')" style="background:#3498db;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;margin-right:4px;font-size:12px">綁定 LINE</button>
-        <button onclick="deactivate(${e.id},'${e.name}')" style="background:#e74c3c;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px">停用</button>
+        <select onchange="setApprover(${e.id},this.value)" style="width:auto;padding:2px;font-size:11px;border:1px solid #ddd;border-radius:4px">
+          <option value="">未指定</option>
+          ${approvers.filter(a => a.id !== e.id).map(a => '<option value="' + a.id + '"' + (e.approver_id == a.id ? ' selected' : '') + '>' + a.name + '</option>').join('')}
+        </select>
+      </td>
+      <td>
+        <button onclick="editLine(${e.id},'${e.name}','${e.line_user_id||''}')" style="background:#3498db;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;margin-right:2px;font-size:11px">LINE</button>
+        <button onclick="removeEmp(${e.id},'${e.name}')" style="background:#e74c3c;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px">刪除</button>
       </td></tr>`;
   }).join('');
 
@@ -95,7 +106,7 @@ router.get('/employees', auth, async (_, res) => {
     </div>
     <div class="card">
       <h3>員工列表</h3>
-      <table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>LINE</th><th>簽核</th><th>操作</th></tr>${rows||'<tr><td colspan="7">無員工</td></tr>'}</table>
+      <table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>LINE</th><th>簽核</th><th>指定簽核人</th><th>操作</th></tr>${rows||'<tr><td colspan="8">無員工</td></tr>'}</table>
     </div>
     <div id="modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;justify-content:center;align-items:center">
       <div style="background:#fff;padding:24px;border-radius:12px;width:90%;max-width:420px">
@@ -149,9 +160,12 @@ router.get('/employees', auth, async (_, res) => {
         await fetch('/admin/api/employees/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
         location.reload();
       }
-      async function deactivate(id, name) {
-        if (!confirm('確定停用 ' + name + '？')) return;
-        await fetch('/admin/api/employees/' + id + '/deactivate', {method:'PUT'});
+      async function setApprover(id, approverId) {
+        await fetch('/admin/api/employees/'+id+'/approver', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({approver_id:approverId||null})});
+      }
+      async function removeEmp(id, name) {
+        if (!confirm('確定刪除 ' + name + '？\n\n此操作將永久刪除該員工的所有打卡記錄，無法復原！')) return;
+        await fetch('/admin/api/employees/'+id, {method:'DELETE'});
         location.reload();
       }
     </script>`));
@@ -169,8 +183,13 @@ router.put('/api/employees/:id', auth, express.json(), async (req, res) => {
   res.json({ success: true });
 });
 
-router.put('/api/employees/:id/deactivate', auth, async (req, res) => {
-  await db.deactivateEmployee(parseInt(req.params.id));
+router.delete('/api/employees/:id', auth, async (req, res) => {
+  await db.deleteEmployee(parseInt(req.params.id));
+  res.json({ success: true });
+});
+
+router.put('/api/employees/:id/approver', auth, express.json(), async (req, res) => {
+  await db.setApprover(parseInt(req.params.id), req.body.approver_id || null);
   res.json({ success: true });
 });
 

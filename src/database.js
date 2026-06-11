@@ -23,6 +23,7 @@ async function initDatabase() {
   `);
   // 補加舊表欄位
   try { await pool.query('ALTER TABLE employees ADD COLUMN can_approve BOOLEAN DEFAULT false'); } catch(e) {}
+  try { await pool.query('ALTER TABLE employees ADD COLUMN approver_id INTEGER REFERENCES employees(id)'); } catch(e) {}
   // 打卡
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
@@ -119,8 +120,10 @@ async function createEmployee(no, name, dept, role, canApprove) {
     throw e;
   }
 }
-async function deactivateEmployee(id) {
-  await pool.query("UPDATE employees SET status='inactive', updated_at=NOW() WHERE id=$1", [id]);
+async function deleteEmployee(id) {
+  await pool.query('DELETE FROM leave_requests WHERE employee_id=$1', [id]);
+  await pool.query('DELETE FROM checkins WHERE employee_id=$1', [id]);
+  await pool.query('DELETE FROM employees WHERE id=$1', [id]);
 }
 async function updateEmployee(id, fields) {
   const allowed = ['name', 'department', 'role', 'can_approve'];
@@ -226,9 +229,31 @@ async function getEmployeeById(id) {
   const { rows } = await pool.query("SELECT * FROM employees WHERE id=$1", [id]);
   return rows[0] || null;
 }
-async function findApprovers() {
+async function findApprovers(forEmployeeId) {
+  // 先找該員工指定的簽核人
+  if (forEmployeeId) {
+    const emp = await getEmployeeById(forEmployeeId);
+    if (emp && emp.approver_id) {
+      const { rows } = await pool.query(
+        "SELECT * FROM employees WHERE id=$1 AND status='active' AND line_user_id IS NOT NULL",
+        [emp.approver_id]
+      );
+      if (rows.length > 0) return rows;
+    }
+  }
+  // 沒有指定 → 找所有 can_approve 的人
   const { rows } = await pool.query(
     "SELECT * FROM employees WHERE can_approve=true AND status='active' AND line_user_id IS NOT NULL"
+  );
+  return rows;
+}
+async function setApprover(employeeId, approverId) {
+  await pool.query('UPDATE employees SET approver_id=$1 WHERE id=$2',
+    [approverId || null, employeeId]);
+}
+async function listApprovers() {
+  const { rows } = await pool.query(
+    "SELECT id, name, employee_no FROM employees WHERE can_approve=true AND status='active' ORDER BY employee_no"
   );
   return rows;
 }
@@ -236,8 +261,8 @@ async function findApprovers() {
 module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
-  listActiveEmployees, createEmployee, deactivateEmployee, updateEmployee,
+  listActiveEmployees, createEmployee, deleteEmployee, updateEmployee,
   recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
   getSetting, setSetting,
-  createLeaveRequest, getLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers,
+  createLeaveRequest, getLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,
 };

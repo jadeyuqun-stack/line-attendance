@@ -67,6 +67,10 @@ async function handleText(text, uid, client, replyToken) {
     return client.replyMessage(replyToken, [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
+  if (cmd === '取消' && states.has(uid)) {
+    states.delete(uid);
+    return client.replyMessage(replyToken, [withMenu('已取消操作。')]);
+  }
   if (states.has(uid)) return handleLeaveFlow(cmd, uid, client, replyToken, emp);
   if (cmd.includes('上班')) return doCheckIn(emp, client, replyToken);
   if (cmd.includes('下班')) return doCheckOut(emp, client, replyToken);
@@ -88,6 +92,7 @@ async function startLeaveFlow(uid, client, replyToken) {
         { type: 'action', action: { type: 'message', label: '事假', text: '事假' } },
         { type: 'action', action: { type: 'message', label: '病假', text: '病假' } },
         { type: 'action', action: { type: 'message', label: '公假', text: '公假' } },
+        { type: 'action', action: { type: 'message', label: '取消', text: '取消' } },
       ]
     }
   }]);
@@ -97,8 +102,9 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
   const state = states.get(uid);
 
   if (state.step === 'type') {
+    if (text === '取消') { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消請假。')]); }
     const type = LEAVE_TYPES[text];
-    if (!type) return client.replyMessage(replyToken, [{ type: 'text', text: '請選擇假別：特休 / 事假 / 病假 / 公假' }]);
+    if (!type) return client.replyMessage(replyToken, [{ type: 'text', text: '請選擇假別，或點「取消」退出' }]);
     state.type = type;
     state.typeLabel = text;
     state.step = 'start_date';
@@ -118,7 +124,7 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
       const leaveId = await db.createLeaveRequest(emp.id, state.type, state.startDate, state.endDate, state.reason);
       states.delete(uid);
 
-      const approvers = await db.findApprovers();
+      const approvers = await db.findApprovers(emp.id);
       if (approvers.length > 0) {
         const days = Math.ceil((new Date(state.endDate) - new Date(state.startDate)) / 86400000) + 1;
         for (const approver of approvers) {

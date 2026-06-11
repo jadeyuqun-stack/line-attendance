@@ -282,14 +282,26 @@ router.get('/employees', auth, async (_, res) => {
 // ===== 請假管理 =====
 router.get('/leaves', auth, async (req, res) => {
   var status = req.query.status || '';
+  var filterEid = req.query.eid ? parseInt(req.query.eid) : null;
   var leaves = await db.getLeaveRequests(status, 200);
+  var emps = await db.listActiveEmployees();
   var now = new Date();
   var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var rows = '';
-  var monthHours = 0, totalHours = 0;
+  var companyMonth = 0, companyTotal = 0;
+  // 個人時數彙整
+  var personMap = {};
+  function calcLeaveHours(s, e) {
+    var diff = new Date(e||s) - new Date(s);
+    if (diff <= 0) return 0;
+    var raw = Math.ceil(diff / 3600000);
+    var days = Math.ceil(diff / 86400000);
+    return Math.min(raw, days * 8);
+  }
   function sd(d) { return typeof d === 'string' ? d : (d ? d.toISOString().split('T')[0] : ''); }
   for (var i = 0; i < leaves.length; i++) {
     var l = leaves[i];
+    if (filterEid && l.employee_id !== filterEid) continue;
     var statusBadge = l.status === 'pending' ? '<span class="badge badge-warn">待審核</span>'
       : l.status === 'approved' ? '<span class="badge badge-in">已核准</span>'
       : '<span class="badge badge-out">已駁回</span>';
@@ -301,15 +313,31 @@ router.get('/leaves', auth, async (req, res) => {
     var endStr = sd(l.end_date);
     var leaveTime = startStr;
     if (endStr) leaveTime += ' ~ ' + endStr;
-    var hours = 0;
-    try { var diff = new Date(endStr||startStr) - new Date(startStr); hours = Math.max(1, Math.ceil(Math.max(0, diff) / 3600000)); } catch(e) {}
+    var hours = calcLeaveHours(startStr, endStr);
     if (l.status === 'approved') {
-      totalHours += hours;
-      if (startStr && startStr.indexOf(thisMonth) === 0) monthHours += hours;
+      companyTotal += hours;
+      if (startStr && startStr.indexOf(thisMonth) === 0) companyMonth += hours;
+      // 個人累計
+      if (!personMap[l.employee_no]) personMap[l.employee_no] = { name: l.name, month: 0, total: 0 };
+      personMap[l.employee_no].total += hours;
+      if (startStr && startStr.indexOf(thisMonth) === 0) personMap[l.employee_no].month += hours;
     }
     rows += '<tr><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+'</td><td>'+actionHtml+'</td></tr>';
   }
-  var body = '<div class="card" style="display:flex;gap:16px;padding:16px"><div><span style="font-size:24px;font-weight:700">'+monthHours+'h</span><br><span style="color:#999;font-size:12px">本月已核准</span></div><div><span style="font-size:24px;font-weight:700">'+totalHours+'h</span><br><span style="color:#999;font-size:12px">累計已核准</span></div></div>'
+  // 個人彙總表格
+  var personRows = '';
+  var personKeys = Object.keys(personMap);
+  if (personKeys.length > 0) {
+    for (var k = 0; k < personKeys.length; k++) {
+      var p = personMap[personKeys[k]];
+      personRows += '<tr><td>'+h(personKeys[k])+'</td><td>'+h(p.name)+'</td><td style="font-weight:600">'+p.month+'h</td><td>'+p.total+'h</td></tr>';
+    }
+  }
+  var personSummary = '<div class="card"><h3>👤 個人時數統計（已核准）</h3><table><tr><th>編號</th><th>姓名</th><th>本月</th><th>累計</th></tr>'+(personRows||'<tr><td colspan="4">無請假記錄</td></tr>')+'</table></div>';
+  // 員工篩選
+  var opts = '<option value="">全部員工</option>';
+  for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'"'+(filterEid===emps[j].id?' selected':'')+'>'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
+  var body = filterBar + '<div class="card" style="display:flex;gap:16px;padding:16px"><div><span style="font-size:24px;font-weight:700">'+companyMonth+'h</span><br><span style="color:#999;font-size:12px">全公司本月</span></div><div><span style="font-size:24px;font-weight:700">'+companyTotal+'h</span><br><span style="color:#999;font-size:12px">全公司累計</span></div></div>' + personSummary
     + '<div class="tabs">'
     + '<a href="?status=" class="'+(status===''?'active':'')+'">全部</a>'
     + '<a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a>'

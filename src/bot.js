@@ -172,10 +172,10 @@ async function doQuery(emp, client, replyToken) {
   for (var i = 0; i < myLeaves.length; i++) {
     var l = myLeaves[i];
     if (l.status !== 'approved') continue;
-    var st = sd(l.start_date), et = sd(l.end_date);
-    var diff = new Date(et || st) - new Date(st);
-    var h2 = Math.max(1, Math.ceil(Math.max(0, diff) / 3600000));
-    if (st && st.indexOf(thisMonth) === 0) monthHours += h2;
+    var h2 = leaveHours(l.start_date, l.end_date);
+    if (h2 === 0) h2 = 1;
+    var s = sd(l.start_date);
+    if (s && s.indexOf(thisMonth) === 0) monthHours += h2;
     totalHours += h2;
   }
   if (myLeaves.length > 0) {
@@ -200,6 +200,14 @@ async function doQuery(emp, client, replyToken) {
 const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official' };
 
 function ceilHours(diffMs) { return Math.ceil(Math.max(0, diffMs) / 3600000); }
+// 請假時數：取整後，跨天每日最多 8 小時
+function leaveHours(startStr, endStr) {
+  var diff = new Date(endStr||startStr) - new Date(startStr);
+  if (diff <= 0) return 0;
+  var raw = Math.ceil(diff / 3600000);
+  var days = Math.ceil(diff / 86400000);
+  return Math.min(raw, days * 8);
+}
 
 async function startLeaveFlow(uid, client, replyToken) {
   states.set(uid, { step: 'type' });
@@ -233,8 +241,7 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
       states.delete(uid);
       const approvers = await db.findApprovers(emp.id);
       if (approvers.length > 0) {
-        var st2 = new Date(state.startDateTime), et2 = new Date(state.endDateTime);
-        var hours = ceilHours(et2 - st2);
+        var hours = leaveHours(state.startDateTime, state.endDateTime);
         for (const appr of approvers) {
           await client.pushMessage(appr.line_user_id, [{
             type: 'flex', altText: '📋 ' + emp.name + ' 請假申請',
@@ -295,8 +302,7 @@ async function handlePostback(postback, uid, client, replyToken) {
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
     if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
     state.endDateTime = dt; state.step = 'reason';
-    var st = new Date(state.startDateTime), et2 = new Date(dt);
-    var hours = ceilHours(et2 - st);
+    var hours = leaveHours(state.startDateTime, dt);
     return client.replyMessage(replyToken, [withMenu('📅 ' + state.startDateTime + ' ~ ' + dt + '（' + hours + ' 小時）\n\n📝 請輸入請假原因：')]);
   }
   if (data.startsWith('leave_approve_') || data.startsWith('leave_reject_')) {

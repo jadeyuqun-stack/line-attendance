@@ -282,9 +282,15 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   const ci = new Date(today.find(r => r.type === 'check_in').check_time);
   const co = r.check_time ? new Date(r.check_time) : new Date();
   const h = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
+
+  // 計算最早可下班時間（上班打卡 + 9 小時）
+  const requiredHours = 9;
+  const earliestLeave = new Date(ci.getTime() + requiredHours * 3600000);
+
   let msg = '✅ 下班打卡成功！\n⏰ ' + fmt(co) + '\n📊 工時：約 ' + h + ' 小時';
   if (loc) msg += '\n📍 ' + (loc.address || loc.latitude + ',' + loc.longitude);
   if (gps && !gps.inRange) msg += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
+  if (co < earliestLeave) msg += '\n⚠️ 提早下班！需滿 ' + requiredHours + ' 小時\n最早可於 ' + fmt(earliestLeave) + ' 離開';
   msg += '\n\n辛苦了！🏠';
   return client.replyMessage(replyToken, [withMenu(msg)]);
 }

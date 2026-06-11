@@ -250,10 +250,11 @@ async function getLeaveRequests(status, limit = 100) {
   return rows;
 }
 async function updateLeaveStatus(id, status, approvedBy) {
-  await pool.query(
-    "UPDATE leave_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3",
-    [status, approvedBy, id]
-  );
+  if (approvedBy) {
+    await pool.query("UPDATE leave_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [status, approvedBy, id]);
+  } else {
+    await pool.query("UPDATE leave_requests SET status=$1, approved_at=NOW() WHERE id=$2", [status, id]);
+  }
 }
 async function getLeaveById(id) {
   const { rows } = await pool.query("SELECT * FROM leave_requests WHERE id=$1", [id]);

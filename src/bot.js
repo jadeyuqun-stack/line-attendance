@@ -32,7 +32,7 @@ async function handleEvents(events, client) {
         else if (evt.message.type === 'location') await handleLocation(evt.message, uid, client, evt.replyToken);
       }
       if (evt.type === 'postback') await handlePostback(evt.postback, uid, client, evt.replyToken);
-    } catch (e) { console.error('[bot] error:', e.message); }
+    } catch (e) { console.error('[bot] error:', e.message, e.originalError && e.originalError.response && e.originalError.response.data ? JSON.stringify(e.originalError.response.data) : ''); }
   }
 }
 
@@ -90,11 +90,11 @@ async function doCheckIn(emp, client, replyToken, loc, gps) {
     contents.push({ type: 'text', text: '⚠️ 未提供 GPS 位置', margin: 'sm', color: '#f39c12', size: 'xs' });
   }
 
-  return client.replyMessage(replyToken, [
-    { type: 'flex', altText: '✅ 上班打卡成功 ' + fmt(now),
-      contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } } },
-    withMenu('')
-  ]);
+  return client.replyMessage(replyToken, [{
+    type: 'flex', altText: '✅ 上班打卡成功 ' + fmt(now),
+    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } },
+    quickReply: MENU_BUTTONS
+  }]);
 }
 
 async function doCheckOut(emp, client, replyToken, loc, gps) {
@@ -125,11 +125,11 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
     contents.push({ type: 'text', text: '⚠️ 未提供 GPS 位置', margin: 'sm', color: '#f39c12', size: 'xs' });
   }
 
-  return client.replyMessage(replyToken, [
-    { type: 'flex', altText: '🏠 下班打卡成功 ' + fmt(co),
-      contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } } },
-    withMenu('')
-  ]);
+  return client.replyMessage(replyToken, [{
+    type: 'flex', altText: '🏠 下班打卡成功 ' + fmt(co),
+    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } },
+    quickReply: MENU_BUTTONS
+  }]);
 }
 
 // ===== Query Flex =====
@@ -172,11 +172,11 @@ async function doQuery(emp, client, replyToken) {
   contents.push({ type: 'separator', margin: 'md' });
   contents.push({ type: 'text', text: '⏰ 上班 ' + (await db.getSetting('work_start_hour') || '8') + ':00 │ 下班 ' + (await db.getSetting('work_end_hour') || '17') + ':00 │ 需滿9h', size: 'xs', color: '#aaaaaa', margin: 'md' });
 
-  return client.replyMessage(replyToken, [
-    { type: 'flex', altText: '📋 今日打卡記錄',
-      contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } } },
-    withMenu('')
-  ]);
+  return client.replyMessage(replyToken, [{
+    type: 'flex', altText: '📋 今日打卡記錄',
+    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } },
+    quickReply: MENU_BUTTONS
+  }]);
 }
 
 // ===== Leave flow (unchanged) =====
@@ -247,10 +247,11 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
               { type: 'text', text: '假別：' + state.typeLabel, margin: 'md', size: 'sm' },
               { type: 'text', text: '時間：' + state.startDate + ' ~ ' + state.endDate, margin: 'sm', size: 'sm' },
               { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', color: '#666666', wrap: true },
-              { type: 'text', text: '⏳ 等待簽核中...', margin: 'md', size: 'sm', color: '#f39c12' },
+              { type: 'text', text: '⏳ 等待簽核中...', margin: 'md', size: 'sm', color: '#f39c12' }
             ]}
-          } },
-        withMenu('')
+	          },
+	          quickReply: MENU_BUTTONS
+	        }
       ]);
     } catch (e) {
       console.error('[leave] error:', e); states.delete(uid);
@@ -264,19 +265,24 @@ async function handlePostback(postback, uid, client, replyToken) {
   const data = postback.data || '', params = postback.params || {};
 
   if (data === 'leave_start') {
-    const state = states.get(uid);
+    var state = states.get(uid);
     if (!state || state.step !== 'start_date') return;
-    state.startDate = params.date + ' ' + (params.time || '00:00'); state.step = 'end_date';
+    // datetime picker 可能回傳 date+time 或 datetime
+    var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
+    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
+    state.startDate = dt; state.step = 'end_date';
     return client.replyMessage(replyToken, [{
       type: 'template', altText: '請選擇結束日期時間',
-      template: { type: 'buttons', text: '📅 開始：' + state.startDate + '\n請選擇「結束日期時間」', actions: [{ type: 'datetimepicker', label: '選擇結束時間', data: 'leave_end', mode: 'datetime' }] }
+      template: { type: 'buttons', text: '📅 開始：' + dt + '\n請選擇「結束日期時間」', actions: [{ type: 'datetimepicker', label: '選擇結束時間', data: 'leave_end', mode: 'datetime' }] }
     }]);
   }
   if (data === 'leave_end') {
-    const state = states.get(uid);
+    var state = states.get(uid);
     if (!state || state.step !== 'end_date') return;
-    state.endDate = params.date + ' ' + (params.time || '00:00'); state.step = 'reason';
-    return client.replyMessage(replyToken, [{ type: 'text', text: '📅 ' + state.startDate + ' ~ ' + state.endDate + '\n\n📝 請輸入請假原因：' }]);
+    var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
+    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
+    state.endDate = dt; state.step = 'reason';
+    return client.replyMessage(replyToken, [{ type: 'text', text: '📅 ' + state.startDate + ' ~ ' + dt + '\n\n📝 請輸入請假原因：' }]);
   }
   if (data.startsWith('leave_approve_') || data.startsWith('leave_reject_')) {
     const leaveId = parseInt(data.split('_').pop());

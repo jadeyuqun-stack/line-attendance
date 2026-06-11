@@ -143,8 +143,7 @@ router.get('/', auth, async (_, res) => {
   var recentRows = '';
   for (var i = 0; i < recent.length; i++) {
     var r = recent[i];
-    var t = new Date(r.check_time);
-    recentRows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.type==='check_in'?'<span class="badge badge-in">上班</span>':'<span class="badge badge-out">下班</span>')+'</td><td>'+t.toLocaleTimeString('zh-TW')+'</td><td>'+(r.in_range===false?'<span class="badge badge-warn">⚠️超出</span>':'-')+'</td></tr>';
+    recentRows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.type==='check_in'?'<span class="badge badge-in">上班</span>':'<span class="badge badge-out">下班</span>')+'</td><td>'+fmt(r.check_time)+'</td><td>'+(r.in_range===false?'<span class="badge badge-warn">⚠️超出</span>':'-')+'</td></tr>';
   }
 
   var body = '<div class="stats">'
@@ -173,8 +172,8 @@ router.get('/records', auth, async (req, res) => {
   if (keys.length === 0) rows = '<tr><td colspan="7">當日無打卡記錄</td></tr>';
   else for (var k = 0; k < keys.length; k++) {
     var d2 = empMap[keys[k]], e = d2.emp;
-    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 '+new Date(d2.checkIn.check_time).toLocaleTimeString('zh-TW')+'</span>'+(d2.checkIn.address?'<br><small style="color:#999">📍 '+h(d2.checkIn.address)+'</small>':'') : '<span style="color:#ccc">--:--</span>';
-    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 '+new Date(d2.checkOut.check_time).toLocaleTimeString('zh-TW')+'</span>'+(d2.checkOut.address?'<br><small style="color:#999">📍 '+h(d2.checkOut.address)+'</small>':'') : '<span style="color:#ccc">--:--</span>';
+    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 '+fmt(d2.checkIn.check_time)+'</span>'+(d2.checkIn.address?'<br><small style="color:#999">📍 '+h(d2.checkIn.address)+'</small>':'') : '<span style="color:#ccc">--:--</span>';
+    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 '+fmt(d2.checkOut.check_time)+'</span>'+(d2.checkOut.address?'<br><small style="color:#999">📍 '+h(d2.checkOut.address)+'</small>':'') : '<span style="color:#ccc">--:--</span>';
     var hours = '-', workH = 0;
     if (d2.checkIn && d2.checkOut) {
       var ci = new Date(d2.checkIn.check_time), co = new Date(d2.checkOut.check_time);
@@ -384,6 +383,7 @@ router.post('/api/settings', auth, express.json(), async (req, res) => {
 // ===== 輔助 =====
 function h(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function esc(s) { return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function fmt(ts) { var d = new Date(ts); return d.getFullYear()+' '+(d.getMonth()+1)+'月'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function modalHtml() {
   return '<div id="modal" class="modal"><div><h3>綁定 LINE ID</h3><p id="modalEmp" style="color:#999;margin-bottom:12px"></p><label>LINE User ID</label><input id="lineIdInput" placeholder="貼上員工的 LINE User ID"><p style="color:#999;font-size:12px;margin:8px 0">💡 員工在 LINE Bot 輸入「我的ID」取得</p><div class="actions"><button onclick="closeModal()" class="btn-sm btn-gray">取消</button><button onclick="saveLine()" class="btn-sm btn">儲存</button></div></div></div>';
 }

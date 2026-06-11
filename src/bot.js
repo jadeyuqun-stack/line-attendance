@@ -12,41 +12,31 @@ const MENU_BUTTONS = {
   ]
 };
 
-function withMenu(text) {
-  return { type: 'text', text: text, quickReply: MENU_BUTTONS };
-}
+function withMenu(text) { return { type: 'text', text: text, quickReply: MENU_BUTTONS }; }
 
 async function handleEvents(events, client) {
   for (const evt of events) {
     try {
       if (evt.source.type !== 'user') continue;
       const uid = evt.source.userId;
-
       if (evt.type === 'follow') {
         const emp = await db.getEmployeeByLineId(uid);
-        await client.pushMessage(uid, [withMenu(emp
-          ? '歡迎回來，' + emp.name + '！🎉\n\n📍傳位置→GPS打卡\n💬下方選單可直接點選'
-          : '👋 歡迎！\n請輸入「員工編號」綁定，或輸入「我的ID」取得 LINE ID 請管理員綁定。')]);
-      }
-
-      if (evt.type === 'message' && evt.message) {
-        if (evt.message.type === 'text') {
-          await handleText(evt.message.text, uid, client, evt.replyToken);
-        } else if (evt.message.type === 'location') {
-          await handleLocation(evt.message, uid, client, evt.replyToken);
+        if (emp) {
+          await client.pushMessage(uid, [withMenu('歡迎回來，' + emp.name + '！🎉\n\n📍 傳送位置訊息 → GPS 打卡\n💬 下方選單可直接點選')]);
+        } else {
+          await client.pushMessage(uid, [{ type: 'text', text: '👋 歡迎使用公司打卡系統！\n\n🔹 請輸入「員工編號」綁定帳號\n🔹 或輸入「我的ID」取得 LINE ID\n\n📌 請洽管理員取得員工編號', quickReply: MENU_BUTTONS }]);
         }
       }
-
-      if (evt.type === 'postback') {
-        await handlePostback(evt.postback, uid, client, evt.replyToken);
+      if (evt.type === 'message' && evt.message) {
+        if (evt.message.type === 'text') await handleText(evt.message.text, uid, client, evt.replyToken);
+        else if (evt.message.type === 'location') await handleLocation(evt.message, uid, client, evt.replyToken);
       }
-    } catch (e) {
-      console.error('[bot] error:', e.message);
-    }
+      if (evt.type === 'postback') await handlePostback(evt.postback, uid, client, evt.replyToken);
+    } catch (e) { console.error('[bot] error:', e.message); }
   }
 }
 
-// ===== Text commands =====
+// ===== Commands =====
 async function handleText(text, uid, client, replyToken) {
   const emp = await db.getEmployeeByLineId(uid);
   const cmd = text.trim();
@@ -59,8 +49,8 @@ async function handleText(text, uid, client, replyToken) {
     try { const p = await client.getProfile(uid); name = p.displayName; } catch (e) {}
     const ok = await db.bindLineUser(cmd, uid, name);
     return client.replyMessage(replyToken, [withMenu(ok
-      ? '✅ 綁定成功！'
-      : '❌ 找不到員工編號「' + cmd + '」\n\n🆔 輸入「我的ID」取得 LINE ID，請管理員在後台幫你綁定。')]);
+      ? '✅ 綁定成功！歡迎，' + (name || cmd) + '\n\n📍 傳送位置訊息 → GPS 打卡\n💬 下方選單可直接點選'
+      : '❌ 找不到員工編號「' + cmd + '」\n\n🆔 輸入「我的ID」取得 LINE ID 洽管理員')]);
   }
 
   if (cmd === '我的ID' || cmd.toLowerCase() === 'my id') {
@@ -72,11 +62,124 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd.includes('上班')) return doCheckIn(emp, client, replyToken);
   if (cmd.includes('下班')) return doCheckOut(emp, client, replyToken);
   if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken);
-  if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 指令\n上班 / 下班 / 查詢 / 請假 / 幫助 / 我的ID')]);
-  return client.replyMessage(replyToken, [withMenu('❓ 請點下方選單或輸入指令')]);
+  if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 功能選單\n\n📍 傳送位置 → GPS 打卡\n💬「上班」「下班」→ 打卡\n📋「查詢」→ 記錄\n🏖「請假」→ 請假申請\n🆔「我的ID」→ LINE ID')]);
+  return client.replyMessage(replyToken, [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 我的ID')]);
 }
 
-// ===== Leave flow =====
+// ===== Check-in Flex =====
+async function doCheckIn(emp, client, replyToken, loc, gps) {
+  const today = await db.getTodayCheckins(emp.id);
+  if (today.some(r => r.type === 'check_in')) {
+    return client.replyMessage(replyToken, [withMenu('⚠️ 今天已上班打卡')]);
+  }
+  const r = await db.recordCheckin(emp.id, 'check_in', loc, gps ? gps.inRange : true, gps ? gps.distance : 0);
+  const now = r.check_time ? new Date(r.check_time) : new Date();
+  const late = await checkLate(now);
+
+  var contents = [
+    { type: 'text', text: '✅ 上班打卡成功', weight: 'bold', size: 'lg', color: '#06c755' },
+    { type: 'text', text: '👤 ' + emp.name + '  ' + emp.employee_no, margin: 'md', size: 'sm', color: '#666666' },
+    { type: 'text', text: '⏰ ' + fmt(now), margin: 'md', size: 'xl', weight: 'bold' },
+  ];
+  if (late > 0) contents.push({ type: 'text', text: '⚠️ 遲到 ' + late + ' 分鐘', margin: 'sm', color: '#e74c3c', size: 'sm' });
+  if (loc) {
+    var locText = '📍 ' + (loc.address || loc.latitude.toFixed(4) + ', ' + loc.longitude.toFixed(4));
+    if (gps && !gps.inRange) locText += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
+    contents.push({ type: 'text', text: locText, margin: 'sm', size: 'sm', color: '#999999', wrap: true });
+  } else {
+    contents.push({ type: 'text', text: '⚠️ 未提供 GPS 位置', margin: 'sm', color: '#f39c12', size: 'xs' });
+  }
+
+  return client.replyMessage(replyToken, [
+    { type: 'flex', altText: '✅ 上班打卡成功 ' + fmt(now),
+      contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } } },
+    withMenu('')
+  ]);
+}
+
+async function doCheckOut(emp, client, replyToken, loc, gps) {
+  const today = await db.getTodayCheckins(emp.id);
+  if (!today.some(r => r.type === 'check_in')) return client.replyMessage(replyToken, [withMenu('⚠️ 尚未上班打卡')]);
+  if (today.some(r => r.type === 'check_out')) return client.replyMessage(replyToken, [withMenu('⚠️ 今天已下班打卡')]);
+
+  const r = await db.recordCheckin(emp.id, 'check_out', loc, gps ? gps.inRange : true, gps ? gps.distance : 0);
+  const ci = new Date(today.find(r => r.type === 'check_in').check_time);
+  const co = r.check_time ? new Date(r.check_time) : new Date();
+  const h = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
+  const requiredHours = 9;
+
+  var contents = [
+    { type: 'text', text: '🏠 下班打卡成功', weight: 'bold', size: 'lg', color: '#3498db' },
+    { type: 'text', text: '👤 ' + emp.name + '  ' + emp.employee_no, margin: 'md', size: 'sm', color: '#666666' },
+    { type: 'text', text: '⏰ ' + fmt(co), margin: 'md', size: 'xl', weight: 'bold' },
+    { type: 'text', text: '📊 今日工時：約 ' + h + ' 小時', margin: 'sm', size: 'sm' },
+  ];
+  if (co < new Date(ci.getTime() + requiredHours * 3600000)) {
+    contents.push({ type: 'text', text: '⚠️ 工時不足 ' + requiredHours + ' 小時\n請記得申請請假補足時數', margin: 'sm', color: '#f39c12', size: 'sm', wrap: true });
+  }
+  if (loc) {
+    var locText = '📍 ' + (loc.address || loc.latitude.toFixed(4) + ', ' + loc.longitude.toFixed(4));
+    if (gps && !gps.inRange) locText += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
+    contents.push({ type: 'text', text: locText, margin: 'sm', size: 'sm', color: '#999999', wrap: true });
+  } else {
+    contents.push({ type: 'text', text: '⚠️ 未提供 GPS 位置', margin: 'sm', color: '#f39c12', size: 'xs' });
+  }
+
+  return client.replyMessage(replyToken, [
+    { type: 'flex', altText: '🏠 下班打卡成功 ' + fmt(co),
+      contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } } },
+    withMenu('')
+  ]);
+}
+
+// ===== Query Flex =====
+async function doQuery(emp, client, replyToken) {
+  const records = await db.getTodayCheckins(emp.id);
+  if (records.length === 0) {
+    return client.replyMessage(replyToken, [withMenu('📋 ' + emp.name + '\n今日尚無打卡記錄\n\n📍 傳送位置訊息開始打卡')]);
+  }
+
+  var contents = [
+    { type: 'text', text: '📋 今日打卡記錄', weight: 'bold', size: 'lg', color: '#06c755' },
+    { type: 'text', text: '👤 ' + emp.name + '  ' + emp.employee_no, margin: 'md', size: 'sm', color: '#666666' },
+  ];
+
+  const checkIn = records.find(r => r.type === 'check_in');
+  const checkOut = records.find(r => r.type === 'check_out');
+
+  if (checkIn) {
+    var inText = '🔵 上班：' + fmt(new Date(checkIn.check_time));
+    if (checkIn.address) inText += '\n   📍 ' + checkIn.address;
+    if (checkIn.in_range === false) inText += ' ⚠️超出範圍';
+    contents.push({ type: 'text', text: inText, margin: 'md', size: 'sm', wrap: true });
+  }
+  if (checkOut) {
+    var outText = '🔴 下班：' + fmt(new Date(checkOut.check_time));
+    if (checkOut.address) outText += '\n   📍 ' + checkOut.address;
+    if (checkOut.in_range === false) outText += ' ⚠️超出範圍';
+    contents.push({ type: 'text', text: outText, margin: 'sm', size: 'sm', wrap: true });
+  }
+
+  if (checkIn && checkOut) {
+    const ci = new Date(checkIn.check_time), co = new Date(checkOut.check_time);
+    const workH = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
+    var statusText = '📊 工時：' + workH + ' 小時';
+    if (workH < 9) statusText += ' ⚠️不足9h';
+    contents.push({ type: 'separator', margin: 'md' });
+    contents.push({ type: 'text', text: statusText, margin: 'md', size: 'sm', weight: 'bold', color: workH >= 9 ? '#06c755' : '#e74c3c' });
+  }
+
+  contents.push({ type: 'separator', margin: 'md' });
+  contents.push({ type: 'text', text: '⏰ 上班 ' + (await db.getSetting('work_start_hour') || '8') + ':00 │ 下班 ' + (await db.getSetting('work_end_hour') || '17') + ':00 │ 需滿9h', size: 'xs', color: '#aaaaaa', margin: 'md' });
+
+  return client.replyMessage(replyToken, [
+    { type: 'flex', altText: '📋 今日打卡記錄',
+      contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } } },
+    withMenu('')
+  ]);
+}
+
+// ===== Leave flow (unchanged) =====
 const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official' };
 
 async function startLeaveFlow(uid, client, replyToken) {
@@ -115,33 +218,42 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
       const approvers = await db.findApprovers(emp.id);
       if (approvers.length > 0) {
         const days = Math.ceil((new Date(state.endDate) - new Date(state.startDate)) / 86400000) + 1;
-        for (const approver of approvers) {
-          await client.pushMessage(approver.line_user_id, [{
+        for (const appr of approvers) {
+          await client.pushMessage(appr.line_user_id, [{
             type: 'flex', altText: '📋 ' + emp.name + ' 請假申請',
             contents: {
               type: 'bubble',
               body: { type: 'box', layout: 'vertical', contents: [
-                { type: 'text', text: '📋 請假申請', weight: 'bold', size: 'lg' },
-                { type: 'text', text: '員工：' + emp.name + '（' + emp.employee_no + '）', margin: 'md' },
-                { type: 'text', text: '假別：' + state.typeLabel, margin: 'sm' },
-                { type: 'text', text: '日期：' + state.startDate + ' ~ ' + state.endDate + '（' + days + '天）', margin: 'sm' },
-                { type: 'text', text: '原因：' + state.reason, margin: 'sm', wrap: true },
+                { type: 'text', text: '📋 請假申請', weight: 'bold', size: 'lg', color: '#f39c12' },
+                { type: 'text', text: '員工：' + emp.name + '（' + emp.employee_no + '）', margin: 'md', size: 'sm', color: '#666666' },
+                { type: 'text', text: '假別：' + state.typeLabel, margin: 'sm', size: 'sm' },
+                { type: 'text', text: '日期：' + state.startDate + ' ~ ' + state.endDate + '（' + days + '天）', margin: 'sm', size: 'sm' },
+                { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', wrap: true, color: '#666666' },
+                { type: 'text', text: '申請時間：' + fmt(new Date()), margin: 'sm', size: 'xs', color: '#aaaaaa' },
               ]},
               footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-                { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'leave_approve_' + leaveId }, flex: 1 },
-                { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'leave_reject_' + leaveId }, flex: 1 },
+                { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'leave_approve_' + leaveId }, flex: 1, height: 'sm' },
+                { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'leave_reject_' + leaveId }, flex: 1, height: 'sm' },
               ]}
             }
           }]);
         }
       }
-      return client.replyMessage(replyToken, [{
-        type: 'text', text: '✅ 請假申請已送出！\n\n假別：' + state.typeLabel + '\n日期：' + state.startDate + ' ~ ' + state.endDate + '\n原因：' + state.reason + '\n\n狀態：等待簽核 ⏳',
-        quickReply: MENU_BUTTONS
-      }]);
+      return client.replyMessage(replyToken, [
+        { type: 'flex', altText: '✅ 請假已送出',
+          contents: { type: 'bubble',
+            body: { type: 'box', layout: 'vertical', contents: [
+              { type: 'text', text: '✅ 請假申請已送出', weight: 'bold', size: 'lg', color: '#06c755' },
+              { type: 'text', text: '假別：' + state.typeLabel, margin: 'md', size: 'sm' },
+              { type: 'text', text: '日期：' + state.startDate + ' ~ ' + state.endDate, margin: 'sm', size: 'sm' },
+              { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', color: '#666666', wrap: true },
+              { type: 'text', text: '⏳ 等待簽核中...', margin: 'md', size: 'sm', color: '#f39c12' },
+            ]}
+          } },
+        withMenu('')
+      ]);
     } catch (e) {
-      console.error('[leave] error:', e);
-      states.delete(uid);
+      console.error('[leave] error:', e); states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('❌ 申請失敗，請稍後再試。')]);
     }
   }
@@ -149,8 +261,7 @@ async function handleLeaveFlow(text, uid, client, replyToken, emp) {
 
 // ===== Postback =====
 async function handlePostback(postback, uid, client, replyToken) {
-  const data = postback.data || '';
-  const params = postback.params || {};
+  const data = postback.data || '', params = postback.params || {};
 
   if (data === 'leave_start') {
     const state = states.get(uid);
@@ -170,19 +281,38 @@ async function handlePostback(postback, uid, client, replyToken) {
   if (data.startsWith('leave_approve_') || data.startsWith('leave_reject_')) {
     const leaveId = parseInt(data.split('_').pop());
     const mgr = await db.getEmployeeByLineId(uid);
-    if (!mgr || !mgr.can_approve) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 你沒有簽核權限。' }]);
+    if (!mgr || !mgr.can_approve) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 無簽核權限' }]);
     const leave = await db.getLeaveById(leaveId);
-    if (!leave || leave.status !== 'pending') return client.replyMessage(replyToken, [{ type: 'text', text: '此申請已處理過。' }]);
+    if (!leave || leave.status !== 'pending') return client.replyMessage(replyToken, [{ type: 'text', text: '申請已處理過' }]);
+
     if (data.startsWith('leave_approve_')) {
       await db.updateLeaveStatus(leaveId, 'approved', mgr.id);
       const e = await db.getEmployeeById(leave.employee_id);
-      if (e && e.line_user_id) await client.pushMessage(e.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + leave.start_date + ' ~ ' + leave.end_date }]);
-      return client.replyMessage(replyToken, [{ type: 'text', text: '✅ 已核准。' }]);
+      if (e && e.line_user_id) {
+        await client.pushMessage(e.line_user_id, [{
+          type: 'flex', altText: '🎉 請假已核准',
+          contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
+            { type: 'text', text: '🎉 請假已核准', weight: 'bold', size: 'lg', color: '#06c755' },
+            { type: 'text', text: '日期：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'md', size: 'sm' },
+            { type: 'text', text: '核准時間：' + fmt(new Date()), margin: 'sm', size: 'xs', color: '#aaaaaa' },
+          ]}}
+        }]);
+      }
+      return client.replyMessage(replyToken, [{ type: 'text', text: '✅ 已核准' }]);
     } else {
       await db.updateLeaveStatus(leaveId, 'rejected', mgr.id);
       const e = await db.getEmployeeById(leave.employee_id);
-      if (e && e.line_user_id) await client.pushMessage(e.line_user_id, [{ type: 'text', text: '❌ 請假被駁回。\n' + leave.start_date + ' ~ ' + leave.end_date }]);
-      return client.replyMessage(replyToken, [{ type: 'text', text: '已駁回。' }]);
+      if (e && e.line_user_id) {
+        await client.pushMessage(e.line_user_id, [{
+          type: 'flex', altText: '❌ 請假被駁回',
+          contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
+            { type: 'text', text: '❌ 請假被駁回', weight: 'bold', size: 'lg', color: '#e74c3c' },
+            { type: 'text', text: '日期：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'md', size: 'sm' },
+            { type: 'text', text: '駁回時間：' + fmt(new Date()), margin: 'sm', size: 'xs', color: '#aaaaaa' },
+          ]}}
+        }]);
+      }
+      return client.replyMessage(replyToken, [{ type: 'text', text: '已駁回' }]);
     }
   }
 }
@@ -194,7 +324,6 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
-
 async function checkGpsRange(lat, lng) {
   const officeLat = parseFloat(await db.getSetting('office_lat') || '0');
   const officeLng = parseFloat(await db.getSetting('office_lng') || '0');
@@ -204,13 +333,11 @@ async function checkGpsRange(lat, lng) {
   return { inRange: dist <= range, distance: dist };
 }
 
-// ===== Check-in/out =====
 async function handleLocation(msg, uid, client, replyToken) {
   const emp = await db.getEmployeeByLineId(uid);
   if (!emp) return client.replyMessage(replyToken, [withMenu('請先綁定員工編號。')]);
   const today = await db.getTodayCheckins(emp.id);
-  const hasIn = today.some(r => r.type === 'check_in');
-  const hasOut = today.some(r => r.type === 'check_out');
+  const hasIn = today.some(r => r.type === 'check_in'), hasOut = today.some(r => r.type === 'check_out');
   const loc = { latitude: msg.latitude, longitude: msg.longitude, address: msg.address || '' };
   const gps = await checkGpsRange(msg.latitude, msg.longitude);
   if (hasIn && !hasOut) return doCheckOut(emp, client, replyToken, loc, gps);
@@ -218,73 +345,14 @@ async function handleLocation(msg, uid, client, replyToken) {
   return client.replyMessage(replyToken, [withMenu('今日已完成打卡。')]);
 }
 
-async function doCheckIn(emp, client, replyToken, loc, gps) {
-  const today = await db.getTodayCheckins(emp.id);
-  if (today.some(r => r.type === 'check_in')) return client.replyMessage(replyToken, [withMenu('⚠️ 今天已上班打卡。')]);
-  const r = await db.recordCheckin(emp.id, 'check_in', loc, gps ? gps.inRange : true, gps ? gps.distance : 0);
-  const now = r.check_time ? new Date(r.check_time) : new Date();
-  let msg = '✅ 上班打卡成功！\n⏰ ' + fmt(now);
-  const late = await checkLate(now);
-  if (late > 0) msg += '\n⚠️ 遲到 ' + late + ' 分鐘';
-  if (loc) {
-    msg += '\n📍 ' + (loc.address || loc.latitude + ',' + loc.longitude);
-    if (gps && !gps.inRange) msg += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
-  } else {
-    msg += '\n⚠️ 未提供 GPS 位置\n💡 請使用「位置訊息」打卡';
-  }
-  return client.replyMessage(replyToken, [withMenu(msg)]);
-}
-
-async function doCheckOut(emp, client, replyToken, loc, gps) {
-  const today = await db.getTodayCheckins(emp.id);
-  if (!today.some(r => r.type === 'check_in')) return client.replyMessage(replyToken, [withMenu('⚠️ 尚未上班打卡。')]);
-  if (today.some(r => r.type === 'check_out')) return client.replyMessage(replyToken, [withMenu('⚠️ 今天已下班打卡。')]);
-  const r = await db.recordCheckin(emp.id, 'check_out', loc, gps ? gps.inRange : true, gps ? gps.distance : 0);
-  const ci = new Date(today.find(r => r.type === 'check_in').check_time);
-  const co = r.check_time ? new Date(r.check_time) : new Date();
-  const h = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
-  const requiredHours = 9;
-  const earliestLeave = new Date(ci.getTime() + requiredHours * 3600000);
-
-  let msg = '✅ 下班打卡成功！\n⏰ ' + fmt(co) + '\n📊 工時：約 ' + h + ' 小時';
-  if (loc) {
-    msg += '\n📍 ' + (loc.address || loc.latitude + ',' + loc.longitude);
-    if (gps && !gps.inRange) msg += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
-  } else {
-    msg += '\n⚠️ 未提供 GPS 位置';
-  }
-  if (co < earliestLeave) msg += '\n⚠️ 工時不足 ' + requiredHours + ' 小時，請記得申請請假補足時數';
-  msg += '\n\n辛苦了！🏠';
-  return client.replyMessage(replyToken, [withMenu(msg)]);
-}
-
-async function doQuery(emp, client, replyToken) {
-  const records = await db.getTodayCheckins(emp.id);
-  if (records.length === 0) return client.replyMessage(replyToken, [withMenu('📋 ' + emp.name + ' 今日尚無記錄。')]);
-  let msg = '📋 ' + emp.name + ' 今日記錄\n\n';
-  for (const r of records) {
-    msg += (r.type === 'check_in' ? '🔵上班' : '🔴下班') + '：' + fmt(new Date(r.check_time)) + '\n';
-    if (r.address) msg += '   📍' + r.address + '\n';
-    if (r.in_range === false) msg += '   ⚠️ 超出範圍\n';
-  }
-  const checkIn = records.find(r => r.type === 'check_in');
-  const checkOut = records.find(r => r.type === 'check_out');
-  if (checkIn && checkOut) {
-    const ci = new Date(checkIn.check_time), co = new Date(checkOut.check_time);
-    const workH = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
-    msg += '\n📊 工時：約 ' + workH + ' 小時';
-    if (workH < 9) msg += '\n⚠️ 不足 9 小時，請記得申請請假';
-  }
-  return client.replyMessage(replyToken, [withMenu(msg)]);
-}
-
+// ===== Helpers =====
 function fmt(d) {
-  const h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
-  const ap = h >= 12 ? '下午' : '上午';
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return ap + ' ' + String(h12).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  var y = d.getFullYear();
+  var m = d.getMonth() + 1;
+  var day = d.getDate();
+  var h = d.getHours(), min = d.getMinutes();
+  return y + ' ' + m + '月' + day + ' ' + String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
 }
-
 async function checkLate(now) {
   const start = parseInt(await db.getSetting('work_start_hour') || process.env.WORK_START_HOUR || '9');
   const buf = parseInt(await db.getSetting('late_buffer_minutes') || process.env.LATE_BUFFER_MINUTES || '10');
@@ -298,9 +366,7 @@ async function setupRichMenu() {
     const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
     const existing = await fetch('https://api.line.me/v2/bot/richmenu/list', { headers });
     const list = await existing.json();
-    for (const rm of (list.richmenus || [])) {
-      await fetch('https://api.line.me/v2/bot/richmenu/' + rm.richMenuId, { method: 'DELETE', headers });
-    }
+    for (const rm of (list.richmenus || [])) await fetch('https://api.line.me/v2/bot/richmenu/' + rm.richMenuId, { method: 'DELETE', headers });
     const menu = {
       size: { width: 2500, height: 843 }, selected: true, name: '主選單', chatBarText: '📋 點此開啟功能選單',
       areas: [
@@ -314,32 +380,26 @@ async function setupRichMenu() {
     const res1 = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu) });
     const data = await res1.json();
     const png = makePng();
-    const imgHeaders = { 'Content-Type': 'image/png', 'Authorization': 'Bearer ' + token };
-    await fetch('https://api.line.me/v2/bot/richmenu/' + data.richMenuId + '/content', { method: 'POST', headers: imgHeaders, body: png });
+    await fetch('https://api.line.me/v2/bot/richmenu/' + data.richMenuId + '/content', { method: 'POST', headers: { 'Content-Type': 'image/png', 'Authorization': 'Bearer ' + token }, body: png });
     await fetch('https://api.line.me/v2/bot/user/all/richmenu/' + data.richMenuId, { method: 'POST', headers });
     return data.richMenuId;
   } catch (e) { console.error('[RichMenu] error:', e.message); return null; }
 }
-
 function makePng() {
-  const zlib = require('zlib');
-  const w = 2500, h = 843;
+  const zlib = require('zlib'); const w = 2500, h = 843;
   const rawData = Buffer.alloc(h * (1 + w * 4));
-  for (let y = 0; y < h; y++) {
-    const rowOff = y * (1 + w * 4); rawData[rowOff] = 0;
-    for (let x = 0; x < w; x++) {
-      const off = rowOff + 1 + x * 4;
-      if (y < 421) { rawData[off]=x<1250?0x06:0xf3; rawData[off+1]=x<1250?0xc7:0x9c; rawData[off+2]=x<1250?0x55:0x12; }
-      else { if(x<833){rawData[off]=0x34;rawData[off+1]=0x98;rawData[off+2]=0xdb;}else if(x<1667){rawData[off]=0x95;rawData[off+1]=0xa5;rawData[off+2]=0xa6;}else{rawData[off]=0xb0;rawData[off+1]=0xbe;rawData[off+2]=0xc5;} }
-      rawData[off+3] = 255;
+  for (let y = 0; y < h; y++) { const ro = y * (1 + w * 4); rawData[ro] = 0;
+    for (let x = 0; x < w; x++) { const o = ro + 1 + x * 4;
+      if (y < 421) { rawData[o]=x<1250?0x06:0xf3; rawData[o+1]=x<1250?0xc7:0x9c; rawData[o+2]=x<1250?0x55:0x12; }
+      else { if(x<833){rawData[o]=0x34;rawData[o+1]=0x98;rawData[o+2]=0xdb;}else if(x<1667){rawData[o]=0x95;rawData[o+1]=0xa5;rawData[o+2]=0xa6;}else{rawData[o]=0xb0;rawData[o+1]=0xbe;rawData[o+2]=0xc5;} }
+      rawData[o+3] = 255;
     }
   }
-  const deflated = zlib.deflateSync(rawData);
-  function crc(buf) { let c=0xffffffff; const t=new Uint32Array(256); for(let n=0;n<256;n++){let cc=n;for(let k=0;k<8;k++)cc=cc&1?0xedb88320^(cc>>>1):cc>>>1;t[n]=cc;} for(let i=0;i<buf.length;i++)c=t[(c^buf[i])&0xff]^(c>>>8); return (c^0xffffffff)>>>0; }
-  function chunk(type, data) { const len=Buffer.alloc(4);len.writeUInt32BE(data.length); const tt=Buffer.from(type); const all=Buffer.concat([len,tt,data]); const c=Buffer.alloc(4);c.writeUInt32BE(crc(Buffer.concat([tt,data]))); return Buffer.concat([all,c]); }
-  const sig = Buffer.from([137,80,78,71,13,10,26,10]);
-  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w,0); ihdr.writeUInt32BE(h,4); ihdr[8]=8; ihdr[9]=6;
-  return Buffer.concat([sig,chunk('IHDR',ihdr),chunk('IDAT',deflated),chunk('IEND',Buffer.alloc(0))]);
+  const def = zlib.deflateSync(rawData);
+  function crc(b) { let c=0xffffffff; const t=new Uint32Array(256); for(let n=0;n<256;n++){let cc=n;for(let k=0;k<8;k++)cc=cc&1?0xedb88320^(cc>>>1):cc>>>1;t[n]=cc;} for(let i=0;i<b.length;i++)c=t[(c^b[i])&0xff]^(c>>>8); return (c^0xffffffff)>>>0; }
+  function ch(type, d) { const l=Buffer.alloc(4);l.writeUInt32BE(d.length); const tt=Buffer.from(type), a=Buffer.concat([l,tt,d]); const cc=Buffer.alloc(4);cc.writeUInt32BE(crc(Buffer.concat([tt,d]))); return Buffer.concat([a,cc]); }
+  const sig = Buffer.from([137,80,78,71,13,10,26,10]); const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w,0); ihdr.writeUInt32BE(h,4); ihdr[8]=8; ihdr[9]=6;
+  return Buffer.concat([sig,ch('IHDR',ihdr),ch('IDAT',def),ch('IEND',Buffer.alloc(0))]);
 }
 
 module.exports = { handleEvents, setupRichMenu };

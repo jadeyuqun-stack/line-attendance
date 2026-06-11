@@ -283,7 +283,10 @@ router.get('/employees', auth, async (_, res) => {
 router.get('/leaves', auth, async (req, res) => {
   var status = req.query.status || '';
   var leaves = await db.getLeaveRequests(status, 200);
+  var now = new Date();
+  var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var rows = '';
+  var monthHours = 0, totalHours = 0;
   for (var i = 0; i < leaves.length; i++) {
     var l = leaves[i];
     var statusBadge = l.status === 'pending' ? '<span class="badge badge-warn">待審核</span>'
@@ -297,17 +300,11 @@ router.get('/leaves', auth, async (req, res) => {
     if (l.end_date) leaveTime += ' ~ ' + l.end_date;
     var hours = 0;
     try { var diff = new Date(l.end_date||l.start_date) - new Date(l.start_date); hours = Math.max(1, Math.ceil(Math.max(0, diff) / 3600000)); } catch(e) {}
+    if (l.status === 'approved') {
+      totalHours += hours;
+      if (l.start_date && l.start_date.indexOf(thisMonth) === 0) monthHours += hours;
+    }
     rows += '<tr><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+'</td><td>'+actionHtml+'</td></tr>';
-  }
-  // 計算月/總時數
-  var monthHours = 0, totalHours = 0;
-  for (var i = 0; i < leaves.length; i++) {
-    var l = leaves[i];
-    if (l.status !== 'approved') continue;
-    try { var diff = new Date(l.end_date||l.start_date) - new Date(l.start_date); var h2 = Math.max(1, Math.ceil(Math.max(0, diff)/3600000)); } catch(e) { var h2 = 0; }
-    totalHours += h2;
-    var isThisMonth = (new Date().getMonth()+1+''+new Date().getFullYear()) === ((new Date(l.start_date).getMonth()+1)+''+new Date(l.start_date).getFullYear());
-    if (isThisMonth) monthHours += h2;
   }
   var body = '<div class="card" style="display:flex;gap:16px;padding:16px"><div><span style="font-size:24px;font-weight:700">'+monthHours+'h</span><br><span style="color:#999;font-size:12px">本月已核准</span></div><div><span style="font-size:24px;font-weight:700">'+totalHours+'h</span><br><span style="color:#999;font-size:12px">累計已核准</span></div></div>'
     + '<div class="tabs">'

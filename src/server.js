@@ -41,14 +41,10 @@ async function main() {
       if (events && events.length > 0) {
         for (var i = 0; i < events.length; i++) {
           var evt = events[i];
-          // 加入群組時自動記錄群組 ID
-          if (evt.type === 'join' && evt.source && evt.source.type === 'group') {
-            var gid = evt.source.groupId;
-            db.setSetting('report_group_id', gid);
-            console.log('[Webhook] Bot 加入群組:', gid);
-            db.getSetting('report_time').then(function(t) {
-              client.pushMessage(gid, [{ type: 'text', text: '👋 打卡系統已加入群組！\n\n每日 ' + (t || '17:00') + ' 自動推播出勤報告。\n請管理員到後台設定推播時間。' }]).catch(function(){});
-            });
+          // 任何群組來源的事件 → 自動記錄群組 ID
+          if (evt.source && evt.source.type === 'group' && evt.source.groupId) {
+            db.setSetting('report_group_id', evt.source.groupId);
+            console.log('[Webhook] 記錄群組 ID:', evt.source.groupId);
           }
         }
         bot.handleEvents(events, client).catch(e => console.error(e));

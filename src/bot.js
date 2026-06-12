@@ -25,7 +25,7 @@ async function handleEvents(events, client) {
   console.log('[bot] events:', events.length, events.map(function(e){return e.type+':'+(e.message?e.message.type:'');}));
   for (const evt of events) {
     try {
-      if (evt.source.type !== 'user') continue;
+      if (evt.source.type !== 'user' && evt.source.type !== 'group') continue;
       const uid = evt.source.userId;
       if (evt.type === 'follow') {
         const emp = await db.getEmployeeByLineId(uid);

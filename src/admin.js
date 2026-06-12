@@ -377,6 +377,10 @@ router.get('/settings', auth, async (_, res) => {
   var lateBuf = await db.getSetting('late_buffer_minutes') || '30';
   var reportGroupId = await db.getSetting('report_group_id') || '';
   var reportTime = await db.getSetting('report_time') || '17:00';
+  var reportEnabled = await db.getSetting('report_enabled') || '';
+  var reportDays = await db.getSetting('report_days') || '1,2,3,4,5';
+  var reportDaysArr = reportDays.split(',');
+  var dayNames = ['日', '一', '二', '三', '四', '五', '六'];
 
   var body = '<div class="card"><h3>⏰ 上下班時間</h3>'
     + '<p style="color:#999;font-size:13px;margin-bottom:12px">目前：彈性上班 '+workStart+':00 ~ '+(parseInt(workStart)+Math.ceil(parseInt(lateBuf)/60))+':'+String(parseInt(lateBuf)%60).padStart(2,'0')+'，下班 '+workEnd+':00 起，需滿 8 小時</p>'
@@ -394,17 +398,25 @@ router.get('/settings', auth, async (_, res) => {
     + '<button class="btn">儲存</button><span id="gpsMsg" style="color:#06c755"></span></form></div>'
     + '<div class="card"><h3>📊 每日出勤報表</h3>'
     + '<p style="color:#999;font-size:13px;margin-bottom:12px">每天固定時間自動推播出勤彙總到 LINE 群組。</p>'
-    + '<p style="color:#999;font-size:12px;margin-bottom:4px">📌 設定方式：將 LINE Bot 加入工作群組 → 群組 ID 自動填上</p>'
     + '<form id="reportForm" class="inline">'
-    + '<div><label>LINE 群組 ID</label><input id="groupId" value="'+h(reportGroupId)+'" placeholder="Bot 加入群組後自動取得" style="width:280px;font-size:12px"></div>'
-    + '<div><label>推播時間</label><input id="rptTime" value="'+h(reportTime)+'" placeholder="17:00" style="width:80px"></div>'
+    + '<div style="flex-direction:row;align-items:center;gap:6px;margin-right:16px"><input type="checkbox" id="rptEnabled" '+(reportEnabled==='true'||reportEnabled==='1'?'checked':'')+' style="width:16px;height:16px"><label for="rptEnabled" style="margin:0">啟用每日推播</label></div>'
+    + '<div><label>LINE 群組 ID</label><input id="groupId" value="'+h(reportGroupId)+'" placeholder="加入群組後自動取得" style="width:260px;font-size:12px"></div>'
+    + '<div><label>推播時間</label><input id="rptTime" value="'+h(reportTime)+'" placeholder="17:00" style="width:70px"></div>'
     + '<button class="btn">儲存</button>'
     + '<a href="/admin/trigger-report" class="btn btn-outline" style="margin-left:8px">🧪 測試推播</a>'
-    + '<span id="rptMsg" style="color:#06c755"></span></form></div>'
+    + '<span id="rptMsg" style="color:#06c755"></span>'
+    + '</form>'
+    + '<div style="margin-top:12px;display:flex;gap:8px;align-items:center">'
+    + '<span style="font-size:13px;color:#666;font-weight:600">推播日：</span>';
+  for (var d = 0; d < 7; d++) {
+    var checked = reportDaysArr.indexOf(String(d)) !== -1 ? ' checked' : '';
+    body += '<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="checkbox" class="rptDay" value="'+d+'"'+checked+' style="width:auto;margin:0"> 週'+dayNames[d]+'</label>';
+  }
+  body += '</div></div>'
     + '<script>'
     + 'document.getElementById("hourForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({work_start_hour:document.getElementById("workStart").value,work_end_hour:document.getElementById("workEnd").value,late_buffer_minutes:document.getElementById("lateBuf").value})});if(r.ok)document.getElementById("hourMsg").textContent="✅已儲存";};'
     + 'document.getElementById("gpsForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({office_lat:document.getElementById("lat").value,office_lng:document.getElementById("lng").value,gps_range_meters:document.getElementById("range").value})});if(r.ok)document.getElementById("gpsMsg").textContent="✅已儲存";};'
-    + 'document.getElementById("reportForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({report_group_id:document.getElementById("groupId").value,report_time:document.getElementById("rptTime").value})});if(r.ok)document.getElementById("rptMsg").textContent="✅已儲存";};'
+    + 'document.getElementById("reportForm").onsubmit=async function(e){e.preventDefault();var days=[];var cbs=document.querySelectorAll(".rptDay:checked");for(var i=0;i<cbs.length;i++)days.push(cbs[i].value);var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({report_group_id:document.getElementById("groupId").value,report_time:document.getElementById("rptTime").value,report_enabled:document.getElementById("rptEnabled").checked?"true":"false",report_days:days.join(",")})});if(r.ok)document.getElementById("rptMsg").textContent="✅已儲存 重新整理後生效";};'
     + '</script>';
   res.send(layout('系統設定', '系統設定', body));
 });

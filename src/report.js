@@ -8,6 +8,16 @@ var clientRef = null;
 
 async function sendDailyReport(client) {
   try {
+    // 檢查是否啟用
+    var enabled = await db.getSetting('report_enabled');
+    if (enabled !== 'true' && enabled !== '1') { console.log('[Report] 未啟用，跳過'); return; }
+
+    // 檢查今天是否為推播日（0=Sun,1=Mon,...,6=Sat）
+    var daysStr = await db.getSetting('report_days') || '1,2,3,4,5';
+    var days = daysStr.split(',').map(function(d) { return parseInt(d); });
+    var todayDow = new Date().getDay();
+    if (days.indexOf(todayDow) === -1) { console.log('[Report] 今天非推播日（' + todayDow + '），跳過'); return; }
+
     var groupId = await db.getSetting('report_group_id');
     if (!groupId) { console.log('[Report] 未設定群組 ID，跳過'); return; }
 
@@ -16,7 +26,6 @@ async function sendDailyReport(client) {
       new Date().toISOString().split('T')[0],
       new Date().toISOString().split('T')[0], 500, 0);
 
-    // 整理每人打卡狀況
     var empMap = {};
     for (var i = 0; i < records.length; i++) {
       var r = records[i];
@@ -34,7 +43,6 @@ async function sendDailyReport(client) {
     msg += '📤 已下班：' + s.checked_out + ' 人\n';
     msg += '⏳ 未打卡：' + s.not_checked_in + ' 人\n\n';
 
-    // 遲到名單
     var lateList = [];
     var absentList = [];
     var empKeys = Object.keys(empMap);
@@ -79,7 +87,6 @@ function scheduleNext() {
   if (scheduleTimeout) clearTimeout(scheduleTimeout);
 
   var now = new Date();
-  // 從設定讀取推播時間（預設 17:00）
   db.getSetting('report_time').then(function(t) {
     var time = t || '17:00';
     var parts = time.split(':');
@@ -100,10 +107,4 @@ function scheduleNext() {
   });
 }
 
-// 手動觸發測試
-async function triggerReport(client) {
-  await sendDailyReport(client);
-  return '已發送';
-}
-
-module.exports = { startScheduler, triggerReport, sendDailyReport };
+module.exports = { startScheduler, sendDailyReport };

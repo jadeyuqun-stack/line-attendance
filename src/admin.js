@@ -375,6 +375,8 @@ router.get('/settings', auth, async (_, res) => {
   var workStart = await db.getSetting('work_start_hour') || '8';
   var workEnd = await db.getSetting('work_end_hour') || '17';
   var lateBuf = await db.getSetting('late_buffer_minutes') || '30';
+  var reportGroupId = await db.getSetting('report_group_id') || '';
+  var reportTime = await db.getSetting('report_time') || '17:00';
 
   var body = '<div class="card"><h3>⏰ 上下班時間</h3>'
     + '<p style="color:#999;font-size:13px;margin-bottom:12px">目前：彈性上班 '+workStart+':00 ~ '+(parseInt(workStart)+Math.ceil(parseInt(lateBuf)/60))+':'+String(parseInt(lateBuf)%60).padStart(2,'0')+'，下班 '+workEnd+':00 起，需滿 8 小時</p>'
@@ -390,9 +392,19 @@ router.get('/settings', auth, async (_, res) => {
     + '<div><label>經度</label><input id="lng" value="'+h(officeLng)+'" placeholder="121.564468"></div>'
     + '<div><label>允許半徑（公尺）</label><input id="range" value="'+h(gpsRange)+'" placeholder="200" style="width:100px"></div>'
     + '<button class="btn">儲存</button><span id="gpsMsg" style="color:#06c755"></span></form></div>'
+    + '<div class="card"><h3>📊 每日出勤報表</h3>'
+    + '<p style="color:#999;font-size:13px;margin-bottom:12px">每天固定時間自動推播出勤彙總到 LINE 群組。</p>'
+    + '<p style="color:#999;font-size:12px;margin-bottom:4px">📌 設定方式：將 LINE Bot 加入工作群組 → 群組 ID 自動填上</p>'
+    + '<form id="reportForm" class="inline">'
+    + '<div><label>LINE 群組 ID</label><input id="groupId" value="'+h(reportGroupId)+'" placeholder="Bot 加入群組後自動取得" style="width:280px;font-size:12px"></div>'
+    + '<div><label>推播時間</label><input id="rptTime" value="'+h(reportTime)+'" placeholder="17:00" style="width:80px"></div>'
+    + '<button class="btn">儲存</button>'
+    + '<a href="/admin/trigger-report" class="btn btn-outline" style="margin-left:8px">🧪 測試推播</a>'
+    + '<span id="rptMsg" style="color:#06c755"></span></form></div>'
     + '<script>'
     + 'document.getElementById("hourForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({work_start_hour:document.getElementById("workStart").value,work_end_hour:document.getElementById("workEnd").value,late_buffer_minutes:document.getElementById("lateBuf").value})});if(r.ok)document.getElementById("hourMsg").textContent="✅已儲存";};'
     + 'document.getElementById("gpsForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({office_lat:document.getElementById("lat").value,office_lng:document.getElementById("lng").value,gps_range_meters:document.getElementById("range").value})});if(r.ok)document.getElementById("gpsMsg").textContent="✅已儲存";};'
+    + 'document.getElementById("reportForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({report_group_id:document.getElementById("groupId").value,report_time:document.getElementById("rptTime").value})});if(r.ok)document.getElementById("rptMsg").textContent="✅已儲存";};'
     + '</script>';
   res.send(layout('系統設定', '系統設定', body));
 });
@@ -423,6 +435,17 @@ router.delete('/api/employees/:id/hard', auth, async (req, res) => {
 router.put('/api/employees/:id/approver', auth, express.json(), async (req, res) => {
   await db.setApprover(parseInt(req.params.id), req.body.approver_id || null); res.json({ success: true });
 });
+router.get('/trigger-report', auth, async (req, res) => {
+  try {
+    var report = require('./report');
+    var client = req.app.locals.lineClient;
+    await report.sendDailyReport(client);
+    res.send('<h3>✅ 推播完成</h3><p>請到 LINE 群組查看是否收到報表。</p><a href="/admin/settings">返回設定</a>');
+  } catch(e) {
+    res.send('錯誤：'+e.message+'<br><a href="/admin/settings">返回設定</a>');
+  }
+});
+
 router.post('/api/settings', auth, express.json(), async (req, res) => {
   for (var k in req.body) await db.setSetting(k, req.body[k]);
   res.json({ success: true });

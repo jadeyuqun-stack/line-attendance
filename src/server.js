@@ -6,6 +6,7 @@ const { Client } = require('@line/bot-sdk');
 const db = require('./database');
 const bot = require('./bot');
 const admin = require('./admin');
+const report = require('./report');
 
 async function main() {
   await db.initDatabase();
@@ -33,11 +34,23 @@ async function main() {
   app.get('/', (_, res) => res.send('LINE Attendance System OK'));
   app.post('/', (req, res) => { res.status(200).send('OK'); });
 
-  // LINE Webhook（不用 middleware，直接處理）
+  // LINE Webhook
   app.post('/webhook', (req, res) => {
     try {
       const events = req.body && req.body.events;
       if (events && events.length > 0) {
+        for (var i = 0; i < events.length; i++) {
+          var evt = events[i];
+          // 加入群組時自動記錄群組 ID
+          if (evt.type === 'join' && evt.source && evt.source.type === 'group') {
+            var gid = evt.source.groupId;
+            db.setSetting('report_group_id', gid);
+            console.log('[Webhook] Bot 加入群組:', gid);
+            db.getSetting('report_time').then(function(t) {
+              client.pushMessage(gid, [{ type: 'text', text: '👋 打卡系統已加入群組！\n\n每日 ' + (t || '17:00') + ' 自動推播出勤報告。\n請管理員到後台設定推播時間。' }]).catch(function(){});
+            });
+          }
+        }
         bot.handleEvents(events, client).catch(e => console.error(e));
       }
     } catch (e) {
@@ -57,6 +70,12 @@ async function main() {
       res.status(500).json({ error: e.message });
     }
   });
+
+  // 啟動每日報表排程
+  report.startScheduler(client);
+
+  // 把 client 存到 app 供 admin 使用
+  app.locals.lineClient = client;
 
   app.listen(PORT, () => console.log(`[Server] http://localhost:${PORT}`));
 }

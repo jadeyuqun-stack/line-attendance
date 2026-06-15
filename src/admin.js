@@ -107,6 +107,7 @@ function sidebar(active) {
     ['/admin/records', '📋', '打卡記錄'],
     ['/admin/employees', '👥', '員工管理'],
     ['/admin/leaves', '🏖', '請假管理'],
+    ['/admin/salary', '💵', '薪資發送'],
     ['/admin/settings', '⚙️', '系統設定'],
   ];
   var html = '';
@@ -482,5 +483,145 @@ function jsLib() {
     + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n打卡和請假記錄會保留（匿名化）。\\n此操作無法復原！"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}';
 }
+
+// ===== 薪資單上傳 =====
+var multer = require('multer');
+var XLSX = require('xlsx');
+var upload = multer({ storage: multer.memoryStorage() });
+
+router.get('/salary', auth, function(_, res) {
+  var body = '<div class="card"><h3>📄 上傳薪資 Excel</h3>'
+    + '<form action="/admin/salary/upload" method="POST" enctype="multipart/form-data">'
+    + '<input type="file" name="salary" accept=".xlsx,.xls" style="margin-bottom:12px;width:auto">'
+    + '<button class="btn">上傳並預覽</button>'
+    + '</form>'
+    + '<p style="color:#999;font-size:12px;margin-top:8px">上傳後會顯示預覽，確認無誤再發送。薪資內容僅發送給已綁定 LINE 的員工。</p>'
+    + '</div>';
+  res.send(layout('薪資發送', '薪資發送', body));
+});
+
+router.post('/salary/upload', auth, upload.single('salary'), async function(req, res) {
+  if (!req.file) return res.send('<h3>❌ 請選擇檔案</h3><a href="/admin/salary">返回</a>');
+
+  var wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  var sheetName = req.body.sheet || wb.SheetNames[0];
+  var ws = wb.Sheets[sheetName];
+  var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  // 過濾空行
+  data = data.filter(function(r) { return r.some(function(c) { return c !== '' && c !== null && c !== undefined; }); });
+
+  if (data.length === 0) return res.send('<h3>❌ 工作表為空</h3><a href="/admin/salary">返回</a>');
+
+  var emps = await db.listActiveEmployees();
+  var nameMap = {};
+  for (var i = 0; i < emps.length; i++) {
+    nameMap[emps[i].name] = emps[i];
+    nameMap[emps[i].employee_no] = emps[i];
+  }
+
+  // 找出哪一欄有員工姓名
+  var nameCol = -1, nameRow = -1, maxMatches = 0;
+  for (var row = 0; row < Math.min(10, data.length); row++) {
+    for (var col = 0; col < data[row].length; col++) {
+      var cell = String(data[row][col] || '').trim();
+      if (nameMap[cell]) {
+        var matches = 0;
+        for (var r2 = 0; r2 < Math.min(10, data.length); r2++) {
+          var c2 = String(data[r2][col] || '').trim();
+          if (nameMap[c2]) matches++;
+        }
+        if (matches > maxMatches) { maxMatches = matches; nameCol = col; nameRow = row; }
+      }
+    }
+  }
+
+  if (nameCol < 0) {
+    var html = '<h3>❌ 找不到員工姓名</h3><p>請確認 Excel 中有員工姓名欄位。</p>';
+    html += '<p style="color:#999">工作表：' + sheetName + '</p>';
+    html += '<p style="color:#999">可選工作表：</p><ul>';
+    for (var s = 0; s < wb.SheetNames.length; s++) html += '<li><a href="?sheet='+encodeURIComponent(wb.SheetNames[s])+'">'+wb.SheetNames[s]+'</a></li>';
+    html += '</ul><a href="/admin/salary">返回</a>';
+    return res.send(html);
+  }
+
+  // 依照 nameRow 往下找所有員工資料
+  var found = [];
+  for (var r = nameRow + 1; r < data.length; r++) {
+    var nameVal = String(data[r][nameCol] || '').trim();
+    if (!nameVal || nameVal.length < 2) continue;
+    var emp = nameMap[nameVal];
+    if (!emp || !emp.line_user_id) continue;
+    // 把該行前後資料組合成薪資內容
+    var content = [];
+    for (var c = 0; c < data[r].length; c++) {
+      if (c === nameCol) continue;
+      var v = data[r][c];
+      if (v === '' || v === null || v === undefined) continue;
+      // 用標題列的文字當 label
+      var label = (nameRow > 0 && data[nameRow] && data[nameRow][c]) ? String(data[nameRow][c]).trim() : '項目' + c;
+      if (label && label.length < 20) content.push(label + '：' + v);
+    }
+    found.push({ emp: emp, name: nameVal, content: content.join('\n'), row: r + 1 });
+  }
+
+  // 存到 session 供發送使用
+  req.session.salaryData = found;
+  req.session.salarySheet = sheetName;
+
+  var sheetOpts = wb.SheetNames.map(function(sn) {
+    return '<option value="'+sn+'"'+(sn===sheetName?' selected':'')+'>'+sn+'</option>';
+  }).join('');
+
+  var preview = '<div class="card"><h3>📋 預覽（共 '+found.length+' 人）</h3>'
+    + '<form action="/admin/salary/upload" method="POST" enctype="multipart/form-data" style="margin-bottom:16px">'
+    + '<input type="file" name="salary" accept=".xlsx,.xls" style="width:auto;display:inline;margin-right:8px">'
+    + '<select name="sheet" style="width:auto;display:inline;margin-right:8px">'+sheetOpts+'</select>'
+    + '<button class="btn">重新上傳</button></form>'
+    + '<table><tr><th>#</th><th>員工姓名</th><th>編號</th><th>LINE</th><th>薪資內容</th></tr>';
+
+  for (var i = 0; i < found.length; i++) {
+    var f = found[i];
+    preview += '<tr><td>'+(i+1)+'</td><td>'+h(f.emp.name)+'</td><td>'+h(f.emp.employee_no)+'</td>'
+      + '<td><span class="badge badge-in">已綁定</span></td>'
+      + '<td><pre style="font-size:12px;margin:0;max-width:400px;white-space:pre-wrap">'+h(f.content)+'</pre></td></tr>';
+  }
+  preview += '</table>'
+    + '<form action="/admin/salary/send" method="POST" onsubmit="return confirm(\'確定發送給 '+found.length+' 位員工？\')">'
+    + '<button class="btn" style="margin-top:16px;font-size:16px;padding:12px 32px">📨 一鍵發送給所有員工</button>'
+    + '</form></div>';
+
+  res.send(layout('薪資預覽', '薪資發送', preview));
+});
+
+router.post('/salary/send', auth, async function(req, res) {
+  var found = req.session.salaryData;
+  if (!found || found.length === 0) return res.send('<h3>❌ 無資料，請重新上傳</h3><a href="/admin/salary">返回</a>');
+
+  var client = req.app.locals.lineClient;
+  var sent = 0, failed = 0;
+
+  for (var i = 0; i < found.length; i++) {
+    var f = found[i];
+    try {
+      var msg = '📄 ' + (req.session.salarySheet || '薪資明細') + '\n\n👤 ' + f.emp.name + '（' + f.emp.employee_no + '）\n\n' + f.content + '\n\n📌 如有疑問請洽人資';
+      await client.pushMessage(f.emp.line_user_id, [{ type: 'text', text: msg }]);
+      sent++;
+    } catch(e) {
+      console.error('[Salary] 發送失敗 ' + f.emp.name + ':', e.message);
+      failed++;
+    }
+  }
+
+  delete req.session.salaryData;
+  var result = '<div class="card"><h3>📨 發送完成</h3>'
+    + '<div class="stats"><div class="stat"><div class="icon green">✅</div><div class="info"><div class="num">'+sent+'</div><div class="lbl">發送成功</div></div></div>'
+    + (failed > 0 ? '<div class="stat"><div class="icon red">❌</div><div class="info"><div class="num">'+failed+'</div><div class="lbl">發送失敗</div></div></div>' : '')
+    + '</div></div><a href="/admin/salary" class="btn">返回薪資上傳</a>';
+  res.send(layout('發送完成', '薪資發送', result));
+});
+
+// 把 admin/salary 加到 sidebar
+// sidebar 是靜態的，所以不用改
 
 module.exports = router;

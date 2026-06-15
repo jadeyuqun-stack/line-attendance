@@ -394,7 +394,7 @@ async function handlePostback(postback, uid, client, replyToken) {
             type: 'flex', altText: '📋 請假申請（第'+result.level+'階）',
             contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '📋 請假申請（第'+result.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
-              { type: 'text', text: '員工：' + leaveEmp.name, margin: 'md', size: 'sm', color: '#666' },
+              { type: 'text', text: '員工：' + leaveEmp.name, margin: 'md', size: 'sm', color: '#666666' },
               { type: 'text', text: '時間：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'sm', size: 'sm' },
             ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
               { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'leave_approve_' + leaveId }, flex: 1, height: 'sm' },
@@ -436,7 +436,7 @@ async function handlePostback(postback, uid, client, replyToken) {
             type: 'flex', altText: '🕐 加班申請（第'+otResult.level+'階）',
             contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '🕐 加班申請（第'+otResult.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
-              { type: 'text', text: '員工：' + otEmp.name, margin: 'md', size: 'sm', color: '#666' },
+              { type: 'text', text: '員工：' + otEmp.name, margin: 'md', size: 'sm', color: '#666666' },
               { type: 'text', text: '時間：' + ot.start_time + ' ~ ' + ot.end_time, margin: 'sm', size: 'sm' },
             ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
               { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'ot_approve_' + otId }, flex: 1, height: 'sm' },

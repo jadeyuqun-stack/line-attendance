@@ -76,6 +76,13 @@ async function handleText(text, uid, client, replyToken) {
   return client.replyMessage(replyToken, [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
 }
 
+function fmt(d) {
+  var h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+  var ap = h >= 12 ? '下午' : '上午';
+  var h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return ap + ' ' + String(h12).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
 // ===== Check-in Flex =====
 async function doCheckIn(emp, client, replyToken, loc, gps) {
   const today = await db.getTodayCheckins(emp.id);
@@ -515,6 +522,10 @@ function makePng() {
   function ch(type, dd) { const l=Buffer.alloc(4);l.writeUInt32BE(dd.length); const tt=Buffer.from(type), a=Buffer.concat([l,tt,dd]); const cc=Buffer.alloc(4);cc.writeUInt32BE(crc(Buffer.concat([tt,dd]))); return Buffer.concat([a,cc]); }
   const sig = Buffer.from([137,80,78,71,13,10,26,10]); const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w,0); ihdr.writeUInt32BE(h,4); ihdr[8]=8; ihdr[9]=6;
   return Buffer.concat([sig,ch('IHDR',ihdr),ch('IDAT',def),ch('IEND',Buffer.alloc(0))]);
+}
+
+function checkLate(now) {
+  return Math.max(0, now.getHours() * 60 + now.getMinutes() - (parseInt(process.env.WORK_START_HOUR || '8') * 60 + parseInt(process.env.LATE_BUFFER_MINUTES || '30')));
 }
 
 module.exports = { handleEvents, setupRichMenu };

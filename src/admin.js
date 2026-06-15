@@ -108,6 +108,7 @@ function sidebar(active) {
     ['/admin/employees', '👥', '員工管理'],
     ['/admin/leaves', '🏖', '請假管理'],
     ['/admin/salary', '💵', '薪資發送'],
+    ['/admin/overtime', '🕐', '加班管理'],
     ['/admin/settings', '⚙️', '系統設定'],
   ];
   var html = '';
@@ -665,6 +666,7 @@ async function doSend(data, client, baseUrl) {
     }
   }
   for (var i = 0; i < data.length; i++) { delete salaryImages[data[i].id]; }
+  await db.deleteSalaryRecords();
   return '<div class="card"><h3>📨 發送完成</h3>'
     + '<div class="stats"><div class="stat"><div class="icon green">✅</div><div class="info"><div class="num">'+sent+'</div><div class="lbl">發送成功</div></div></div>'
     + (failed > 0 ? '<div class="stat"><div class="icon red">❌</div><div class="info"><div class="num">'+failed+'</div><div class="lbl">發送失敗</div></div></div>' : '')

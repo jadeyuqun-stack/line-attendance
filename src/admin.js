@@ -485,6 +485,10 @@ function jsLib() {
 }
 
 // ===== 薪資發送 =====
+var multer = require('multer');
+var upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+var salaryImages = {}; // 暫存圖片 { empId: { buffer, mimetype } }
+
 router.get('/salary', auth, async function(_, res) {
   var emps = await db.listActiveEmployees();
   var bound = emps.filter(function(e) { return e.line_user_id; });
@@ -493,14 +497,17 @@ router.get('/salary', auth, async function(_, res) {
   var rows = '';
   for (var i = 0; i < bound.length; i++) {
     var e = bound[i];
+    var hasImg = salaryImages[e.id] ? ' ✅已上傳圖片' : '';
     rows += '<tr>'
       + '<td>'+(i+1)+'</td>'
       + '<td>'+h(e.employee_no)+'</td>'
       + '<td>'+h(e.name)+'</td>'
       + '<td>'+h(e.department||'')+'</td>'
       + '<td><span class="badge badge-in">已綁定</span></td>'
-      + '<td><textarea name="c_'+e.id+'" rows="4" style="width:100%;font-size:13px;font-family:monospace" placeholder="例如：本薪：30,300\n加班費：5,000\n實發：34,100"></textarea></td>'
-      + '</tr>';
+      + '<td>'
+      + '<textarea name="c_'+e.id+'" rows="4" style="width:100%;font-size:13px;font-family:monospace;margin-bottom:4px" placeholder="本薪：30,300\n加班費：5,000\n實發：34,100"></textarea>'
+      + '<input type="file" name="img_'+e.id+'" accept="image/*" style="width:auto;font-size:12px;padding:4px" onchange="this.form.onsubmit=null">'+hasImg
+      + '</td></tr>';
   }
 
   var unboundRows = '';
@@ -510,9 +517,9 @@ router.get('/salary', auth, async function(_, res) {
   }
 
   var body = '<div class="card"><h3>💵 輸入薪資內容</h3>'
-    + '<p style="color:#999;margin-bottom:16px">為每位已綁定 LINE 的員工輸入薪資內容，全部完成後一鍵發送。</p>'
-    + '<form id="salaryForm" method="POST" action="/admin/salary/preview">'
-    + '<table><tr><th>#</th><th>編號</th><th>姓名</th><th>部門</th><th>LINE</th><th>薪資內容</th></tr>'
+    + '<p style="color:#999;margin-bottom:16px">填寫薪資內容並可上傳圖片，完成後一鍵發送給員工。</p>'
+    + '<form id="salaryForm" method="POST" action="/admin/salary/preview" enctype="multipart/form-data">'
+    + '<table><tr><th>#</th><th>編號</th><th>姓名</th><th>部門</th><th>LINE</th><th>薪資內容（可上傳圖片）</th></tr>'
     + (rows || '<tr><td colspan="6">無已綁定員工</td></tr>')
     + '</table>'
     + '<div style="margin-top:16px;display:flex;gap:12px">'
@@ -528,33 +535,45 @@ router.get('/salary', auth, async function(_, res) {
   res.send(layout('薪資發送', '薪資發送', body));
 });
 
-router.post('/salary/preview', auth, express.urlencoded({ extended: true }), async function(req, res) {
+router.post('/salary/preview', auth, upload.any(), async function(req, res) {
   var emps = await db.listActiveEmployees();
   var empMap = {};
   for (var i = 0; i < emps.length; i++) { empMap[emps[i].id] = emps[i]; }
+
+  // 處理上傳的圖片
+  for (var i = 0; i < (req.files || []).length; i++) {
+    var file = req.files[i];
+    var match = file.fieldname.match(/^img_(\d+)$/);
+    if (match) {
+      var eid = parseInt(match[1]);
+      salaryImages[eid] = { buffer: file.buffer, mimetype: file.mimetype };
+    }
+  }
 
   var data = [];
   for (var key in req.body) {
     if (key.indexOf('c_') === 0) {
       var id = parseInt(key.replace('c_', ''));
       var content = (req.body[key] || '').trim();
-      if (content && empMap[id] && empMap[id].line_user_id) {
-        data.push({ id: id, emp: empMap[id], content: content });
+      var hasImg = !!salaryImages[id];
+      if ((content || hasImg) && empMap[id] && empMap[id].line_user_id) {
+        data.push({ id: id, emp: empMap[id], content: content, hasImg: hasImg });
       }
     }
   }
 
-  if (data.length === 0) return res.send('<h3>❌ 沒有填寫任何薪資內容</h3><a href="/admin/salary">返回</a>');
+  if (data.length === 0) return res.send('<h3>❌ 沒有填寫任何內容</h3><a href="/admin/salary">返回</a>');
 
   req.session.salaryData = data;
 
   var preview = '<div class="card"><h3>📋 發送預覽（共 '+data.length+' 人）</h3>'
-    + '<table><tr><th>#</th><th>編號</th><th>姓名</th><th>薪資內容</th></tr>';
+    + '<table><tr><th>#</th><th>編號</th><th>姓名</th><th>文字</th><th>圖片</th></tr>';
 
   for (var i = 0; i < data.length; i++) {
     var d = data[i];
     preview += '<tr><td>'+(i+1)+'</td><td>'+h(d.emp.employee_no)+'</td><td>'+h(d.emp.name)+'</td>'
-      + '<td><pre style="font-size:12px;margin:0;white-space:pre-wrap">'+h(d.content)+'</pre></td></tr>';
+      + '<td><pre style="font-size:12px;margin:0;white-space:pre-wrap">'+h(d.content||'(僅圖片)')+'</pre></td>'
+      + '<td>'+(d.hasImg?'✅':'—')+'</td></tr>';
   }
   preview += '</table>'
     + '<div style="display:flex;gap:12px;margin-top:16px">'
@@ -565,18 +584,37 @@ router.post('/salary/preview', auth, express.urlencoded({ extended: true }), asy
   res.send(layout('發送預覽', '薪資發送', preview));
 });
 
+// 提供圖片給 LINE 存取
+router.get('/salary/img/:id', function(req, res) {
+  var img = salaryImages[parseInt(req.params.id)];
+  if (!img) return res.status(404).end();
+  res.set('Content-Type', img.mimetype);
+  res.set('Cache-Control', 'public, max-age=300');
+  res.send(img.buffer);
+});
+
 router.post('/salary/send', auth, async function(req, res) {
   var data = req.session.salaryData;
   if (!data || data.length === 0) return res.send('<h3>❌ 無資料</h3><a href="/admin/salary">返回</a>');
 
   var client = req.app.locals.lineClient;
+  var baseUrl = req.protocol + '://' + req.get('host');
   var sent = 0, failed = 0;
 
   for (var i = 0; i < data.length; i++) {
     var d = data[i];
     try {
-      var msg = '📄 薪資明細\n\n👤 ' + d.emp.name + '（' + d.emp.employee_no + '）\n\n' + d.content + '\n\n📌 如有疑問請洽會計';
-      await client.pushMessage(d.emp.line_user_id, [{ type: 'text', text: msg }]);
+      var messages = [];
+      if (d.content) {
+        messages.push({ type: 'text', text: '📄 薪資明細\n\n👤 ' + d.emp.name + '（' + d.emp.employee_no + '）\n\n' + d.content + '\n\n📌 如有疑問請洽會計' });
+      }
+      if (d.hasImg && salaryImages[d.id]) {
+        var imgUrl = baseUrl + '/admin/salary/img/' + d.id;
+        messages.push({ type: 'image', originalContentUrl: imgUrl, previewImageUrl: imgUrl });
+      }
+      if (messages.length > 0) {
+        await client.pushMessage(d.emp.line_user_id, messages);
+      }
       sent++;
     } catch(e) {
       console.error('[Salary] 發送失敗 ' + d.emp.name + ':', e.message);
@@ -584,7 +622,10 @@ router.post('/salary/send', auth, async function(req, res) {
     }
   }
 
+  // 清除圖片暫存
+  for (var i = 0; i < data.length; i++) { delete salaryImages[data[i].id]; }
   delete req.session.salaryData;
+
   var result = '<div class="card"><h3>📨 發送完成</h3>'
     + '<div class="stats"><div class="stat"><div class="icon green">✅</div><div class="info"><div class="num">'+sent+'</div><div class="lbl">發送成功</div></div></div>'
     + (failed > 0 ? '<div class="stat"><div class="icon red">❌</div><div class="info"><div class="num">'+failed+'</div><div class="lbl">發送失敗</div></div></div>' : '')

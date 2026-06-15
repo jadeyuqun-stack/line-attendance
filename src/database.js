@@ -208,6 +208,10 @@ async function hardDeleteEmployee(id) {
   await pool.query('UPDATE checkins SET employee_id=NULL WHERE employee_id=$1', [id]);
   await pool.query('UPDATE leave_requests SET employee_id=NULL WHERE employee_id=$1', [id]);
   await pool.query('UPDATE leave_requests SET approved_by=NULL WHERE approved_by=$1', [id]);
+  await pool.query('UPDATE overtime_requests SET employee_id=NULL WHERE employee_id=$1', [id]);
+  await pool.query('UPDATE overtime_requests SET approved_by=NULL WHERE approved_by=$1', [id]);
+  await pool.query('UPDATE missed_punch SET employee_id=NULL WHERE employee_id=$1', [id]);
+  await pool.query('UPDATE missed_punch SET approved_by=NULL WHERE approved_by=$1', [id]);
   await pool.query('DELETE FROM employees WHERE id=$1', [id]);
 }
 async function reactivateEmployee(id) {

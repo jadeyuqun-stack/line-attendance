@@ -67,6 +67,7 @@ async function handleText(text, uid, client, replyToken) {
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
   if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken);
+  if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, 'leave');
   if (cmd === '駁回全部') return batchRejectAll(emp, client, replyToken, 'leave');
   if (cmd === '加班核准全部') return batchApproveAll(emp, client, replyToken, 'overtime');
@@ -84,6 +85,17 @@ function fmt(d) {
   var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
   var h = d.getHours(), min = d.getMinutes();
   return y + ' ' + m + '月' + day + '日 ' + String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
+}
+
+async function startMissedPunch(uid, client, replyToken) {
+  states.set(uid, { flow: "missed", step: "type" });
+  return client.replyMessage(replyToken, [{
+    type: "text", text: "📝 補打卡申請\n\n請選擇補打卡類型：",
+    quickReply: { items: [
+      { type: "action", action: { type: "message", label: "🔵 補上班卡", text: "補上班" } },
+      { type: "action", action: { type: "message", label: "🔴 補下班卡", text: "補下班" } },
+      { type: "action", action: { type: "message", label: "取消", text: "取消" } }
+    ]}}]);
 }
 
 async function batchApproveAll(emp, client, replyToken, type) {
@@ -281,6 +293,13 @@ async function startLeaveFlow(uid, client, replyToken) {
   }]);
 }
 
+function validateOvertimeTime(dt) {
+  var d = new Date(dt);
+  var h = d.getHours(), m = d.getMinutes();
+  var totalMin = h * 60 + m;
+  return totalMin >= 1050 && totalMin <= 1380;
+}
+
 async function startOvertimeFlow(uid, client, replyToken) {
   states.set(uid, { flow: "overtime", step: "start" });
   return client.replyMessage(replyToken, [withDatePicker("🕐 加班申請\n\n請選擇「開始日期時間」", "ot_start")]);
@@ -298,6 +317,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
   if (state.flow === "overtime" && state.step === 'reason') {
     state.reason = text;
     try {
+        if (!validateOvertimeTime(state.otStart) || !validateOvertimeTime(state.otEnd)) { states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 加班時間限於 17:30 ~ 23:00")]); }
       var otId = await db.createOvertimeRequest(emp.id, state.otStart, state.otEnd, state.reason);
       states.delete(uid);
       var approvers = await db.findApprovers(emp.id);
@@ -323,6 +343,39 @@ async function handleFlow(text, uid, client, replyToken, emp) {
         quickReply: GPS_BUTTONS
       }]);
     } catch(e) { console.error('[ot] error:', e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
+  }
+  if (state.flow === "missed") {
+    if (state.step === "type") {
+      if (text === "取消") { states.delete(uid); return client.replyMessage(replyToken, [withMenu("已取消")]); }
+      var pt = text === "補上班" ? "check_in" : text === "補下班" ? "check_out" : null;
+      if (!pt) return client.replyMessage(replyToken, [withMenu("請選擇補上班或補下班")]);
+      state.punchType = pt; state.step = "date";
+      return client.replyMessage(replyToken, [withDatePicker("📝 請選擇補卡日期", "missed_date")]);
+    }
+    if (state.step === "reason") {
+      state.reason = text;
+      try {
+        var mpId = await db.createMissedPunch(emp.id, state.punchType, state.punchDate, state.punchTime, state.reason);
+        states.delete(uid);
+        var approvers = await db.findApprovers(emp.id);
+        for (var j = 0; j < approvers.length; j++) {
+          await client.pushMessage(approvers[j].line_user_id, [{
+            type: "flex", altText: "📝 補打卡申請",
+            contents: { type: "bubble", body: { type: "box", layout: "vertical", contents: [
+              { type: "text", text: "📝 補打卡申請", weight: "bold", size: "lg", color: "#f39c12" },
+              { type: "text", text: "員工：" + emp.name, margin: "md", size: "sm" },
+              { type: "text", text: "類型：" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班"), margin: "sm", size: "sm" },
+              { type: "text", text: "日期：" + state.punchDate + " " + state.punchTime, margin: "sm", size: "sm" },
+              { type: "text", text: "原因：" + state.reason, margin: "sm", size: "sm", wrap: true },
+            ]}, footer: { type: "box", layout: "horizontal", spacing: "sm", contents: [
+              { type: "button", style: "primary", color: "#06c755", action: { type: "postback", label: "核准", data: "mp_approve_" + mpId }, flex: 1, height: "sm" },
+              { type: "button", style: "secondary", color: "#e74c3c", action: { type: "postback", label: "駁回", data: "mp_reject_" + mpId }, flex: 1, height: "sm" },
+            ]}}
+          }]);
+        }
+        return client.replyMessage(replyToken, [withMenu("✅ 補打卡申請已送出！\n\n" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班") + "\n日期：" + state.punchDate + " " + state.punchTime + "\n⏳ 等待簽核")]);
+      } catch(e) { console.error(e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
+    }
   }
   if (!state.flow && state.step === 'reason') {
     state.reason = text;
@@ -408,6 +461,22 @@ async function handlePostback(postback, uid, client, replyToken) {
     return client.replyMessage(replyToken, [withDatePicker('🕐 開始：' + dt + '\n\n請選擇「結束日期時間」', 'ot_end')]);
   }
   if (data === 'ot_end') {
+  if (data === "missed_date") {
+    var state = states.get(uid);
+    if (!state || state.flow !== "missed" || state.step !== "date") return;
+    var d = params.date; if (!d) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 日期錯誤" }]);
+    state.punchDate = d; state.step = "time";
+    return client.replyMessage(replyToken, [withDatePicker("📝 補卡日期：" + d + "\n\n請選擇時間", "missed_time")]);
+  }
+  if (data === "missed_time") {
+    var state = states.get(uid);
+    if (!state || state.flow !== "missed" || state.step !== "time") return;
+    var dt = params.datetime || (params.date ? params.date + " " + (params.time || "00:00") : null);
+    if (!dt) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 時間錯誤" }]);
+    var t = dt.indexOf(" ") !== -1 ? dt.split(" ")[1] : dt;
+    state.punchTime = t; state.step = "reason";
+    return client.replyMessage(replyToken, [withMenu("📝 補打卡：" + state.punchDate + " " + state.punchTime + "\n\n請輸入原因：")]);
+  }
     var state = states.get(uid);
     if (!state || state.flow !== 'overtime' || state.step !== 'end') return;
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
@@ -417,6 +486,26 @@ async function handlePostback(postback, uid, client, replyToken) {
   }
 
   // Leave approval
+  // Missed punch approval
+  if (data.indexOf("mp_approve_") === 0 || data.indexOf("mp_reject_") === 0) {
+    var mpId = parseInt(data.split("_").pop());
+    var mpApprover = await db.getEmployeeByLineId(uid);
+    var mp = await db.getMissedPunchById(mpId);
+    if (!mpApprover || !mp) return client.replyMessage(replyToken, [withMenu("❌ 無效請求")]);
+    var mpEmp = await db.getEmployeeById(mp.employee_id);
+    var mpDesignated = mpEmp && (mpEmp.approver_id===mpApprover.id || mpEmp.approver2_id===mpApprover.id || mpEmp.approver3_id===mpApprover.id);
+    if (!mpApprover.can_approve && !mpDesignated) return client.replyMessage(replyToken, [withMenu("❌ 無簽核權限")]);
+    if (mp.status !== "pending") return client.replyMessage(replyToken, [withMenu("已處理過")]);
+    if (data.indexOf("mp_approve_") === 0) {
+      await db.updateMissedPunchStatus(mpId, "approved", mpApprover.id);
+      if (mpEmp && mpEmp.line_user_id) await client.pushMessage(mpEmp.line_user_id, [{ type: "text", text: "🎉 補打卡已核准！\n" + mp.punch_date + " " + mp.punch_time }]);
+      return client.replyMessage(replyToken, [withMenu("✅ 已核准")]);
+    } else {
+      await db.updateMissedPunchStatus(mpId, "rejected", mpApprover.id);
+      if (mpEmp && mpEmp.line_user_id) await client.pushMessage(mpEmp.line_user_id, [{ type: "text", text: "❌ 補打卡被駁回\n" + mp.punch_date + " " + mp.punch_time }]);
+      return client.replyMessage(replyToken, [withMenu("已駁回")]);
+    }
+  }
   if (data.indexOf('leave_approve_') === 0 || data.indexOf('leave_reject_') === 0) {
     var leaveId = parseInt(data.split('_').pop());
     var approver = await db.getEmployeeByLineId(uid);

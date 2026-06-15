@@ -78,6 +78,22 @@ async function initDatabase() {
     )
   `);
   // 預設設定
+  // 補打卡記錄表
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS missed_punch (
+      id SERIAL PRIMARY KEY,
+      employee_id INTEGER REFERENCES employees(id),
+      punch_type VARCHAR(10) NOT NULL,
+      punch_date TEXT NOT NULL,
+      punch_time TEXT NOT NULL,
+      reason TEXT DEFAULT '',
+      status VARCHAR(20) DEFAULT 'pending',
+      approved_by INTEGER REFERENCES employees(id),
+      approved_at TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   // 加班記錄表
   await pool.query(`
     CREATE TABLE IF NOT EXISTS overtime_requests (
@@ -377,6 +393,46 @@ async function getSalaryRecords() {
   );
   return rows;
 }
+// Missed punch
+async function createMissedPunch(empId, punchType, punchDate, punchTime, reason) {
+  var { rows } = await pool.query(
+    'INSERT INTO missed_punch (employee_id, punch_type, punch_date, punch_time, reason) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+    [empId, punchType, punchDate, punchTime, reason]
+  );
+  return rows[0].id;
+}
+async function getMissedPunches(status, limit) {
+  limit = limit || 200;
+  var sql = 'SELECT mp.*, e.name, e.employee_no, e.department FROM missed_punch mp JOIN employees e ON mp.employee_id=e.id WHERE 1=1';
+  var p = [], i = 1;
+  if (status) { sql += ' AND mp.status=$' + i++; p.push(status); }
+  sql += ' ORDER BY mp.created_at DESC LIMIT $' + i; p.push(limit);
+  var { rows } = await pool.query(sql, p);
+  return rows;
+}
+async function getMissedPunchById(id) {
+  var { rows } = await pool.query('SELECT * FROM missed_punch WHERE id=$1', [id]);
+  return rows[0] || null;
+}
+async function updateMissedPunchStatus(id, status, approvedBy) {
+  if (approvedBy) {
+    await pool.query("UPDATE missed_punch SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [status, approvedBy, id]);
+  } else {
+    await pool.query("UPDATE missed_punch SET status=$1, approved_at=NOW() WHERE id=$2", [status, id]);
+  }
+  // 若核准，自動寫入打卡記錄
+  if (status === 'approved') {
+    var mp = await getMissedPunchById(id);
+    if (mp) {
+      var dt = mp.punch_date + ' ' + mp.punch_time;
+      await pool.query(
+        'INSERT INTO checkins (employee_id, type, check_time) VALUES ($1,$2,$3)',
+        [mp.employee_id, mp.punch_type, dt]
+      );
+    }
+  }
+}
+
 async function deleteSalaryRecords() {
   await pool.query('DELETE FROM salary_records');
 }
@@ -444,4 +500,5 @@ module.exports = {
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,
   saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll,
   createOvertimeRequest, getOvertimeRequests, getOvertimeById, updateOvertimeStatus, getEmployeeOvertimeRequests,
+  createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus,
 };

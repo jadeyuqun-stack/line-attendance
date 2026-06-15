@@ -109,6 +109,7 @@ function sidebar(active) {
     ['/admin/leaves', '🏖', '請假管理'],
     ['/admin/salary', '💵', '薪資發送'],
     ['/admin/overtime', '🕐', '加班管理'],
+    ['/admin/missed', '📝', '補打卡'],
     ['/admin/settings', '⚙️', '系統設定'],
   ];
   var html = '';
@@ -548,6 +549,26 @@ function jsLib() {
     + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n打卡和請假記錄會保留（匿名化）。\\n此操作無法復原！"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}';
 }
+
+// ===== 補打卡管理 =====
+router.get('/missed', auth, async function(_, res) {
+  var status = _.query.status || '';
+  var records = await db.getMissedPunches(status, 200);
+  var rows = '';
+  for (var i = 0; i < records.length; i++) {
+    var r = records[i];
+    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
+    var ah = '';
+    if (r.status === 'pending') ah = '<button onclick="approveMp('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectMp('+r.id+')" class="btn-sm btn-red">駁回</button>';
+    rows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.punch_type==='check_in'?'🔵補上班':'🔴補下班')+'</td><td>'+h(r.punch_date)+' '+h(r.punch_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+'</td><td>'+ah+'</td></tr>';
+  }
+  var body = '<div class="tabs"><a href="?status=" class="'+(status===''?'active':'')+'">全部</a><a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a><a href="?status=approved" class="'+(status==='approved'?'active':'')+'">✅ 已核准</a></div>';
+  body += '<div class="card"><table><tr><th>編號</th><th>姓名</th><th>類型</th><th>時間</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="7">無補打卡記錄</td></tr>')+'</table></div>';
+  body += '<script>async function approveMp(id){await fetch("/admin/api/missed/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectMp(id){await fetch("/admin/api/missed/"+id+"/reject",{method:"PUT"});location.reload();}</script>';
+  res.send(layout('補打卡管理', '補打卡', body));
+});
+router.put('/api/missed/:id/approve', auth, async function(req, res) { await db.updateMissedPunchStatus(parseInt(req.params.id), 'approved', null); res.json({ success: true }); });
+router.put('/api/missed/:id/reject', auth, async function(req, res) { await db.updateMissedPunchStatus(parseInt(req.params.id), 'rejected', null); res.json({ success: true }); });
 
 // ===== 加班管理 =====
 router.get('/overtime', auth, async function(_, res) {

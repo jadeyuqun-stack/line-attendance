@@ -479,6 +479,13 @@ async function handlePostback(postback, uid, client, replyToken) {
     return client.replyMessage(replyToken, [withDatePicker('🕐 開始：' + dt + '\n\n請選擇「結束日期時間」', 'ot_end')]);
   }
   if (data === 'ot_end') {
+    var state = states.get(uid);
+    if (!state || state.flow !== 'overtime' || state.step !== 'end') return;
+    var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
+    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
+    state.otEnd = dt; state.step = 'reason';
+    return client.replyMessage(replyToken, [withMenu('🕐 ' + state.otStart + ' ~ ' + dt + '\n\n📝 請輸入加班原因：')]);
+  }
   if (data === "missed_dt") {
     var state = states.get(uid);
     if (!state || state.flow !== "missed" || state.step !== "dt") return;
@@ -490,15 +497,7 @@ async function handlePostback(postback, uid, client, replyToken) {
     state.step = "reason";
     return client.replyMessage(replyToken, [withMenu("📝 補打卡：" + state.punchDate + " " + state.punchTime + "\n\n請輸入原因：")]);
   }
-    var state = states.get(uid);
-    if (!state || state.flow !== 'overtime' || state.step !== 'end') return;
-    var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
-    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
-    state.otEnd = dt; state.step = 'reason';
-    return client.replyMessage(replyToken, [withMenu('🕐 ' + state.otStart + ' ~ ' + dt + '\n\n📝 請輸入加班原因：')]);
-  }
 
-  // Leave approval
   // Missed punch approval
   if (data.indexOf("mp_approve_") === 0 || data.indexOf("mp_reject_") === 0) {
     var mpId = parseInt(data.split("_").pop());

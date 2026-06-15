@@ -72,6 +72,18 @@ async function initDatabase() {
     )
   `);
   // 預設設定
+  // 薪資記錄表
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS salary_records (
+      id SERIAL PRIMARY KEY,
+      employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+      content TEXT DEFAULT '',
+      has_image BOOLEAN DEFAULT false,
+      month_label VARCHAR(20) DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   const defaults = [
     ['company_name', process.env.COMPANY_NAME || '公司'],
     ['work_start_hour', process.env.WORK_START_HOUR || '8'],
@@ -311,6 +323,25 @@ async function listApprovers() {
   return rows;
 }
 
+// =========== Salary records ===========
+async function saveSalaryRecords(records, monthLabel) {
+  for (var r of records) {
+    await pool.query(
+      'INSERT INTO salary_records (employee_id, content, has_image, month_label) VALUES ($1,$2,$3,$4)',
+      [r.id, r.content, r.hasImg || false, monthLabel || '']
+    );
+  }
+}
+async function getSalaryRecords() {
+  var { rows } = await pool.query(
+    "SELECT sr.*, e.name, e.employee_no, e.department, e.line_user_id FROM salary_records sr JOIN employees e ON sr.employee_id=e.id ORDER BY sr.created_at DESC LIMIT 500"
+  );
+  return rows;
+}
+async function deleteSalaryRecords() {
+  await pool.query('DELETE FROM salary_records');
+}
+
 module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
@@ -318,4 +349,5 @@ module.exports = {
   recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,
+  saveSalaryRecords, getSalaryRecords, deleteSalaryRecords,
 };

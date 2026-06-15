@@ -67,12 +67,16 @@ async function handleText(text, uid, client, replyToken) {
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
   if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken);
+  if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, 'leave');
+  if (cmd === '駁回全部') return batchRejectAll(emp, client, replyToken, 'leave');
+  if (cmd === '加班核准全部') return batchApproveAll(emp, client, replyToken, 'overtime');
+  if (cmd === '加班駁回全部') return batchRejectAll(emp, client, replyToken, 'overtime');
   if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消操作。')]); }
   if (states.has(uid)) return handleFlow(cmd, uid, client, replyToken, emp);
   if (cmd.includes('上班')) { states.delete(uid); return doCheckIn(emp, client, replyToken); }
   if (cmd.includes('下班')) { states.delete(uid); return doCheckOut(emp, client, replyToken); }
   if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken);
-  if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 功能選單\n\n📍 傳送位置 → GPS 打卡\n💬「上班」「下班」→ 打卡\n🏖「請假」→ 請假\n🕐「加班」→ 加班申請\n📋「查詢」→ 記錄\n🆔「我的ID」→ LINE ID')]);
+  if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
   return client.replyMessage(replyToken, [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
 }
 
@@ -81,6 +85,44 @@ function fmt(d) {
   var ap = h >= 12 ? '下午' : '上午';
   var h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return ap + ' ' + String(h12).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+async function batchApproveAll(emp, client, replyToken, type) {
+  if (!emp.can_approve) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+  var requests = type === 'overtime' ? await db.getOvertimeRequests('pending', 200) : await db.getLeaveRequests('pending', 200);
+  var count = 0;
+  for (var i = 0; i < requests.length; i++) {
+    var r = requests[i];
+    var reqEmp = await db.getEmployeeById(r.employee_id);
+    if (!reqEmp) continue;
+    var designated = reqEmp.approver_id === emp.id || reqEmp.approver2_id === emp.id || reqEmp.approver3_id === emp.id;
+    if (!reqEmp.approver_id && !reqEmp.approver2_id && !reqEmp.approver3_id) designated = true;
+    if (designated || emp.can_approve) {
+      if (type === 'overtime') await db.updateOvertimeStatus(r.id, 'approved', emp.id);
+      else await db.updateLeaveStatus(r.id, 'approved', emp.id);
+      count++;
+    }
+  }
+  return client.replyMessage(replyToken, [withMenu('✅ 已核准 ' + count + ' 筆' + (type === 'overtime' ? '加班' : '請假') + '申請')]);
+}
+
+async function batchRejectAll(emp, client, replyToken, type) {
+  if (!emp.can_approve) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+  var requests = type === 'overtime' ? await db.getOvertimeRequests('pending', 200) : await db.getLeaveRequests('pending', 200);
+  var count = 0;
+  for (var i = 0; i < requests.length; i++) {
+    var r = requests[i];
+    var reqEmp = await db.getEmployeeById(r.employee_id);
+    if (!reqEmp) continue;
+    var designated = reqEmp.approver_id === emp.id || reqEmp.approver2_id === emp.id || reqEmp.approver3_id === emp.id;
+    if (!reqEmp.approver_id && !reqEmp.approver2_id && !reqEmp.approver3_id) designated = true;
+    if (designated || emp.can_approve) {
+      if (type === 'overtime') await db.updateOvertimeStatus(r.id, 'rejected', emp.id);
+      else await db.updateLeaveStatus(r.id, 'rejected', emp.id);
+      count++;
+    }
+  }
+  return client.replyMessage(replyToken, [withMenu('已駁回 ' + count + ' 筆' + (type === 'overtime' ? '加班' : '請假') + '申請')]);
 }
 
 // ===== Check-in Flex =====

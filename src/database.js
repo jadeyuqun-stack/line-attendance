@@ -305,10 +305,13 @@ async function getLeaveRequests(status, limit = 100) {
 async function updateLeaveStatus(id, status, approvedBy) {
   var leave = await getLeaveById(id);
   if (!leave) return;
+  console.log('[DB] updateLeaveStatus id='+id+' status='+status+' currentLevel='+(leave.approval_level||1));
   if (status === 'approved') {
     var nextLevel = (leave.approval_level || 1) + 1;
+    console.log('[DB] nextLevel='+nextLevel+' looking for approvers...');
     if (nextLevel <= 3) {
       var nextApprovers = await findApprovers(leave.employee_id, nextLevel);
+      console.log('[DB] found '+nextApprovers.length+' approvers for level '+nextLevel);
       if (nextApprovers.length > 0) {
         await pool.query("UPDATE leave_requests SET approval_level=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [nextLevel, approvedBy, id]);
         return { advanced: true, level: nextLevel, approvers: nextApprovers };
@@ -332,22 +335,20 @@ async function getEmployeeById(id) {
 async function findApprovers(forEmployeeId, level) {
   level = level || 1;
   var col = level === 1 ? 'approver_id' : level === 2 ? 'approver2_id' : 'approver3_id';
+  console.log('[DB] findApprovers empId='+forEmployeeId+' level='+level+' col='+col);
   if (forEmployeeId) {
     var emp = await getEmployeeById(forEmployeeId);
+    console.log('[DB] emp has '+col+':', emp ? emp[col] : 'emp is null');
     if (emp && emp[col]) {
       var { rows } = await pool.query(
         "SELECT * FROM employees WHERE id=$1 AND status='active' AND line_user_id IS NOT NULL",
         [emp[col]]
       );
+      console.log('[DB] found '+rows.length+' approvers with LINE bound');
       if (rows.length > 0) return rows;
     }
   }
-  if (level === 1) {
-    var { rows } = await pool.query(
-      "SELECT * FROM employees WHERE can_approve=true AND status='active' AND line_user_id IS NOT NULL"
-    );
-    return rows;
-  }
+  console.log('[DB] no approvers found for level '+level);
   return [];
 }
 async function setApprover(employeeId, approverId, level) {

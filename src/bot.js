@@ -402,6 +402,7 @@ async function handlePostback(postback, uid, client, replyToken) {
             ]}}
           }]);
         }
+        if (leaveEmp && leaveEmp.line_user_id) await client.pushMessage(leaveEmp.line_user_id, [{ type: "text", text: "📋 請假進度\n\n已通過第"+(result.level-1)+"階，等待第"+result.level+"階：" + result.approvers[0].name + "\n時間：" + leave.start_date + " ~ " + leave.end_date }]);
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+result.level+'階簽核')]);
       }
       if (leaveEmp && leaveEmp.line_user_id) {
@@ -444,6 +445,7 @@ async function handlePostback(postback, uid, client, replyToken) {
             ]}}
           }]);
         }
+        if (otEmp && otEmp.line_user_id) await client.pushMessage(otEmp.line_user_id, [{ type: "text", text: "🕐 加班進度\n\n已通過第"+(otResult.level-1)+"階，等待第"+otResult.level+"階：" + otResult.approvers[0].name + "\n時間：" + ot.start_time + " ~ " + ot.end_time }]);
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+otResult.level+'階簽核')]);
       }
       if (otEmp && otEmp.line_user_id) {

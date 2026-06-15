@@ -81,10 +81,9 @@ async function handleText(text, uid, client, replyToken) {
 }
 
 function fmt(d) {
-  var h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
-  var ap = h >= 12 ? '下午' : '上午';
-  var h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return ap + ' ' + String(h12).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+  var h = d.getHours(), min = d.getMinutes();
+  return y + ' ' + m + '月' + day + '日 ' + String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
 }
 
 async function batchApproveAll(emp, client, replyToken, type) {

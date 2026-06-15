@@ -265,20 +265,23 @@ router.get('/employees', auth, async (_, res) => {
       + '</td></tr>';
   }
 
-  var approverSelect = '<select onchange="setApprover('+e.id+',this.value)" style="width:auto;height:30px;font-size:12px"><option value="">未指定</option>';
-  // Actually approver select needs to be per row. Let me add it inline.
-  // Regenerate rows with approver select
   rows = '';
   for (var i = 0; i < emps.length; i++) {
     var e = emps[i];
     var nameEsc = esc(e.name), deptEsc = esc(e.department||''), roleEsc = esc(e.role||'員工');
-    var appSel = '<select onchange="setApprover('+e.id+',this.value)" style="width:auto;height:30px;font-size:12px"><option value="">未指定</option>';
-    for (var j = 0; j < approvers.length; j++) {
-      if (approvers[j].id !== e.id) {
-        appSel += '<option value="'+approvers[j].id+'"'+(e.approver_id==approvers[j].id?' selected':'')+'>'+h(approvers[j].name)+'</option>';
+    function makeApproverSelect(level, currentVal) {
+      var s = '<select onchange="setApprover('+e.id+',this.value,'+level+')" style="width:auto;height:30px;font-size:11px"><option value="">-</option>';
+      for (var j = 0; j < approvers.length; j++) {
+        if (approvers[j].id !== e.id) {
+          s += '<option value="'+approvers[j].id+'"'+(currentVal==approvers[j].id?' selected':'')+'>'+h(approvers[j].name)+'</option>';
+        }
       }
+      s += '</select>';
+      return s;
     }
-    appSel += '</select>';
+    var appSel1 = makeApproverSelect(1, e.approver_id);
+    var appSel2 = makeApproverSelect(2, e.approver2_id);
+    var appSel3 = makeApproverSelect(3, e.approver3_id);
     rows += '<tr>'
       + '<td>'+h(e.employee_no)+'</td>'
       + '<td>'+h(e.name)+'</td>'
@@ -286,7 +289,9 @@ router.get('/employees', auth, async (_, res) => {
       + '<td><span class="editable" onclick="editField('+e.id+',\'role\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
       + '<td>'+(e.line_user_id?'<span class="badge badge-in">已綁定</span>':'<span class="badge badge-out">未綁定</span>')+'</td>'
       + '<td><button onclick="toggleApprove('+e.id+','+e.can_approve+')" class="btn-sm '+(e.can_approve?'btn':'btn-gray')+'">'+(e.can_approve?'可簽核':'設為簽核人')+'</button></td>'
-      + '<td>'+appSel+'</td>'
+      + '<td>'+appSel1+'</td>'
+      + '<td>'+appSel2+'</td>'
+      + '<td>'+appSel3+'</td>'
       + '<td>'
       + '<button onclick="editLine('+e.id+',\''+nameEsc+'\',\''+esc(e.line_user_id||'')+'\')" class="btn-sm btn-blue">LINE</button> '
       + '<button onclick="removeEmp('+e.id+',\''+nameEsc+'\')" class="btn-sm btn-red">移除</button>'
@@ -301,7 +306,7 @@ router.get('/employees', auth, async (_, res) => {
     + '<div><label>角色</label><input id="role" placeholder="例：主管"></div>'
     + '<div style="align-items:center;flex-direction:row;gap:6px"><input type="checkbox" id="canApprove" style="width:16px;height:16px"><label for="canApprove" style="margin:0">簽核人</label></div>'
     + '<button type="submit" class="btn">新增</button></form></div>'
-    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>LINE</th><th>簽核</th><th>指定簽核人</th><th>操作</th></tr>'+(rows||'<tr><td colspan="8">尚無員工</td></tr>')+'</table></div>'
+    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>L3簽核</th><th>操作</th></tr>'+(rows||'<tr><td colspan="10">尚無員工</td></tr>')+'</table></div>'
     + inactiveList
     + modalHtml();
 
@@ -475,7 +480,7 @@ router.delete('/api/employees/:id/hard', auth, async (req, res) => {
   await db.hardDeleteEmployee(parseInt(req.params.id)); res.json({ success: true });
 });
 router.put('/api/employees/:id/approver', auth, express.json(), async (req, res) => {
-  await db.setApprover(parseInt(req.params.id), req.body.approver_id || null); res.json({ success: true });
+  await db.setApprover(parseInt(req.params.id), req.body.approver_id || null, req.body.level || 1); res.json({ success: true });
 });
 router.get('/trigger-report', auth, async (req, res) => {
   try {
@@ -507,7 +512,7 @@ function jsLib() {
     + 'async function saveLine(){var val=document.getElementById("lineIdInput").value.trim();var r=await fetch("/admin/api/employees/"+editId+"/lineid",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({line_user_id:val})});if(r.ok)location.reload();else alert("儲存失敗");}'
     + 'async function toggleApprove(id,current){await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({can_approve:!current})});location.reload();}'
     + 'async function editField(id,field,current){var val=prompt("修改 "+field,current);if(val===null)return;var body={};body[field]=val;await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});location.reload();}'
-    + 'async function setApprover(id,approverId){await fetch("/admin/api/employees/"+id+"/approver",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver_id:approverId||null})});}'
+    + 'async function setApprover(id,approverId,level){await fetch("/admin/api/employees/"+id+"/approver",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver_id:approverId||null,level:level||1})});}'
     + 'async function removeEmp(id,name){if(!confirm("確定移除 "+name+"？\\n打卡和請假記錄會保留。"))return;var r=await fetch("/admin/api/employees/"+id+"/deactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n打卡和請假記錄會保留（匿名化）。\\n此操作無法復原！"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}';

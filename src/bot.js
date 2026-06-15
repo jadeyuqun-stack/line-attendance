@@ -426,17 +426,26 @@ async function handlePostback(postback, uid, client, replyToken) {
     }
   }
     if (data.startsWith('leave_approve_')) {
-      await db.updateLeaveStatus(leaveId, 'approved', otmgr.id);
-      const e = await db.getEmployeeById(leave.employee_id);
-      if (e && e.line_user_id) {
-        await client.pushMessage(e.line_user_id, [{
-          type: 'flex', altText: '🎉 請假已核准',
-          contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
-            { type: 'text', text: '🎉 請假已核准', weight: 'bold', size: 'lg', color: '#06c755' },
-            { type: 'text', text: '時間：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'md', size: 'sm' },
-            { type: 'text', text: '核准時間：' + fmt(new Date()), margin: 'sm', size: 'xs', color: '#aaaaaa' },
-          ]}}
-        }]);
+      var result = await db.updateLeaveStatus(leaveId, 'approved', otmgr.id);
+      if (result && result.advanced) {
+        // 通知下一階簽核人
+        for (var n = 0; n < result.approvers.length; n++) {
+          await client.pushMessage(result.approvers[n].line_user_id, [{
+            type: 'flex', altText: '📋 請假申請（第'+result.level+'階）',
+            contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
+              { type: 'text', text: '📋 請假申請（第'+result.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
+              { type: 'text', text: '時間：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'md', size: 'sm' },
+            ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+              { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'leave_approve_' + leaveId }, flex: 1, height: 'sm' },
+              { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'leave_reject_' + leaveId }, flex: 1, height: 'sm' },
+            ]}}
+          }]);
+        }
+        return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+result.level+'階簽核')]);
+      }
+      const e2 = await db.getEmployeeById(leave.employee_id);
+      if (e2 && e2.line_user_id) {
+        await client.pushMessage(e2.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + leave.start_date + ' ~ ' + leave.end_date }]);
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {

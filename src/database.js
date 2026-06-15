@@ -24,6 +24,12 @@ async function initDatabase() {
   // 補加舊表欄位
   try { await pool.query('ALTER TABLE employees ADD COLUMN can_approve BOOLEAN DEFAULT false'); } catch(e) {}
   try { await pool.query('ALTER TABLE employees ADD COLUMN approver_id INTEGER REFERENCES employees(id)'); } catch(e) {}
+  try { await pool.query('ALTER TABLE employees ADD COLUMN approver2_id INTEGER REFERENCES employees(id)'); } catch(e) {}
+  try { await pool.query('ALTER TABLE employees ADD COLUMN approver3_id INTEGER REFERENCES employees(id)'); } catch(e) {}
+
+  // 簽核層級欄位
+  try { await pool.query("ALTER TABLE leave_requests ADD COLUMN approval_level INTEGER DEFAULT 1"); } catch(e) {}
+  try { await pool.query("ALTER TABLE overtime_requests ADD COLUMN approval_level INTEGER DEFAULT 1"); } catch(e) {}
   // 打卡
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
@@ -181,6 +187,8 @@ async function deactivateEmployee(id) {
 async function hardDeleteEmployee(id) {
   // 清除所有外鍵參照後才刪除員工
   await pool.query('UPDATE employees SET approver_id=NULL WHERE approver_id=$1', [id]);
+  await pool.query('UPDATE employees SET approver2_id=NULL WHERE approver2_id=$1', [id]);
+  await pool.query('UPDATE employees SET approver3_id=NULL WHERE approver3_id=$1', [id]);
   await pool.query('UPDATE checkins SET employee_id=NULL WHERE employee_id=$1', [id]);
   await pool.query('UPDATE leave_requests SET employee_id=NULL WHERE employee_id=$1', [id]);
   await pool.query('UPDATE leave_requests SET approved_by=NULL WHERE approved_by=$1', [id]);
@@ -295,10 +303,22 @@ async function getLeaveRequests(status, limit = 100) {
   return rows;
 }
 async function updateLeaveStatus(id, status, approvedBy) {
-  if (approvedBy) {
-    await pool.query("UPDATE leave_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [status, approvedBy, id]);
+  var leave = await getLeaveById(id);
+  if (!leave) return;
+  if (status === 'approved') {
+    var nextLevel = (leave.approval_level || 1) + 1;
+    if (nextLevel <= 3) {
+      var nextApprovers = await findApprovers(leave.employee_id, nextLevel);
+      if (nextApprovers.length > 0) {
+        await pool.query("UPDATE leave_requests SET approval_level=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [nextLevel, approvedBy, id]);
+        return { advanced: true, level: nextLevel, approvers: nextApprovers };
+      }
+    }
+    await pool.query("UPDATE leave_requests SET status='approved', approved_by=$1, approved_at=NOW() WHERE id=$2", [approvedBy, id]);
+    return { advanced: false };
   } else {
-    await pool.query("UPDATE leave_requests SET status=$1, approved_at=NOW() WHERE id=$2", [status, id]);
+    await pool.query("UPDATE leave_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [status, approvedBy, id]);
+    return { advanced: false };
   }
 }
 async function getLeaveById(id) {
@@ -309,27 +329,30 @@ async function getEmployeeById(id) {
   const { rows } = await pool.query("SELECT * FROM employees WHERE id=$1", [id]);
   return rows[0] || null;
 }
-async function findApprovers(forEmployeeId) {
-  // 先找該員工指定的簽核人
+async function findApprovers(forEmployeeId, level) {
+  level = level || 1;
+  var col = level === 1 ? 'approver_id' : level === 2 ? 'approver2_id' : 'approver3_id';
   if (forEmployeeId) {
-    const emp = await getEmployeeById(forEmployeeId);
-    if (emp && emp.approver_id) {
-      const { rows } = await pool.query(
+    var emp = await getEmployeeById(forEmployeeId);
+    if (emp && emp[col]) {
+      var { rows } = await pool.query(
         "SELECT * FROM employees WHERE id=$1 AND status='active' AND line_user_id IS NOT NULL",
-        [emp.approver_id]
+        [emp[col]]
       );
       if (rows.length > 0) return rows;
     }
   }
-  // 沒有指定 → 找所有 can_approve 的人
-  const { rows } = await pool.query(
-    "SELECT * FROM employees WHERE can_approve=true AND status='active' AND line_user_id IS NOT NULL"
-  );
-  return rows;
+  if (level === 1) {
+    var { rows } = await pool.query(
+      "SELECT * FROM employees WHERE can_approve=true AND status='active' AND line_user_id IS NOT NULL"
+    );
+    return rows;
+  }
+  return [];
 }
-async function setApprover(employeeId, approverId) {
-  await pool.query('UPDATE employees SET approver_id=$1 WHERE id=$2',
-    [approverId || null, employeeId]);
+async function setApprover(employeeId, approverId, level) {
+  var col = level === 1 ? 'approver_id' : level === 2 ? 'approver2_id' : 'approver3_id';
+  await pool.query('UPDATE employees SET '+col+'=$1 WHERE id=$2', [approverId || null, employeeId]);
 }
 async function listApprovers() {
   const { rows } = await pool.query(
@@ -379,10 +402,22 @@ async function getOvertimeById(id) {
   return rows[0] || null;
 }
 async function updateOvertimeStatus(id, status, approvedBy) {
-  if (approvedBy) {
-    await pool.query("UPDATE overtime_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [status, approvedBy, id]);
+  var ot = await getOvertimeById(id);
+  if (!ot) return;
+  if (status === 'approved') {
+    var nextLevel = (ot.approval_level || 1) + 1;
+    if (nextLevel <= 3) {
+      var nextApprovers = await findApprovers(ot.employee_id, nextLevel);
+      if (nextApprovers.length > 0) {
+        await pool.query("UPDATE overtime_requests SET approval_level=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [nextLevel, approvedBy, id]);
+        return { advanced: true, level: nextLevel, approvers: nextApprovers };
+      }
+    }
+    await pool.query("UPDATE overtime_requests SET status='approved', approved_by=$1, approved_at=NOW() WHERE id=$2", [approvedBy, id]);
+    return { advanced: false };
   } else {
-    await pool.query("UPDATE overtime_requests SET status=$1, approved_at=NOW() WHERE id=$2", [status, id]);
+    await pool.query("UPDATE overtime_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [status, approvedBy, id]);
+    return { advanced: false };
   }
 }
 async function getEmployeeOvertimeRequests(employeeId, status, limit) {

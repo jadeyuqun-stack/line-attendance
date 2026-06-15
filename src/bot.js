@@ -271,7 +271,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
         }]);
       }
       return client.replyMessage(replyToken, [{
-        type: "text", text: "✅ 加班申請已送出！\n\n時間：" + state.otStart + " ~ " + state.otEnd + "\n原因：" + state.reason + "\n\n狀態：等待簽核 ⏳",
+        type: "text", text: "✅ 加班申請已送出！\n\n時間：" + state.otStart + " ~ " + state.otEnd + "\n原因：" + state.reason + "\n\n⏳ 等待第1階簽核：" + (approvers.length > 0 ? approvers[0].name : '') + " ⏳",
         quickReply: GPS_BUTTONS
       }]);
     } catch(e) { console.error(e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
@@ -314,7 +314,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
               { type: 'text', text: '假別：' + state.typeLabel, margin: 'md', size: 'sm' },
               { type: 'text', text: '時間：' + state.startDateTime + ' ~ ' + state.endDateTime, margin: 'sm', size: 'sm' },
               { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', color: '#666666', wrap: true },
-              { type: 'text', text: '⏳ 等待第1階簽核', margin: 'md', size: 'sm', color: '#f39c12' }
+              { type: 'text', text: '⏳ 等待第1階簽核：' + (approvers.length > 0 ? approvers[0].name : ''), margin: 'md', size: 'sm', color: '#f39c12' }
             ]}
 	          },
 	          quickReply: GPS_BUTTONS
@@ -331,11 +331,12 @@ async function handleFlow(text, uid, client, replyToken, emp) {
 async function handlePostback(postback, uid, client, replyToken) {
   const data = postback.data || '', params = postback.params || {};
 
+  // Leave date pickers
   if (data === 'leave_start') {
     var state = states.get(uid);
     if (!state || state.step !== 'start_date') return;
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
-    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
+    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
     state.startDateTime = dt; state.step = 'end_date';
     return client.replyMessage(replyToken, [withDatePicker('📅 開始：' + dt + '\n\n請選擇「結束日期時間」', 'leave_end')]);
   }
@@ -343,137 +344,51 @@ async function handlePostback(postback, uid, client, replyToken) {
     var state = states.get(uid);
     if (!state || state.step !== 'end_date') return;
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
-    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期選擇錯誤，請重新輸入「請假」' }]);
+    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
     state.endDateTime = dt; state.step = 'reason';
     var hours = leaveHours(state.startDateTime, dt);
     return client.replyMessage(replyToken, [withMenu('📅 ' + state.startDateTime + ' ~ ' + dt + '（' + hours + ' 小時）\n\n📝 請輸入請假原因：')]);
   }
-  if (data === "ot_start") {
-    var state = states.get(uid);
-    if (!state || state.flow !== "overtime" || state.step !== "start") return;
-    var dt = params.datetime || (params.date ? params.date + " " + (params.time || "00:00") : null);
-    if (!dt) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 日期錯誤" }]);
-    state.otStart = dt; state.step = "end";
-    return client.replyMessage(replyToken, [withDatePicker("🕐 開始：" + dt + "\n\n請選擇「結束日期時間」", "ot_end")]);
-  }
-  if (data === "ot_end") {
-    var state = states.get(uid);
-    if (!state || state.flow !== "overtime" || state.step !== "end") return;
-    var dt = params.datetime || (params.date ? params.date + " " + (params.time || "00:00") : null);
-    if (!dt) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 日期錯誤" }]);
-    state.otEnd = dt; state.step = "reason";
-    return client.replyMessage(replyToken, [withMenu("🕐 " + state.otStart + " ~ " + dt + "\n\n📝 請輸入加班原因：")]);
-  }
-  // Overtime approve/reject
-  if (data.indexOf("ot_approve_") === 0 || data.indexOf("ot_reject_") === 0) {
-    var otId = parseInt(data.split("_").pop());
-    var otmgr = await db.getEmployeeByLineId(uid);
-    var ot = await db.getOvertimeById(otId);
-    if (!otmgr || !ot) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無效請求" }]);
-    var otEmp2 = await db.getEmployeeById(ot.employee_id);
-    var otDesignated2 = otEmp2 && (otEmp2.approver_id===otmgr.id || otEmp2.approver2_id===otmgr.id || otEmp2.approver3_id===otmgr.id);
-    if (!otmgr.can_approve && !otDesignated2) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無簽核權限" }]);
-    if (ot.status !== "pending") return client.replyMessage(replyToken, [{ type: "text", text: "已處理過" }]);
-    if (data.indexOf("ot_approve_") === 0) {
-      var otResult = await db.updateOvertimeStatus(otId, "approved", otmgr.id);
-      if (otResult && otResult.advanced) {
-        for (var n = 0; n < otResult.approvers.length; n++) {
-          await client.pushMessage(otResult.approvers[n].line_user_id, [{
-            type: 'flex', altText: '🕐 加班申請（第'+otResult.level+'階）',
-            contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
-              { type: 'text', text: '🕐 加班申請（第'+otResult.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
-              { type: 'text', text: '時間：' + ot.start_time + ' ~ ' + ot.end_time, margin: 'md', size: 'sm' },
-            ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-              { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'ot_approve_' + otId }, flex: 1, height: 'sm' },
-              { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'ot_reject_' + otId }, flex: 1, height: 'sm' },
-            ]}}
-          }]);
-        }
-        return client.replyMessage(replyToken, [{ type: 'text', text: '✅ 已核准，已送第'+otResult.level+'階簽核' }]);
-      }
-      var e2 = await db.getEmployeeById(ot.employee_id);
-      if (e2 && e2.line_user_id) await client.pushMessage(e2.line_user_id, [{ type: "text", text: "🎉 加班已核准！\n" + ot.start_time + " ~ " + ot.end_time }]);
-      return client.replyMessage(replyToken, [{ type: "text", text: "✅ 已核准" }]);
-    } else {
-      await db.updateOvertimeStatus(otId, "rejected", otmgr.id);
-      var e2 = await db.getEmployeeById(ot.employee_id);
-      if (e2 && e2.line_user_id) await client.pushMessage(e2.line_user_id, [{ type: "text", text: "❌ 加班被駁回\n" + ot.start_time + " ~ " + ot.end_time }]);
-      return client.replyMessage(replyToken, [{ type: "text", text: "已駁回" }]);
-    }
-  }
-  if (data.startsWith('leave_approve_') || data.startsWith('leave_reject_')) {
-    const leaveId = parseInt(data.split('_').pop());
-    const mgr = await db.getEmployeeByLineId(uid);
-    const leave = await db.getLeaveById(leaveId);
-    if (!mgr || !leave) return client.replyMessage(replyToken, [withMenu('❌ 無效請求')]);
-    var empForCheck = await db.getEmployeeById(leave.employee_id);
-    var designated = empForCheck && (empForCheck.approver_id===mgr.id || empForCheck.approver2_id===mgr.id || empForCheck.approver3_id===mgr.id);
-    if (!mgr.can_approve && !designated) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
-    if (leave.status !== 'pending') return client.replyMessage(replyToken, [{ type: 'text', text: '申請已處理過' }]);
 
-  if (data === "ot_start") {
+  // Overtime date pickers
+  if (data === 'ot_start') {
     var state = states.get(uid);
-    if (!state || state.flow !== "overtime" || state.step !== "start") return;
-    var dt = params.datetime || (params.date ? params.date + " " + (params.time || "00:00") : null);
-    if (!dt) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 日期錯誤" }]);
-    state.otStart = dt; state.step = "end";
-    return client.replyMessage(replyToken, [withDatePicker("🕐 開始：" + dt + "\n\n請選擇「結束日期時間」", "ot_end")]);
+    if (!state || state.flow !== 'overtime' || state.step !== 'start') return;
+    var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
+    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
+    state.otStart = dt; state.step = 'end';
+    return client.replyMessage(replyToken, [withDatePicker('🕐 開始：' + dt + '\n\n請選擇「結束日期時間」', 'ot_end')]);
   }
-  if (data === "ot_end") {
+  if (data === 'ot_end') {
     var state = states.get(uid);
-    if (!state || state.flow !== "overtime" || state.step !== "end") return;
-    var dt = params.datetime || (params.date ? params.date + " " + (params.time || "00:00") : null);
-    if (!dt) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 日期錯誤" }]);
-    state.otEnd = dt; state.step = "reason";
-    return client.replyMessage(replyToken, [withMenu("🕐 " + state.otStart + " ~ " + dt + "\n\n📝 請輸入加班原因：")]);
+    if (!state || state.flow !== 'overtime' || state.step !== 'end') return;
+    var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
+    if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
+    state.otEnd = dt; state.step = 'reason';
+    return client.replyMessage(replyToken, [withMenu('🕐 ' + state.otStart + ' ~ ' + dt + '\n\n📝 請輸入加班原因：')]);
   }
-  // Overtime approve/reject
-  if (data.indexOf("ot_approve_") === 0 || data.indexOf("ot_reject_") === 0) {
-    var otId = parseInt(data.split("_").pop());
-    var otmgr = await db.getEmployeeByLineId(uid);
-    var ot = await db.getOvertimeById(otId);
-    if (!otmgr || !ot) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無效請求" }]);
-    var otEmp2 = await db.getEmployeeById(ot.employee_id);
-    var otDesignated2 = otEmp2 && (otEmp2.approver_id===otmgr.id || otEmp2.approver2_id===otmgr.id || otEmp2.approver3_id===otmgr.id);
-    if (!otmgr.can_approve && !otDesignated2) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無簽核權限" }]);
-    if (ot.status !== "pending") return client.replyMessage(replyToken, [{ type: "text", text: "已處理過" }]);
-    if (data.indexOf("ot_approve_") === 0) {
-      var otResult = await db.updateOvertimeStatus(otId, "approved", otmgr.id);
-      if (otResult && otResult.advanced) {
-        for (var n = 0; n < otResult.approvers.length; n++) {
-          await client.pushMessage(otResult.approvers[n].line_user_id, [{
-            type: 'flex', altText: '🕐 加班申請（第'+otResult.level+'階）',
-            contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
-              { type: 'text', text: '🕐 加班申請（第'+otResult.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
-              { type: 'text', text: '時間：' + ot.start_time + ' ~ ' + ot.end_time, margin: 'md', size: 'sm' },
-            ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-              { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'ot_approve_' + otId }, flex: 1, height: 'sm' },
-              { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'ot_reject_' + otId }, flex: 1, height: 'sm' },
-            ]}}
-          }]);
-        }
-        return client.replyMessage(replyToken, [{ type: 'text', text: '✅ 已核准，已送第'+otResult.level+'階簽核' }]);
-      }
-      var e2 = await db.getEmployeeById(ot.employee_id);
-      if (e2 && e2.line_user_id) await client.pushMessage(e2.line_user_id, [{ type: "text", text: "🎉 加班已核准！\n" + ot.start_time + " ~ " + ot.end_time }]);
-      return client.replyMessage(replyToken, [{ type: "text", text: "✅ 已核准" }]);
-    } else {
-      await db.updateOvertimeStatus(otId, "rejected", otmgr.id);
-      var e2 = await db.getEmployeeById(ot.employee_id);
-      if (e2 && e2.line_user_id) await client.pushMessage(e2.line_user_id, [{ type: "text", text: "❌ 加班被駁回\n" + ot.start_time + " ~ " + ot.end_time }]);
-      return client.replyMessage(replyToken, [{ type: "text", text: "已駁回" }]);
-    }
-  }
-    if (data.startsWith('leave_approve_')) {
-      var result = await db.updateLeaveStatus(leaveId, 'approved', otmgr.id);
+
+  // Leave approval
+  if (data.indexOf('leave_approve_') === 0 || data.indexOf('leave_reject_') === 0) {
+    var leaveId = parseInt(data.split('_').pop());
+    var approver = await db.getEmployeeByLineId(uid);
+    var leave = await db.getLeaveById(leaveId);
+    if (!approver || !leave) return client.replyMessage(replyToken, [withMenu('❌ 無效請求')]);
+    var leaveEmp = await db.getEmployeeById(leave.employee_id);
+    var isDesignated = leaveEmp && (leaveEmp.approver_id===approver.id || leaveEmp.approver2_id===approver.id || leaveEmp.approver3_id===approver.id);
+    if (!approver.can_approve && !isDesignated) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+    if (leave.status !== 'pending') return client.replyMessage(replyToken, [withMenu('申請已處理過')]);
+
+    if (data.indexOf('leave_approve_') === 0) {
+      var result = await db.updateLeaveStatus(leaveId, 'approved', approver.id);
       if (result && result.advanced) {
-        // 通知下一階簽核人
         for (var n = 0; n < result.approvers.length; n++) {
           await client.pushMessage(result.approvers[n].line_user_id, [{
             type: 'flex', altText: '📋 請假申請（第'+result.level+'階）',
             contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '📋 請假申請（第'+result.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
-              { type: 'text', text: '時間：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'md', size: 'sm' },
+              { type: 'text', text: '員工：' + leaveEmp.name, margin: 'md', size: 'sm', color: '#666' },
+              { type: 'text', text: '時間：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'sm', size: 'sm' },
             ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
               { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'leave_approve_' + leaveId }, flex: 1, height: 'sm' },
               { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'leave_reject_' + leaveId }, flex: 1, height: 'sm' },
@@ -482,72 +397,62 @@ async function handlePostback(postback, uid, client, replyToken) {
         }
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+result.level+'階簽核')]);
       }
-      const e2 = await db.getEmployeeById(leave.employee_id);
-      if (e2 && e2.line_user_id) {
-        await client.pushMessage(e2.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + leave.start_date + ' ~ ' + leave.end_date }]);
+      if (leaveEmp && leaveEmp.line_user_id) {
+        await client.pushMessage(leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + leave.start_date + ' ~ ' + leave.end_date }]);
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
-      await db.updateLeaveStatus(leaveId, 'rejected', otmgr.id);
-      const e = await db.getEmployeeById(leave.employee_id);
-      if (e && e.line_user_id) {
-        await client.pushMessage(e.line_user_id, [{
-          type: 'flex', altText: '❌ 請假被駁回',
-          contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
-            { type: 'text', text: '❌ 請假被駁回', weight: 'bold', size: 'lg', color: '#e74c3c' },
-            { type: 'text', text: '時間：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'md', size: 'sm' },
-            { type: 'text', text: '駁回時間：' + fmt(new Date()), margin: 'sm', size: 'xs', color: '#aaaaaa' },
-          ]}}
-        }]);
+      await db.updateLeaveStatus(leaveId, 'rejected', approver.id);
+      if (leaveEmp && leaveEmp.line_user_id) {
+        await client.pushMessage(leaveEmp.line_user_id, [{ type: 'text', text: '❌ 請假被駁回\n' + leave.start_date + ' ~ ' + leave.end_date }]);
+      }
+      return client.replyMessage(replyToken, [withMenu('已駁回')]);
+    }
+  }
+
+  // Overtime approval
+  if (data.indexOf('ot_approve_') === 0 || data.indexOf('ot_reject_') === 0) {
+    var otId = parseInt(data.split('_').pop());
+    var otApprover = await db.getEmployeeByLineId(uid);
+    var ot = await db.getOvertimeById(otId);
+    if (!otApprover || !ot) return client.replyMessage(replyToken, [withMenu('❌ 無效請求')]);
+    var otEmp = await db.getEmployeeById(ot.employee_id);
+    var otDesignated = otEmp && (otEmp.approver_id===otApprover.id || otEmp.approver2_id===otApprover.id || otEmp.approver3_id===otApprover.id);
+    if (!otApprover.can_approve && !otDesignated) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+    if (ot.status !== 'pending') return client.replyMessage(replyToken, [withMenu('已處理過')]);
+
+    if (data.indexOf('ot_approve_') === 0) {
+      var otResult = await db.updateOvertimeStatus(otId, 'approved', otApprover.id);
+      if (otResult && otResult.advanced) {
+        for (var n2 = 0; n2 < otResult.approvers.length; n2++) {
+          await client.pushMessage(otResult.approvers[n2].line_user_id, [{
+            type: 'flex', altText: '🕐 加班申請（第'+otResult.level+'階）',
+            contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
+              { type: 'text', text: '🕐 加班申請（第'+otResult.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
+              { type: 'text', text: '員工：' + otEmp.name, margin: 'md', size: 'sm', color: '#666' },
+              { type: 'text', text: '時間：' + ot.start_time + ' ~ ' + ot.end_time, margin: 'sm', size: 'sm' },
+            ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+              { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'ot_approve_' + otId }, flex: 1, height: 'sm' },
+              { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'ot_reject_' + otId }, flex: 1, height: 'sm' },
+            ]}}
+          }]);
+        }
+        return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+otResult.level+'階簽核')]);
+      }
+      if (otEmp && otEmp.line_user_id) {
+        await client.pushMessage(otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + ot.start_time + ' ~ ' + ot.end_time }]);
+      }
+      return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
+    } else {
+      await db.updateOvertimeStatus(otId, 'rejected', otApprover.id);
+      if (otEmp && otEmp.line_user_id) {
+        await client.pushMessage(otEmp.line_user_id, [{ type: 'text', text: '❌ 加班被駁回\n' + ot.start_time + ' ~ ' + ot.end_time }]);
       }
       return client.replyMessage(replyToken, [withMenu('已駁回')]);
     }
   }
 }
 
-// ===== GPS =====
-function haversineDistance(lat1, lng1, lat2, lng2) {
-  if (!lat1 || !lng1 || !lat2 || !lng2) return null;
-  const R = 6371000, dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-}
-async function checkGpsRange(lat, lng) {
-  const officeLat = parseFloat(await db.getSetting('office_lat') || '0');
-  const officeLng = parseFloat(await db.getSetting('office_lng') || '0');
-  const range = parseInt(await db.getSetting('gps_range_meters') || '200');
-  if (!officeLat || !officeLng) return { inRange: true, distance: 0 };
-  const dist = haversineDistance(officeLat, officeLng, lat, lng);
-  return { inRange: dist <= range, distance: dist };
-}
-
-async function handleLocation(msg, uid, client, replyToken) {
-  const emp = await db.getEmployeeByLineId(uid);
-  if (!emp) return client.replyMessage(replyToken, [withMenu('請先綁定員工編號。')]);
-  const today = await db.getTodayCheckins(emp.id);
-  const hasIn = today.some(r => r.type === 'check_in'), hasOut = today.some(r => r.type === 'check_out');
-  const loc = { latitude: msg.latitude, longitude: msg.longitude, address: msg.address || '' };
-  const gps = await checkGpsRange(msg.latitude, msg.longitude);
-  if (hasIn && !hasOut) return doCheckOut(emp, client, replyToken, loc, gps);
-  if (!hasIn) return doCheckIn(emp, client, replyToken, loc, gps);
-  return client.replyMessage(replyToken, [withMenu('今日已完成打卡。')]);
-}
-
-// ===== Helpers =====
-function fmt(d) {
-  var y = d.getFullYear();
-  var m = d.getMonth() + 1;
-  var day = d.getDate();
-  var h = d.getHours(), min = d.getMinutes();
-  return y + ' ' + m + '月' + day + ' ' + String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
-}
-async function checkLate(now) {
-  const start = parseInt(await db.getSetting('work_start_hour') || process.env.WORK_START_HOUR || '9');
-  const buf = parseInt(await db.getSetting('late_buffer_minutes') || process.env.LATE_BUFFER_MINUTES || '10');
-  return Math.max(0, now.getHours() * 60 + now.getMinutes() - (start * 60 + buf));
-}
-
-// ===== Rich Menu =====
 async function setupRichMenu() {
   try {
     const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;

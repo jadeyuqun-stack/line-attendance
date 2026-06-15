@@ -321,6 +321,43 @@ async function startOvertimeFlow(uid, client, replyToken) {
 
 async function handleFlow(text, uid, client, replyToken, emp) {
   const state = states.get(uid);
+  // 補打卡先處理，避免被請假攔截
+  if (state.flow === "missed") {
+    if (state.step === "type") {
+      if (text === "取消") { states.delete(uid); return client.replyMessage(replyToken, [withMenu("已取消")]); }
+      var pt = text === "補上班" ? "check_in" : text === "補下班" ? "check_out" : null;
+      if (!pt) return client.replyMessage(replyToken, [withMenu("請選擇補上班或補下班")]);
+      state.punchType = pt; state.step = "date";
+      var items = [{ type: 'action', action: { type: 'datetimepicker', label: '📅 選擇日期', data: 'missed_date', mode: 'date' } }];
+      for (var k = 0; k < GPS_BUTTONS.items.length; k++) items.push(GPS_BUTTONS.items[k]);
+      return client.replyMessage(replyToken, [{ type: 'text', text: '📝 請選擇補卡日期', quickReply: { items: items } }]);
+    }
+    if (state.step === "reason") {
+      state.reason = text;
+      try {
+        var mpId = await db.createMissedPunch(emp.id, state.punchType, state.punchDate, state.punchTime, state.reason);
+        states.delete(uid);
+        var approvers = await db.findApprovers(emp.id);
+        for (var j = 0; j < approvers.length; j++) {
+          await client.pushMessage(approvers[j].line_user_id, [{
+            type: "flex", altText: "📝 補打卡申請",
+            contents: { type: "bubble", body: { type: "box", layout: "vertical", contents: [
+              { type: "text", text: "📝 補打卡申請", weight: "bold", size: "lg", color: "#f39c12" },
+              { type: "text", text: "員工：" + emp.name, margin: "md", size: "sm" },
+              { type: "text", text: "類型：" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班"), margin: "sm", size: "sm" },
+              { type: "text", text: "日期：" + state.punchDate + " " + state.punchTime, margin: "sm", size: "sm" },
+              { type: "text", text: "原因：" + state.reason, margin: "sm", size: "sm", wrap: true },
+            ]}, footer: { type: "box", layout: "horizontal", spacing: "sm", contents: [
+              { type: "button", style: "primary", color: "#06c755", action: { type: "postback", label: "核准", data: "mp_approve_" + mpId }, flex: 1, height: "sm" },
+              { type: "button", style: "secondary", color: "#e74c3c", action: { type: "postback", label: "駁回", data: "mp_reject_" + mpId }, flex: 1, height: "sm" },
+            ]}}
+          }]);
+        }
+        return client.replyMessage(replyToken, [withMenu("✅ 補打卡申請已送出！\n\n" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班") + "\n日期：" + state.punchDate + " " + state.punchTime + "\n⏳ 等待簽核")]);
+      } catch(e) { console.error(e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
+    }
+    return;
+  }
   if (state.step === 'type') {
     if (text === '取消') { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消請假。')]); }
     const type = LEAVE_TYPES[text];
@@ -357,41 +394,6 @@ async function handleFlow(text, uid, client, replyToken, emp) {
         quickReply: GPS_BUTTONS
       }]);
     } catch(e) { console.error('[ot] error:', e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
-  }
-  if (state.flow === "missed") {
-    if (state.step === "type") {
-      if (text === "取消") { states.delete(uid); return client.replyMessage(replyToken, [withMenu("已取消")]); }
-      var pt = text === "補上班" ? "check_in" : text === "補下班" ? "check_out" : null;
-      if (!pt) return client.replyMessage(replyToken, [withMenu("請選擇補上班或補下班")]);
-      state.punchType = pt; state.step = "date";
-      var items = [{ type: 'action', action: { type: 'datetimepicker', label: '📅 選擇日期', data: 'missed_date', mode: 'date' } }];
-      for (var k = 0; k < GPS_BUTTONS.items.length; k++) items.push(GPS_BUTTONS.items[k]);
-      return client.replyMessage(replyToken, [{ type: 'text', text: '📝 請選擇補卡日期', quickReply: { items: items } }]);
-    }
-    if (state.step === "reason") {
-      state.reason = text;
-      try {
-        var mpId = await db.createMissedPunch(emp.id, state.punchType, state.punchDate, state.punchTime, state.reason);
-        states.delete(uid);
-        var approvers = await db.findApprovers(emp.id);
-        for (var j = 0; j < approvers.length; j++) {
-          await client.pushMessage(approvers[j].line_user_id, [{
-            type: "flex", altText: "📝 補打卡申請",
-            contents: { type: "bubble", body: { type: "box", layout: "vertical", contents: [
-              { type: "text", text: "📝 補打卡申請", weight: "bold", size: "lg", color: "#f39c12" },
-              { type: "text", text: "員工：" + emp.name, margin: "md", size: "sm" },
-              { type: "text", text: "類型：" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班"), margin: "sm", size: "sm" },
-              { type: "text", text: "日期：" + state.punchDate + " " + state.punchTime, margin: "sm", size: "sm" },
-              { type: "text", text: "原因：" + state.reason, margin: "sm", size: "sm", wrap: true },
-            ]}, footer: { type: "box", layout: "horizontal", spacing: "sm", contents: [
-              { type: "button", style: "primary", color: "#06c755", action: { type: "postback", label: "核准", data: "mp_approve_" + mpId }, flex: 1, height: "sm" },
-              { type: "button", style: "secondary", color: "#e74c3c", action: { type: "postback", label: "駁回", data: "mp_reject_" + mpId }, flex: 1, height: "sm" },
-            ]}}
-          }]);
-        }
-        return client.replyMessage(replyToken, [withMenu("✅ 補打卡申請已送出！\n\n" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班") + "\n日期：" + state.punchDate + " " + state.punchTime + "\n⏳ 等待簽核")]);
-      } catch(e) { console.error(e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
-    }
   }
   if (!state.flow && state.step === 'reason') {
     state.reason = text;

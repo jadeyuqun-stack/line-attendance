@@ -187,7 +187,35 @@ router.get('/records', auth, async (req, res) => {
   }
   var opts = '';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'">'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
+  // 本月遲到統計
+  var monthStart = new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')+'-01';
+  var monthRecords = await db.queryCheckins(null, monthStart, d, 5000, 0);
+  var lateMap = {};
+  for (var j = 0; j < monthRecords.length; j++) {
+    var mr = monthRecords[j];
+    if (mr.type !== 'check_in') continue;
+    var ciH = new Date(mr.check_time).getHours(), ciM = new Date(mr.check_time).getMinutes();
+    var startH = parseInt(await db.getSetting('work_start_hour') || '8');
+    var buf = parseInt(await db.getSetting('late_buffer_minutes') || '30');
+    var lateMin = ciH*60+ciM - (startH*60+buf);
+    if (lateMin > 0) {
+      if (!lateMap[mr.employee_id]) lateMap[mr.employee_id] = { name: mr.name, no: mr.employee_no, count: 0, totalMin: 0 };
+      lateMap[mr.employee_id].count++;
+      lateMap[mr.employee_id].totalMin += lateMin;
+    }
+  }
+  var lateKeys = Object.keys(lateMap);
+  var lateSummary = '';
+  if (lateKeys.length > 0) {
+    lateSummary = '<div class="card"><h3>⚠️ 本月遲到統計</h3><table><tr><th>編號</th><th>姓名</th><th>遲到次數</th><th>累計分鐘</th></tr>';
+    for (var k = 0; k < lateKeys.length; k++) {
+      var lm = lateMap[lateKeys[k]];
+      lateSummary += '<tr><td>'+h(lm.no)+'</td><td>'+h(lm.name)+'</td><td>'+lm.count+' 次</td><td>'+lm.totalMin+' 分鐘</td></tr>';
+    }
+    lateSummary += '</table></div>';
+  }
   var body = '<div class="card"><form class="inline" method="GET"><div><label>日期</label><input type="date" name="date" value="'+d+'"></div><div><label>員工</label><select name="eid"><option value="">全部員工</option>'+opts+'</select></div><button class="btn">🔍 查詢</button></form></div>'
+    + lateSummary
     + '<div class="card"><h3>'+d+' 打卡記錄</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th></tr>'+rows+'</table></div>';
   res.send(layout('打卡記錄', '打卡記錄', body));
 });
@@ -484,6 +512,31 @@ function jsLib() {
     + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n打卡和請假記錄會保留（匿名化）。\\n此操作無法復原！"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}';
 }
+
+// ===== 加班管理 =====
+router.get('/overtime', auth, async function(_, res) {
+  var status = _.query.status || '';
+  var records = await db.getOvertimeRequests(status, 200);
+  var rows = '';
+  for (var i = 0; i < records.length; i++) {
+    var r = records[i];
+    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
+    var ah = '';
+    if (r.status === 'pending') ah = '<button onclick="approveOt('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectOt('+r.id+')" class="btn-sm btn-red">駁回</button>';
+    rows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+h(r.department||'')+'</td><td>'+h(r.start_time)+' ~ '+h(r.end_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+'</td><td>'+ah+'</td></tr>';
+  }
+  var body = '<div class="tabs"><a href="?status=" class="'+(status===''?'active':'')+'">全部</a><a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a><a href="?status=approved" class="'+(status==='approved'?'active':'')+'">✅ 已核准</a></div>';
+  body += '<div class="card"><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>時間</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="7">無加班記錄</td></tr>')+'</table></div>';
+  body += '<script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT"});location.reload();}</script>';
+  res.send(layout('加班管理', '加班管理', body));
+});
+
+router.put('/api/overtime/:id/approve', auth, async function(req, res) {
+  await db.updateOvertimeStatus(parseInt(req.params.id), 'approved', null); res.json({ success: true });
+});
+router.put('/api/overtime/:id/reject', auth, async function(req, res) {
+  await db.updateOvertimeStatus(parseInt(req.params.id), 'rejected', null); res.json({ success: true });
+});
 
 // ===== 薪資發送 =====
 var multer = require('multer');

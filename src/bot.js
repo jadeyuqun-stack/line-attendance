@@ -314,7 +314,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
               { type: 'text', text: '假別：' + state.typeLabel, margin: 'md', size: 'sm' },
               { type: 'text', text: '時間：' + state.startDateTime + ' ~ ' + state.endDateTime, margin: 'sm', size: 'sm' },
               { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', color: '#666666', wrap: true },
-              { type: 'text', text: '⏳ 等待簽核中...', margin: 'md', size: 'sm', color: '#f39c12' }
+              { type: 'text', text: '⏳ 等待第1階簽核', margin: 'md', size: 'sm', color: '#f39c12' }
             ]}
 	          },
 	          quickReply: GPS_BUTTONS
@@ -368,11 +368,29 @@ async function handlePostback(postback, uid, client, replyToken) {
   if (data.indexOf("ot_approve_") === 0 || data.indexOf("ot_reject_") === 0) {
     var otId = parseInt(data.split("_").pop());
     var otmgr = await db.getEmployeeByLineId(uid);
-    if (!otmgr || !otmgr.can_approve) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無簽核權限" }]);
     var ot = await db.getOvertimeById(otId);
-    if (!ot || ot.status !== "pending") return client.replyMessage(replyToken, [{ type: "text", text: "已處理過" }]);
+    if (!otmgr || !ot) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無效請求" }]);
+    var otEmp2 = await db.getEmployeeById(ot.employee_id);
+    var otDesignated2 = otEmp2 && (otEmp2.approver_id===otmgr.id || otEmp2.approver2_id===otmgr.id || otEmp2.approver3_id===otmgr.id);
+    if (!otmgr.can_approve && !otDesignated2) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無簽核權限" }]);
+    if (ot.status !== "pending") return client.replyMessage(replyToken, [{ type: "text", text: "已處理過" }]);
     if (data.indexOf("ot_approve_") === 0) {
-      await db.updateOvertimeStatus(otId, "approved", otmgr.id);
+      var otResult = await db.updateOvertimeStatus(otId, "approved", otmgr.id);
+      if (otResult && otResult.advanced) {
+        for (var n = 0; n < otResult.approvers.length; n++) {
+          await client.pushMessage(otResult.approvers[n].line_user_id, [{
+            type: 'flex', altText: '🕐 加班申請（第'+otResult.level+'階）',
+            contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
+              { type: 'text', text: '🕐 加班申請（第'+otResult.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
+              { type: 'text', text: '時間：' + ot.start_time + ' ~ ' + ot.end_time, margin: 'md', size: 'sm' },
+            ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+              { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'ot_approve_' + otId }, flex: 1, height: 'sm' },
+              { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'ot_reject_' + otId }, flex: 1, height: 'sm' },
+            ]}}
+          }]);
+        }
+        return client.replyMessage(replyToken, [{ type: 'text', text: '✅ 已核准，已送第'+otResult.level+'階簽核' }]);
+      }
       var e2 = await db.getEmployeeById(ot.employee_id);
       if (e2 && e2.line_user_id) await client.pushMessage(e2.line_user_id, [{ type: "text", text: "🎉 加班已核准！\n" + ot.start_time + " ~ " + ot.end_time }]);
       return client.replyMessage(replyToken, [{ type: "text", text: "✅ 已核准" }]);
@@ -386,9 +404,12 @@ async function handlePostback(postback, uid, client, replyToken) {
   if (data.startsWith('leave_approve_') || data.startsWith('leave_reject_')) {
     const leaveId = parseInt(data.split('_').pop());
     const mgr = await db.getEmployeeByLineId(uid);
-    if (!mgr || !otmgr.can_approve) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
     const leave = await db.getLeaveById(leaveId);
-    if (!leave || leave.status !== 'pending') return client.replyMessage(replyToken, [{ type: 'text', text: '申請已處理過' }]);
+    if (!mgr || !leave) return client.replyMessage(replyToken, [withMenu('❌ 無效請求')]);
+    var empForCheck = await db.getEmployeeById(leave.employee_id);
+    var designated = empForCheck && (empForCheck.approver_id===mgr.id || empForCheck.approver2_id===mgr.id || empForCheck.approver3_id===mgr.id);
+    if (!mgr.can_approve && !designated) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+    if (leave.status !== 'pending') return client.replyMessage(replyToken, [{ type: 'text', text: '申請已處理過' }]);
 
   if (data === "ot_start") {
     var state = states.get(uid);
@@ -410,11 +431,29 @@ async function handlePostback(postback, uid, client, replyToken) {
   if (data.indexOf("ot_approve_") === 0 || data.indexOf("ot_reject_") === 0) {
     var otId = parseInt(data.split("_").pop());
     var otmgr = await db.getEmployeeByLineId(uid);
-    if (!otmgr || !otmgr.can_approve) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無簽核權限" }]);
     var ot = await db.getOvertimeById(otId);
-    if (!ot || ot.status !== "pending") return client.replyMessage(replyToken, [{ type: "text", text: "已處理過" }]);
+    if (!otmgr || !ot) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無效請求" }]);
+    var otEmp2 = await db.getEmployeeById(ot.employee_id);
+    var otDesignated2 = otEmp2 && (otEmp2.approver_id===otmgr.id || otEmp2.approver2_id===otmgr.id || otEmp2.approver3_id===otmgr.id);
+    if (!otmgr.can_approve && !otDesignated2) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 無簽核權限" }]);
+    if (ot.status !== "pending") return client.replyMessage(replyToken, [{ type: "text", text: "已處理過" }]);
     if (data.indexOf("ot_approve_") === 0) {
-      await db.updateOvertimeStatus(otId, "approved", otmgr.id);
+      var otResult = await db.updateOvertimeStatus(otId, "approved", otmgr.id);
+      if (otResult && otResult.advanced) {
+        for (var n = 0; n < otResult.approvers.length; n++) {
+          await client.pushMessage(otResult.approvers[n].line_user_id, [{
+            type: 'flex', altText: '🕐 加班申請（第'+otResult.level+'階）',
+            contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
+              { type: 'text', text: '🕐 加班申請（第'+otResult.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
+              { type: 'text', text: '時間：' + ot.start_time + ' ~ ' + ot.end_time, margin: 'md', size: 'sm' },
+            ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+              { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'ot_approve_' + otId }, flex: 1, height: 'sm' },
+              { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'ot_reject_' + otId }, flex: 1, height: 'sm' },
+            ]}}
+          }]);
+        }
+        return client.replyMessage(replyToken, [{ type: 'text', text: '✅ 已核准，已送第'+otResult.level+'階簽核' }]);
+      }
       var e2 = await db.getEmployeeById(ot.employee_id);
       if (e2 && e2.line_user_id) await client.pushMessage(e2.line_user_id, [{ type: "text", text: "🎉 加班已核准！\n" + ot.start_time + " ~ " + ot.end_time }]);
       return client.replyMessage(replyToken, [{ type: "text", text: "✅ 已核准" }]);

@@ -216,7 +216,9 @@ router.get('/records', auth, async (req, res) => {
   }
   var body = '<div class="card"><form class="inline" method="GET"><div><label>日期</label><input type="date" name="date" value="'+d+'"></div><div><label>員工</label><select name="eid"><option value="">全部員工</option>'+opts+'</select></div><button class="btn">🔍 查詢</button></form></div>'
     + lateSummary
-    + '<div class="card"><h3>'+d+' 打卡記錄</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th></tr>'+rows+'</table></div>';
+    + '<div class="card"><h3>'+d+' 打卡記錄</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th></tr>'+rows+'</table></div>'
+    + '<button onclick="clearCheckins()" class="btn-sm btn-red">🗑 清除所有打卡記錄</button>'
+    + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}</script>';
   res.send(layout('打卡記錄', '打卡記錄', body));
 });
 

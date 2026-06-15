@@ -364,7 +364,9 @@ async function handleFlow(text, uid, client, replyToken, emp) {
       var pt = text === "補上班" ? "check_in" : text === "補下班" ? "check_out" : null;
       if (!pt) return client.replyMessage(replyToken, [withMenu("請選擇補上班或補下班")]);
       state.punchType = pt; state.step = "date";
-      return client.replyMessage(replyToken, [withDatePicker("📝 請選擇補卡日期", "missed_date")]);
+      var items = [{ type: 'action', action: { type: 'datetimepicker', label: '📅 選擇日期', data: 'missed_date', mode: 'date' } }];
+      for (var k = 0; k < GPS_BUTTONS.items.length; k++) items.push(GPS_BUTTONS.items[k]);
+      return client.replyMessage(replyToken, [{ type: 'text', text: '📝 請選擇補卡日期', quickReply: { items: items } }]);
     }
     if (state.step === "reason") {
       state.reason = text;
@@ -480,14 +482,14 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (!state || state.flow !== "missed" || state.step !== "date") return;
     var d = params.date; if (!d) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 日期錯誤" }]);
     state.punchDate = d; state.step = "time";
-    return client.replyMessage(replyToken, [withDatePicker("📝 補卡日期：" + d + "\n\n請選擇時間", "missed_time")]);
+    var items = [{ type: 'action', action: { type: 'datetimepicker', label: '⏰ 選擇時間', data: 'missed_time', mode: 'time' } }];
+    for (var k = 0; k < GPS_BUTTONS.items.length; k++) items.push(GPS_BUTTONS.items[k]);
+    return client.replyMessage(replyToken, [{ type: 'text', text: '📝 補卡日期：' + d + '\n\n請選擇時間', quickReply: { items: items } }]);
   }
   if (data === "missed_time") {
     var state = states.get(uid);
     if (!state || state.flow !== "missed" || state.step !== "time") return;
-    var dt = params.datetime || (params.date ? params.date + " " + (params.time || "00:00") : null);
-    if (!dt) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 時間錯誤" }]);
-    var t = dt.indexOf(" ") !== -1 ? dt.split(" ")[1] : dt;
+    var t = params.time || "00:00";
     state.punchTime = t; state.step = "reason";
     return client.replyMessage(replyToken, [withMenu("📝 補打卡：" + state.punchDate + " " + state.punchTime + "\n\n請輸入原因：")]);
   }

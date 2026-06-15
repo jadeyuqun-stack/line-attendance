@@ -273,7 +273,7 @@ async function doQuery(emp, client, replyToken) {
 }
 
 // ===== Leave flow (unchanged) =====
-const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official' };
+const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official', '外出': 'outing', '其他': 'other' };
 
 function ceilHours(diffMs) { return Math.ceil(Math.max(0, diffMs) / 3600000); }
 // 請假時數：取整後，跨天每日最多 8 小時
@@ -299,6 +299,8 @@ async function startLeaveFlow(uid, client, replyToken) {
         { type: 'action', action: { type: 'message', label: '事假', text: '事假' } },
         { type: 'action', action: { type: 'message', label: '病假', text: '病假' } },
         { type: 'action', action: { type: 'message', label: '公假', text: '公假' } },
+        { type: 'action', action: { type: 'message', label: '外出', text: '外出' } },
+        { type: 'action', action: { type: 'message', label: '其他', text: '其他' } },
         { type: 'action', action: { type: 'message', label: '取消', text: '取消' } },
       ]
     }

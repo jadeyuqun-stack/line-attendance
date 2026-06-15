@@ -377,7 +377,7 @@ router.get('/leaves', auth, async (req, res) => {
   var opts = '<option value="">全部員工</option>';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'"'+(filterEid===emps[j].id?' selected':'')+'>'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
   var filterBar = '<div class="card"><form class="inline" method="GET"><div><label>員工篩選</label><select name="eid">'+opts+'</select></div><div><label>狀態</label><select name="status"><option value=""'+(status===''?' selected':'')+'>全部</option><option value="pending"'+(status==='pending'?' selected':'')+'>待審核</option><option value="approved"'+(status==='approved'?' selected':'')+'>已核准</option><option value="rejected"'+(status==='rejected'?' selected':'')+'>已駁回</option></select></div><button class="btn">篩選</button></form></div>';
-  var body = filterBar + '<div class="card" style="display:flex;gap:16px;padding:16px"><div><span style="font-size:24px;font-weight:700">'+companyMonth+'h</span><br><span style="color:#999;font-size:12px">全公司本月</span></div><div><span style="font-size:24px;font-weight:700">'+companyTotal+'h</span><br><span style="color:#999;font-size:12px">全公司累計</span></div></div>' + personSummary
+  var body = filterBar + '<div class="card" style="display:flex;gap:16px;padding:16px"><button onclick="clearLeaves()" class="btn-sm btn-red" style="margin-right:12px">🗑 清除所有請假</button>' +<div><span style="font-size:24px;font-weight:700">'+companyMonth+'h</span><br><span style="color:#999;font-size:12px">全公司本月</span></div><div><span style="font-size:24px;font-weight:700">'+companyTotal+'h</span><br><span style="color:#999;font-size:12px">全公司累計</span></div></div>' + personSummary
     + '<div class="tabs">'
     + '<a href="?status=" class="'+(status===''?'active':'')+'">全部</a>'
     + '<a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a>'
@@ -385,7 +385,7 @@ router.get('/leaves', auth, async (req, res) => {
     + '<a href="?status=rejected" class="'+(status==='rejected'?'active':'')+'">❌ 已駁回</a>'
     + '</div>'
     + '<div class="card"><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期時間</th><th>時數</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="9">無請假記錄</td></tr>')+'</table></div>'
-    + '<script>async function approveLeave(id){await fetch("/admin/api/leaves/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectLeave(id){await fetch("/admin/api/leaves/"+id+"/reject",{method:"PUT"});location.reload();}</script>';
+    + '<script>async function approveLeave(id){await fetch("/admin/api/leaves/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectLeave(id){await fetch("/admin/api/leaves/"+id+"/reject",{method:"PUT"});location.reload();}async function clearLeaves(){if(!confirm("⚠️ 確定刪除所有請假記錄？"))return;await fetch("/admin/api/leaves/clear",{method:"DELETE"});location.reload();}</script>';
   res.send(layout('請假管理', '請假管理', body));
 });
 
@@ -400,6 +400,15 @@ router.put('/api/leaves/:id/reject', auth, async (req, res) => {
   if (!leave) return res.status(404).json({ error: '找不到' });
   await db.updateLeaveStatus(leave.id, 'rejected', null);
   res.json({ success: true });
+});
+router.delete('/api/leaves/clear', auth, async (_, res) => {
+  await db.clearAll('leave_requests'); res.json({ success: true });
+});
+router.delete('/api/overtime/clear', auth, async (_, res) => {
+  await db.clearAll('overtime_requests'); res.json({ success: true });
+});
+router.delete('/api/checkins/clear', auth, async (_, res) => {
+  await db.clearAll('checkins'); res.json({ success: true });
 });
 
 // ===== 系統設定 =====
@@ -532,7 +541,7 @@ router.get('/overtime', auth, async function(_, res) {
   }
   var body = '<div class="tabs"><a href="?status=" class="'+(status===''?'active':'')+'">全部</a><a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a><a href="?status=approved" class="'+(status==='approved'?'active':'')+'">✅ 已核准</a></div>';
   body += '<div class="card"><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>時間</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="7">無加班記錄</td></tr>')+'</table></div>';
-  body += '<script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT"});location.reload();}</script>';
+  body += '<div style="margin-top:12px"><button onclick="clearOt()" class="btn-sm btn-red">🗑 清除所有加班記錄</button></div><script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT"});location.reload();}async function clearOt(){if(!confirm("⚠️ 確定刪除所有加班記錄？"))return;await fetch("/admin/api/overtime/clear",{method:"DELETE"});location.reload();}</script>';
   res.send(layout('加班管理', '加班管理', body));
 });
 

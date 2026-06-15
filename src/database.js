@@ -379,6 +379,10 @@ async function getSalaryRecords() {
 async function deleteSalaryRecords() {
   await pool.query('DELETE FROM salary_records');
 }
+async function clearAll(table) {
+  var allowed = ['leave_requests', 'overtime_requests', 'checkins'];
+  if (allowed.indexOf(table) !== -1) await pool.query('DELETE FROM ' + table);
+}
 
 // Overtime
 async function createOvertimeRequest(empId, startTime, endTime, reason) {
@@ -437,6 +441,6 @@ module.exports = {
   recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,
-  saveSalaryRecords, getSalaryRecords, deleteSalaryRecords,
+  saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll,
   createOvertimeRequest, getOvertimeRequests, getOvertimeById, updateOvertimeStatus, getEmployeeOvertimeRequests,
 };

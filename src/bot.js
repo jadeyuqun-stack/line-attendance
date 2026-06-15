@@ -247,7 +247,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
     state.type = type; state.typeLabel = text; state.step = 'start_date';
     return client.replyMessage(replyToken, [withDatePicker('🏖 請假：選擇「開始日期時間」\n\n選日期時間後請點「傳送」', 'leave_start')]);
   }
-  if (state.flow === "overtime") {
+  if (state.flow === "overtime" && state.step === 'reason') {
     state.reason = text;
     try {
       var otId = await db.createOvertimeRequest(emp.id, state.otStart, state.otEnd, state.reason);
@@ -274,9 +274,9 @@ async function handleFlow(text, uid, client, replyToken, emp) {
         type: "text", text: "✅ 加班申請已送出！\n\n時間：" + state.otStart + " ~ " + state.otEnd + "\n原因：" + state.reason + "\n\n⏳ 等待第1階簽核：" + (approvers.length > 0 ? approvers[0].name : '') + " ⏳",
         quickReply: GPS_BUTTONS
       }]);
-    } catch(e) { console.error(e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
+    } catch(e) { console.error('[ot] error:', e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
   }
-  if (state.step === 'reason') {
+  if (!state.flow && state.step === 'reason') {
     state.reason = text;
     try {
       const leaveId = await db.createLeaveRequest(emp.id, state.type, state.startDateTime, state.endDateTime, state.reason);

@@ -72,6 +72,21 @@ async function initDatabase() {
     )
   `);
   // 預設設定
+  // 加班記錄表
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS overtime_requests (
+      id SERIAL PRIMARY KEY,
+      employee_id INTEGER REFERENCES employees(id),
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      reason TEXT DEFAULT '',
+      status VARCHAR(20) DEFAULT 'pending',
+      approved_by INTEGER REFERENCES employees(id),
+      approved_at TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   // 薪資記錄表
   await pool.query(`
     CREATE TABLE IF NOT EXISTS salary_records (
@@ -342,6 +357,44 @@ async function deleteSalaryRecords() {
   await pool.query('DELETE FROM salary_records');
 }
 
+// Overtime
+async function createOvertimeRequest(empId, startTime, endTime, reason) {
+  var { rows } = await pool.query(
+    'INSERT INTO overtime_requests (employee_id, start_time, end_time, reason) VALUES ($1,$2,$3,$4) RETURNING id',
+    [empId, startTime, endTime, reason]
+  );
+  return rows[0].id;
+}
+async function getOvertimeRequests(status, limit) {
+  limit = limit || 200;
+  var sql = 'SELECT ot.*, e.name, e.employee_no, e.department FROM overtime_requests ot JOIN employees e ON ot.employee_id=e.id WHERE 1=1';
+  var p = [], i = 1;
+  if (status) { sql += ' AND ot.status=$' + i++; p.push(status); }
+  sql += ' ORDER BY ot.created_at DESC LIMIT $' + i; p.push(limit);
+  var { rows } = await pool.query(sql, p);
+  return rows;
+}
+async function getOvertimeById(id) {
+  var { rows } = await pool.query('SELECT * FROM overtime_requests WHERE id=$1', [id]);
+  return rows[0] || null;
+}
+async function updateOvertimeStatus(id, status, approvedBy) {
+  if (approvedBy) {
+    await pool.query("UPDATE overtime_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [status, approvedBy, id]);
+  } else {
+    await pool.query("UPDATE overtime_requests SET status=$1, approved_at=NOW() WHERE id=$2", [status, id]);
+  }
+}
+async function getEmployeeOvertimeRequests(employeeId, status, limit) {
+  limit = limit || 50;
+  var sql = 'SELECT * FROM overtime_requests WHERE employee_id=$1';
+  var p = [employeeId], i = 2;
+  if (status) { sql += ' AND status=$' + i++; p.push(status); }
+  sql += ' ORDER BY created_at DESC LIMIT $' + i; p.push(limit);
+  var { rows } = await pool.query(sql, p);
+  return rows;
+}
+
 module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
@@ -350,4 +403,5 @@ module.exports = {
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,
   saveSalaryRecords, getSalaryRecords, deleteSalaryRecords,
+  createOvertimeRequest, getOvertimeRequests, getOvertimeById, updateOvertimeStatus, getEmployeeOvertimeRequests,
 };

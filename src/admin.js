@@ -612,7 +612,7 @@ router.get('/salary/img/:id', function(req, res) {
   res.send(img.buffer);
 });
 
-router.post('/salary/send', auth, async function(req, res) {
+router.post('/salary/send', auth, express.urlencoded({ extended: true }), async function(req, res) {
   var data = req.session.salaryData;
   if (!data || data.length === 0) return res.send('<h3>❌ 無資料</h3><a href="/admin/salary">返回</a>');
 

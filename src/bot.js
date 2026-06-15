@@ -70,8 +70,8 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd.includes('上班')) { states.delete(uid); return doCheckIn(emp, client, replyToken); }
   if (cmd.includes('下班')) { states.delete(uid); return doCheckOut(emp, client, replyToken); }
   if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken);
-  if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 功能選單\n\n📍 傳送位置 → GPS 打卡\n💬「上班」「下班」→ 打卡\n📋「查詢」→ 記錄\n🏖「請假」→ 請假申請\n🆔「我的ID」→ LINE ID')]);
-  return client.replyMessage(replyToken, [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 我的ID')]);
+  if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 功能選單\n\n📍 傳送位置 → GPS 打卡\n💬「上班」「下班」→ 打卡\n🏖「請假」→ 請假\n🕐「加班」→ 加班申請\n📋「查詢」→ 記錄\n🆔「我的ID」→ LINE ID')]);
+  return client.replyMessage(replyToken, [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
 }
 
 // ===== Check-in Flex =====

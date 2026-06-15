@@ -8,12 +8,24 @@ const GPS_BUTTONS = {
     { type: 'action', action: { type: 'message', label: '📋 查詢', text: '查詢' } },
     { type: 'action', action: { type: 'message', label: '🏖 請假', text: '請假' } },
     { type: 'action', action: { type: 'message', label: '🕐 加班', text: '加班' } },
-    { type: 'action', action: { type: 'message', label: '🆔 我的ID', text: '我的ID' } },
-    { type: 'action', action: { type: 'message', label: '❓ 幫助', text: '幫助' } },
+    { type: 'action', action: { type: 'message', label: '📝 補打卡', text: '補打卡' } },
+  ]
+};
+const APPROVER_BUTTONS = {
+  items: [
+    { type: 'action', action: { type: 'location', label: '📍 上班打卡' } },
+    { type: 'action', action: { type: 'location', label: '📍 下班打卡' } },
+    { type: 'action', action: { type: 'message', label: '📋 查詢', text: '查詢' } },
+    { type: 'action', action: { type: 'message', label: '🏖 請假', text: '請假' } },
+    { type: 'action', action: { type: 'message', label: '🕐 加班', text: '加班' } },
+    { type: 'action', action: { type: 'message', label: '📝 補打卡', text: '補打卡' } },
+    { type: 'action', action: { type: 'message', label: '✅ 核准全部', text: '核准全部' } },
+    { type: 'action', action: { type: 'message', label: '❌ 駁回全部', text: '駁回全部' } },
   ]
 };
 
-function withMenu(text) { return { type: 'text', text: text, quickReply: GPS_BUTTONS }; }
+function getMenu(emp) { return (emp && emp.can_approve) ? APPROVER_BUTTONS : GPS_BUTTONS; }
+function withMenu(text, emp) { return { type: 'text', text: text, quickReply: emp ? getMenu(emp) : GPS_BUTTONS }; }
 // 文字 + 選單 + 日期時間選擇器（保留選單按鈕）
 function withDatePicker(text, data) {
   var items = [];
@@ -602,11 +614,14 @@ async function setupRichMenu() {
     const menu = {
       size: { width: 2500, height: 843 }, selected: true, name: '主選單', chatBarText: '📋 點此開啟功能選單',
       areas: [
-        { bounds: { x: 0, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '上班' } },
-        { bounds: { x: 1250, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '下班' } },
-        { bounds: { x: 0, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '查詢' } },
-        { bounds: { x: 833, y: 421, width: 834, height: 422 }, action: { type: 'message', text: '請假' } },
-        { bounds: { x: 1667, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '幫助' } },
+        { bounds: { x: 0, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '上班' } },
+        { bounds: { x: 625, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '下班' } },
+        { bounds: { x: 1250, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '查詢' } },
+        { bounds: { x: 1875, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '請假' } },
+        { bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
+        { bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '補打卡' } },
+        { bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '核准全部' } },
+        { bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '駁回全部' } },
       ]
     };
     const res1 = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu) });

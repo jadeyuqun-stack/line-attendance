@@ -484,131 +484,102 @@ function jsLib() {
     + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n打卡和請假記錄會保留（匿名化）。\\n此操作無法復原！"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}';
 }
 
-// ===== 薪資單上傳 =====
-var multer = require('multer');
-var XLSX = require('xlsx');
-var upload = multer({ storage: multer.memoryStorage() });
+// ===== 薪資發送 =====
+router.get('/salary', auth, async function(_, res) {
+  var emps = await db.listActiveEmployees();
+  var bound = emps.filter(function(e) { return e.line_user_id; });
+  var unbound = emps.filter(function(e) { return !e.line_user_id; });
 
-router.get('/salary', auth, function(_, res) {
-  var body = '<div class="card"><h3>📄 上傳薪資 Excel</h3>'
-    + '<form action="/admin/salary/upload" method="POST" enctype="multipart/form-data">'
-    + '<input type="file" name="salary" accept=".xlsx,.xls" style="margin-bottom:12px;width:auto">'
-    + '<button class="btn">上傳並預覽</button>'
-    + '</form>'
-    + '<p style="color:#999;font-size:12px;margin-top:8px">上傳後會顯示預覽，確認無誤再發送。薪資內容僅發送給已綁定 LINE 的員工。</p>'
-    + '</div>';
+  var rows = '';
+  for (var i = 0; i < bound.length; i++) {
+    var e = bound[i];
+    rows += '<tr>'
+      + '<td>'+(i+1)+'</td>'
+      + '<td>'+h(e.employee_no)+'</td>'
+      + '<td>'+h(e.name)+'</td>'
+      + '<td>'+h(e.department||'')+'</td>'
+      + '<td><span class="badge badge-in">已綁定</span></td>'
+      + '<td><textarea name="c_'+e.id+'" rows="4" style="width:100%;font-size:13px;font-family:monospace" placeholder="例如：本薪：30,300\n加班費：5,000\n實發：34,100"></textarea></td>'
+      + '</tr>';
+  }
+
+  var unboundRows = '';
+  for (var j = 0; j < unbound.length; j++) {
+    var u = unbound[j];
+    unboundRows += '<tr><td>'+h(u.employee_no)+'</td><td>'+h(u.name)+'</td><td>'+h(u.department||'')+'</td><td><span class="badge badge-out">未綁定</span></td></tr>';
+  }
+
+  var body = '<div class="card"><h3>💵 輸入薪資內容</h3>'
+    + '<p style="color:#999;margin-bottom:16px">為每位已綁定 LINE 的員工輸入薪資內容，全部完成後一鍵發送。</p>'
+    + '<form id="salaryForm" method="POST" action="/admin/salary/preview">'
+    + '<table><tr><th>#</th><th>編號</th><th>姓名</th><th>部門</th><th>LINE</th><th>薪資內容</th></tr>'
+    + (rows || '<tr><td colspan="6">無已綁定員工</td></tr>')
+    + '</table>'
+    + '<div style="margin-top:16px;display:flex;gap:12px">'
+    + '<button type="submit" class="btn" style="font-size:16px;padding:12px 32px">📋 儲存並預覽</button>'
+    + '</div>'
+    + '</form></div>';
+
+  if (unboundRows) {
+    body += '<div class="card"><h3>⚠️ 未綁定 LINE 的員工（無法發送）</h3>'
+      + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>狀態</th></tr>'+unboundRows+'</table></div>';
+  }
+
   res.send(layout('薪資發送', '薪資發送', body));
 });
 
-router.post('/salary/upload', auth, upload.single('salary'), async function(req, res) {
-  if (!req.file) return res.send('<h3>❌ 請選擇檔案</h3><a href="/admin/salary">返回</a>');
-
-  var wb = XLSX.read(req.file.buffer, { type: 'buffer' });
-  var sheetName = req.body.sheet || wb.SheetNames[0];
-  var ws = wb.Sheets[sheetName];
-  var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-  // 過濾空行
-  data = data.filter(function(r) { return r.some(function(c) { return c !== '' && c !== null && c !== undefined; }); });
-
-  if (data.length === 0) return res.send('<h3>❌ 工作表為空</h3><a href="/admin/salary">返回</a>');
-
+router.post('/salary/preview', auth, express.urlencoded({ extended: true }), async function(req, res) {
   var emps = await db.listActiveEmployees();
-  var nameMap = {};
-  for (var i = 0; i < emps.length; i++) {
-    nameMap[emps[i].name] = emps[i];
-    nameMap[emps[i].employee_no] = emps[i];
-  }
+  var empMap = {};
+  for (var i = 0; i < emps.length; i++) { empMap[emps[i].id] = emps[i]; }
 
-  // 找出哪一欄有員工姓名
-  var nameCol = -1, nameRow = -1, maxMatches = 0;
-  for (var row = 0; row < Math.min(10, data.length); row++) {
-    for (var col = 0; col < data[row].length; col++) {
-      var cell = String(data[row][col] || '').trim();
-      if (nameMap[cell]) {
-        var matches = 0;
-        for (var r2 = 0; r2 < Math.min(10, data.length); r2++) {
-          var c2 = String(data[r2][col] || '').trim();
-          if (nameMap[c2]) matches++;
-        }
-        if (matches > maxMatches) { maxMatches = matches; nameCol = col; nameRow = row; }
+  var data = [];
+  for (var key in req.body) {
+    if (key.indexOf('c_') === 0) {
+      var id = parseInt(key.replace('c_', ''));
+      var content = (req.body[key] || '').trim();
+      if (content && empMap[id] && empMap[id].line_user_id) {
+        data.push({ id: id, emp: empMap[id], content: content });
       }
     }
   }
 
-  if (nameCol < 0) {
-    var html = '<h3>❌ 找不到員工姓名</h3><p>請確認 Excel 中有員工姓名欄位。</p>';
-    html += '<p style="color:#999">工作表：' + sheetName + '</p>';
-    html += '<p style="color:#999">可選工作表：</p><ul>';
-    for (var s = 0; s < wb.SheetNames.length; s++) html += '<li><a href="?sheet='+encodeURIComponent(wb.SheetNames[s])+'">'+wb.SheetNames[s]+'</a></li>';
-    html += '</ul><a href="/admin/salary">返回</a>';
-    return res.send(html);
-  }
+  if (data.length === 0) return res.send('<h3>❌ 沒有填寫任何薪資內容</h3><a href="/admin/salary">返回</a>');
 
-  // 依照 nameRow 往下找所有員工資料
-  var found = [];
-  for (var r = nameRow + 1; r < data.length; r++) {
-    var nameVal = String(data[r][nameCol] || '').trim();
-    if (!nameVal || nameVal.length < 2) continue;
-    var emp = nameMap[nameVal];
-    if (!emp || !emp.line_user_id) continue;
-    // 把該行前後資料組合成薪資內容
-    var content = [];
-    for (var c = 0; c < data[r].length; c++) {
-      if (c === nameCol) continue;
-      var v = data[r][c];
-      if (v === '' || v === null || v === undefined) continue;
-      // 用標題列的文字當 label
-      var label = (nameRow > 0 && data[nameRow] && data[nameRow][c]) ? String(data[nameRow][c]).trim() : '項目' + c;
-      if (label && label.length < 20) content.push(label + '：' + v);
-    }
-    found.push({ emp: emp, name: nameVal, content: content.join('\n'), row: r + 1 });
-  }
+  req.session.salaryData = data;
 
-  // 存到 session 供發送使用
-  req.session.salaryData = found;
-  req.session.salarySheet = sheetName;
+  var preview = '<div class="card"><h3>📋 發送預覽（共 '+data.length+' 人）</h3>'
+    + '<table><tr><th>#</th><th>編號</th><th>姓名</th><th>薪資內容</th></tr>';
 
-  var sheetOpts = wb.SheetNames.map(function(sn) {
-    return '<option value="'+sn+'"'+(sn===sheetName?' selected':'')+'>'+sn+'</option>';
-  }).join('');
-
-  var preview = '<div class="card"><h3>📋 預覽（共 '+found.length+' 人）</h3>'
-    + '<form action="/admin/salary/upload" method="POST" enctype="multipart/form-data" style="margin-bottom:16px">'
-    + '<input type="file" name="salary" accept=".xlsx,.xls" style="width:auto;display:inline;margin-right:8px">'
-    + '<select name="sheet" style="width:auto;display:inline;margin-right:8px">'+sheetOpts+'</select>'
-    + '<button class="btn">重新上傳</button></form>'
-    + '<table><tr><th>#</th><th>員工姓名</th><th>編號</th><th>LINE</th><th>薪資內容</th></tr>';
-
-  for (var i = 0; i < found.length; i++) {
-    var f = found[i];
-    preview += '<tr><td>'+(i+1)+'</td><td>'+h(f.emp.name)+'</td><td>'+h(f.emp.employee_no)+'</td>'
-      + '<td><span class="badge badge-in">已綁定</span></td>'
-      + '<td><pre style="font-size:12px;margin:0;max-width:400px;white-space:pre-wrap">'+h(f.content)+'</pre></td></tr>';
+  for (var i = 0; i < data.length; i++) {
+    var d = data[i];
+    preview += '<tr><td>'+(i+1)+'</td><td>'+h(d.emp.employee_no)+'</td><td>'+h(d.emp.name)+'</td>'
+      + '<td><pre style="font-size:12px;margin:0;white-space:pre-wrap">'+h(d.content)+'</pre></td></tr>';
   }
   preview += '</table>'
-    + '<form action="/admin/salary/send" method="POST" onsubmit="return confirm(\'確定發送給 '+found.length+' 位員工？\')">'
-    + '<button class="btn" style="margin-top:16px;font-size:16px;padding:12px 32px">📨 一鍵發送給所有員工</button>'
-    + '</form></div>';
+    + '<div style="display:flex;gap:12px;margin-top:16px">'
+    + '<a href="/admin/salary" class="btn btn-outline">✏️ 返回修改</a>'
+    + '<form action="/admin/salary/send" method="POST" onsubmit="return confirm(\'確定發送給 '+data.length+' 位員工？\')"><button class="btn" style="font-size:16px;padding:12px 32px">📨 一鍵發送全部</button></form>'
+    + '</div></div>';
 
-  res.send(layout('薪資預覽', '薪資發送', preview));
+  res.send(layout('發送預覽', '薪資發送', preview));
 });
 
 router.post('/salary/send', auth, async function(req, res) {
-  var found = req.session.salaryData;
-  if (!found || found.length === 0) return res.send('<h3>❌ 無資料，請重新上傳</h3><a href="/admin/salary">返回</a>');
+  var data = req.session.salaryData;
+  if (!data || data.length === 0) return res.send('<h3>❌ 無資料</h3><a href="/admin/salary">返回</a>');
 
   var client = req.app.locals.lineClient;
   var sent = 0, failed = 0;
 
-  for (var i = 0; i < found.length; i++) {
-    var f = found[i];
+  for (var i = 0; i < data.length; i++) {
+    var d = data[i];
     try {
-      var msg = '📄 ' + (req.session.salarySheet || '薪資明細') + '\n\n👤 ' + f.emp.name + '（' + f.emp.employee_no + '）\n\n' + f.content + '\n\n📌 如有疑問請洽人資';
-      await client.pushMessage(f.emp.line_user_id, [{ type: 'text', text: msg }]);
+      var msg = '📄 薪資明細\n\n👤 ' + d.emp.name + '（' + d.emp.employee_no + '）\n\n' + d.content + '\n\n📌 如有疑問請洽會計';
+      await client.pushMessage(d.emp.line_user_id, [{ type: 'text', text: msg }]);
       sent++;
     } catch(e) {
-      console.error('[Salary] 發送失敗 ' + f.emp.name + ':', e.message);
+      console.error('[Salary] 發送失敗 ' + d.emp.name + ':', e.message);
       failed++;
     }
   }
@@ -617,11 +588,8 @@ router.post('/salary/send', auth, async function(req, res) {
   var result = '<div class="card"><h3>📨 發送完成</h3>'
     + '<div class="stats"><div class="stat"><div class="icon green">✅</div><div class="info"><div class="num">'+sent+'</div><div class="lbl">發送成功</div></div></div>'
     + (failed > 0 ? '<div class="stat"><div class="icon red">❌</div><div class="info"><div class="num">'+failed+'</div><div class="lbl">發送失敗</div></div></div>' : '')
-    + '</div></div><a href="/admin/salary" class="btn">返回薪資上傳</a>';
+    + '</div></div><a href="/admin/salary" class="btn">返回薪資發送</a>';
   res.send(layout('發送完成', '薪資發送', result));
 });
-
-// 把 admin/salary 加到 sidebar
-// sidebar 是靜態的，所以不用改
 
 module.exports = router;

@@ -5,6 +5,11 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+// 強制所有連線使用台北時區，確保 CURRENT_DATE 與 check_time::date 正確
+pool.on('connect', async (client) => {
+  await client.query("SET timezone TO 'Asia/Taipei'");
+});
+
 async function initDatabase() {
   // 員工
   await pool.query(`
@@ -257,8 +262,8 @@ async function getTodayCheckins(empId) {
   return rows;
 }
 async function queryCheckins(empId, start, end, limit = 200, offset = 0) {
-  let sql = `SELECT c.*, e.name, e.employee_no, e.department FROM checkins c
-    JOIN employees e ON c.employee_id=e.id WHERE 1=1`;
+  let sql = `SELECT c.*, COALESCE(e.name, '(已刪除)') AS name, COALESCE(e.employee_no, '-') AS employee_no, COALESCE(e.department, '') AS department FROM checkins c
+    LEFT JOIN employees e ON c.employee_id=e.id WHERE 1=1`;
   const p = [];
   let i = 1;
   if (empId) { sql += ` AND c.employee_id=$${i++}`; p.push(empId); }

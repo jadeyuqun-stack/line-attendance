@@ -1,4 +1,6 @@
 require('dotenv').config();
+// 強制使用台北時區（打卡記錄、日期比較都需要）
+process.env.TZ = 'Asia/Taipei';
 
 const express = require('express');
 const session = require('express-session');

@@ -165,18 +165,62 @@ router.get('/records', auth, async (req, res) => {
   var d = req.query.date || new Date().toISOString().split('T')[0];
   var records = await db.queryCheckins(req.query.eid ? parseInt(req.query.eid) : null, d, d);
   var emps = await db.listActiveEmployees();
+  var leaves = await db.getLeaveRequests('approved', 500);
+  var missedPunches = await db.getMissedPunches('approved', 500);
   var empMap = {};
+  // 建立員工對照表
+  for (var i = 0; i < emps.length; i++) { empMap[emps[i].id] = { emp: emps[i], checkIn: null, checkOut: null, status: '' }; }
+  // 填入打卡
   for (var i = 0; i < records.length; i++) {
     var r = records[i], key = r.employee_id;
-    if (!empMap[key]) empMap[key] = { emp: r, checkIn: null, checkOut: null };
+    if (!empMap[key]) empMap[key] = { emp: { employee_no: r.employee_no, name: r.name, department: r.department }, checkIn: null, checkOut: null, status: '' };
     if (r.type === 'check_in') empMap[key].checkIn = r; else empMap[key].checkOut = r;
   }
-  var rows = '', keys = Object.keys(empMap);
-  if (keys.length === 0) rows = '<tr><td colspan="7">當日無打卡記錄</td></tr>';
-  else for (var k = 0; k < keys.length; k++) {
+  // 判斷考勤狀態
+  function dateOverlaps(startStr, endStr, targetDate) {
+    if (!startStr) return false;
+    var s = startStr.indexOf(' ') !== -1 ? startStr.split(' ')[0] : startStr;
+    var e = endStr || s;
+    if (e.indexOf(' ') !== -1) e = e.split(' ')[0];
+    return s <= targetDate && e >= targetDate;
+  }
+  var keys = Object.keys(empMap);
+  var rows = '', absentCount = 0;
+  for (var k = 0; k < keys.length; k++) {
     var d2 = empMap[keys[k]], e = d2.emp;
-    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 '+fmt(d2.checkIn.check_time)+'</span>'+(d2.checkIn.address?'<br><small style="color:#999">📍 '+h(d2.checkIn.address)+'</small>':'')+(d2.checkIn.in_range===false?' <span class="badge badge-warn">⚠️超出'+(d2.checkIn.distance_meters||0)+'m</span>':'') : '<span style="color:#ccc">--:--</span>';
-    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 '+fmt(d2.checkOut.check_time)+'</span>'+(d2.checkOut.address?'<br><small style="color:#999">📍 '+h(d2.checkOut.address)+'</small>':'')+(d2.checkOut.in_range===false?' <span class="badge badge-warn">⚠️超出'+(d2.checkOut.distance_meters||0)+'m</span>':'') : '<span style="color:#ccc">--:--</span>';
+    var hasCheckIn = !!d2.checkIn;
+
+    // 判斷狀態
+    if (hasCheckIn) {
+      var ciH = new Date(d2.checkIn.check_time).getHours(), ciM = new Date(d2.checkIn.check_time).getMinutes();
+      var startH = parseInt(await db.getSetting('work_start_hour') || '8');
+      var buf = parseInt(await db.getSetting('late_buffer_minutes') || '30');
+      d2.status = (ciH*60+ciM > startH*60+buf) ? '⚠️遲到' : '✅出勤';
+    } else {
+      // 檢查當天是否有核准的請假
+      var hasLeave = false;
+      for (var li = 0; li < leaves.length; li++) {
+        if (leaves[li].employee_id == e.id && dateOverlaps(leaves[li].start_date, leaves[li].end_date, d)) {
+          hasLeave = true; break;
+        }
+      }
+      // 檢查是否有核准的補打卡
+      var hasMissed = false;
+      for (var mi = 0; mi < missedPunches.length; mi++) {
+        if (missedPunches[mi].employee_id == e.id && missedPunches[mi].punch_date == d) {
+          hasMissed = true; break;
+        }
+      }
+      if (hasLeave) d2.status = '🏖請假';
+      else if (hasMissed) d2.status = '📝已補卡';
+      else { d2.status = '❌曠職'; absentCount++; }
+    }
+
+    // 篩選員工
+    if (req.query.eid && parseInt(req.query.eid) !== parseInt(e.id)) continue;
+
+    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 '+fmt(d2.checkIn.check_time)+'</span>'+(d2.checkIn.address?'<br><small style="color:#999">📍 '+h(d2.checkIn.address)+'</small>':'')+(d2.checkIn.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
+    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 '+fmt(d2.checkOut.check_time)+'</span>'+(d2.checkOut.address?'<br><small style="color:#999">📍 '+h(d2.checkOut.address)+'</small>':'')+(d2.checkOut.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
     var hours = '-', workH = 0;
     if (d2.checkIn && d2.checkOut) {
       var ci = new Date(d2.checkIn.check_time), co = new Date(d2.checkOut.check_time);
@@ -184,7 +228,12 @@ router.get('/records', auth, async (req, res) => {
       hours = workH + 'h';
       if (workH < 8) hours += ' <span class="badge badge-warn">⚠️</span>';
     }
-    rows += '<tr><td>'+h(e.employee_no)+'</td><td>'+h(e.name)+'</td><td>'+h(e.department||'')+'</td><td>'+inHtml+'</td><td>'+outHtml+'</td><td>'+hours+'</td></tr>';
+    var statusBadge = d2.status === '❌曠職' ? '<span class="badge badge-out">❌曠職</span>'
+      : d2.status === '⚠️遲到' ? '<span class="badge badge-warn">⚠️遲到</span>'
+      : d2.status === '🏖請假' ? '<span class="badge badge-info">🏖請假</span>'
+      : d2.status === '📝已補卡' ? '<span class="badge badge-in">📝已補卡</span>'
+      : '<span class="badge badge-in">✅出勤</span>';
+    rows += '<tr><td>'+h(e.employee_no)+'</td><td>'+h(e.name)+'</td><td>'+h(e.department||'')+'</td><td>'+inHtml+'</td><td>'+outHtml+'</td><td>'+hours+'</td><td>'+statusBadge+'</td></tr>';
   }
   var opts = '';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'">'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
@@ -217,7 +266,7 @@ router.get('/records', auth, async (req, res) => {
   }
   var body = '<div class="card"><form class="inline" method="GET"><div><label>日期</label><input type="date" name="date" value="'+d+'"></div><div><label>員工</label><select name="eid"><option value="">全部員工</option>'+opts+'</select></div><button class="btn">🔍 查詢</button></form></div>'
     + lateSummary
-    + '<div class="card"><h3>'+d+' 打卡記錄</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th></tr>'+rows+'</table></div>'
+    + '<div class="card"><h3>'+d+' 打卡記錄' + (absentCount > 0 ? '（曠職 '+absentCount+' 人）' : '') + '</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th></tr>'+rows+'</table></div>'
     + '<button onclick="clearCheckins()" class="btn-sm btn-red">🗑 清除所有打卡記錄</button>'
     + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}</script>';
   res.send(layout('打卡記錄', '打卡記錄', body));

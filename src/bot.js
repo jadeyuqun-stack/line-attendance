@@ -535,9 +535,11 @@ async function handlePostback(postback, uid, client, replyToken) {
   if (data === "missed_dt") {
     var state = states.get(uid);
     if (!state || state.flow !== "missed" || state.step !== "dt") return;
-    var dt = params.datetime || (params.date ? params.date + " " + (params.time || "00:00") : null);
+    var dt = params.datetime || (params.date ? params.date + "T" + (params.time || "00:00") : null);
     if (!dt) return client.replyMessage(replyToken, [{ type: "text", text: "❌ 日期時間錯誤" }]);
-    var parts = dt.split(" ");
+    // datetime 可能是 "2026-06-16T14:30" 格式
+    var sep = dt.indexOf("T") !== -1 ? "T" : " ";
+    var parts = dt.split(sep);
     state.punchDate = parts[0];
     state.punchTime = parts[1] || "00:00";
     state.step = "reason";

@@ -264,7 +264,9 @@ router.get('/records', auth, async (req, res) => {
     }
     lateSummary += '</table></div>';
   }
-  var body = '<div class="card"><form class="inline" method="GET"><div><label>日期</label><input type="date" name="date" value="'+d+'"></div><div><label>員工</label><select name="eid"><option value="">全部員工</option>'+opts+'</select></div><button class="btn">🔍 查詢</button></form></div>'
+  var body = '<div class="card"><form class="inline" method="GET"><div><label>日期</label><input type="date" name="date" value="'+d+'"></div><div><label>員工</label><select name="eid"><option value="">全部員工</option>'+opts+'</select></div><button class="btn">🔍 查詢</button>'+(req.query.eid?'<a href="/admin/records?eid='+req.query.eid+'&month=1" class="btn btn-outline">📅 查看本月全部</a>':'')+'</form></div>'
+    // 月篩選模式
+    + (req.query.month ? '<div class="card"><h3>📅 本月打卡記錄</h3><table><tr><th>日期</th><th>編號</th><th>姓名</th><th>上班</th><th>下班</th><th>考勤</th></tr>' : '');
     + lateSummary
     + '<div class="card"><h3>'+d+' 打卡記錄' + (absentCount > 0 ? '（曠職 '+absentCount+' 人）' : '') + '</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th></tr>'+rows+'</table></div>'
     + '<button onclick="clearCheckins()" class="btn-sm btn-red">🗑 清除所有打卡記錄</button>'

@@ -363,23 +363,6 @@ async function handleFlow(text, uid, client, replyToken, emp) {
     }
     if (state.step === "reason") {
       state.reason = text;
-      // 驗證時間
-      var punchDt = new Date(state.punchDate + 'T' + state.punchTime + ':00');
-      var now = new Date();
-      console.log('[missed] punchDt:', punchDt.toISOString(), 'now:', now.toISOString(), 'future:', punchDt > now);
-      if (punchDt > now) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 不能補打卡未來時間')]); }
-      var threeDaysAgo = new Date(now);
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-      threeDaysAgo.setHours(0, 0, 0, 0);
-      console.log('[missed] threeDaysAgo:', threeDaysAgo.toISOString(), 'older:', punchDt < threeDaysAgo);
-      if (punchDt < threeDaysAgo) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 只能補打 3 天內的卡')]); }
-      // 檢查當天是否已有打卡
-      var punchDateOnly = state.punchDate;
-      var todayCheckins = await db.queryCheckins(emp.id, punchDateOnly, punchDateOnly, 10, 0);
-      var alreadyIn = todayCheckins.some(function(r) { return r.type === 'check_in'; });
-      var alreadyOut = todayCheckins.some(function(r) { return r.type === 'check_out'; });
-      if (state.punchType === 'check_in' && alreadyIn) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 當天已有上班打卡記錄')]); }
-      if (state.punchType === 'check_out' && alreadyOut) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 當天已有下班打卡記錄')]); }
       try {
         var mpId = await db.createMissedPunch(emp.id, state.punchType, state.punchDate, state.punchTime, state.reason);
         states.delete(uid);
@@ -414,7 +397,6 @@ async function handleFlow(text, uid, client, replyToken, emp) {
   if (state.flow === "overtime" && state.step === 'reason') {
     state.reason = text;
     try {
-        if (!validateOvertimeTime(state.otStart) || !validateOvertimeTime(state.otEnd)) { states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 加班時間限於 17:30 ~ 23:00")]); }
       var otId = await db.createOvertimeRequest(emp.id, state.otStart, state.otEnd, state.reason);
       states.delete(uid);
       var approvers = await db.findApprovers(emp.id);
@@ -510,6 +492,11 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (!state || state.step !== 'end_date') return;
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
     if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
+    // 檢查結束 ≥ 開始
+    if (new Date(dt) < new Date(state.startDateTime)) {
+      states.delete(uid);
+      return client.replyMessage(replyToken, [withMenu('❌ 結束時間必須在開始時間之後')]);
+    }
     state.endDateTime = dt; state.step = 'reason';
     var hours = leaveHours(state.startDateTime, dt);
     return client.replyMessage(replyToken, [withMenu('📅 ' + state.startDateTime + ' ~ ' + dt + '（' + hours + ' 小時）\n\n📝 請輸入請假原因：')]);
@@ -529,6 +516,11 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (!state || state.flow !== 'overtime' || state.step !== 'end') return;
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
     if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
+    // 驗證加班時間範圍（17:30~23:00）
+    if (!validateOvertimeTime(state.otStart) || !validateOvertimeTime(dt)) {
+      states.delete(uid);
+      return client.replyMessage(replyToken, [withMenu("❌ 加班時間限於 17:30 ~ 23:00")]);
+    }
     state.otEnd = dt; state.step = 'reason';
     return client.replyMessage(replyToken, [withMenu('🕐 ' + state.otStart + ' ~ ' + dt + '\n\n📝 請輸入加班原因：')]);
   }
@@ -542,6 +534,20 @@ async function handlePostback(postback, uid, client, replyToken) {
     var parts = dt.split(sep);
     state.punchDate = parts[0];
     state.punchTime = parts[1] || "00:00";
+    // 驗證補打卡時間（移到輸入原因前）
+    var punchDt = new Date(state.punchDate + 'T' + state.punchTime + ':00');
+    var now2 = new Date();
+    if (punchDt > now2) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 不能補打卡未來時間')]); }
+    var threeDaysAgo = new Date(now2);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    threeDaysAgo.setHours(0, 0, 0, 0);
+    if (punchDt < threeDaysAgo) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 只能補打 3 天內的卡')]); }
+    var emp2 = await db.getEmployeeByLineId(uid);
+    var todayCheckins = await db.queryCheckins(emp2.id, state.punchDate, state.punchDate, 10, 0);
+    var alreadyIn2 = todayCheckins.some(function(r) { return r.type === 'check_in'; });
+    var alreadyOut2 = todayCheckins.some(function(r) { return r.type === 'check_out'; });
+    if (state.punchType === 'check_in' && alreadyIn2) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 當天已有上班打卡記錄')]); }
+    if (state.punchType === 'check_out' && alreadyOut2) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 當天已有下班打卡記錄')]); }
     state.step = "reason";
     return client.replyMessage(replyToken, [withMenu("📝 補打卡：" + state.punchDate + " " + state.punchTime + "\n\n請輸入原因：")]);
   }

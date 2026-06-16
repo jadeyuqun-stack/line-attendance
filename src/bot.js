@@ -148,6 +148,20 @@ async function batchRejectAll(emp, client, replyToken, type) {
   return client.replyMessage(replyToken, [withMenu('已駁回 ' + count + ' 筆' + (type === 'overtime' ? '加班' : '請假') + '申請')]);
 }
 
+// ===== GPS location handler =====
+async function handleLocation(msg, uid, client, replyToken) {
+  var emp = await db.getEmployeeByLineId(uid);
+  if (!emp) return client.replyMessage(replyToken, [withMenu('請先綁定員工編號。')]);
+  var today = await db.getTodayCheckins(emp.id);
+  var hasIn = today.some(function(r) { return r.type === 'check_in'; });
+  var hasOut = today.some(function(r) { return r.type === 'check_out'; });
+  var loc = { latitude: msg.latitude, longitude: msg.longitude, address: msg.address || '' };
+  var gps = await checkGpsRange(msg.latitude, msg.longitude);
+  if (hasIn && !hasOut) return doCheckOut(emp, client, replyToken, loc, gps);
+  if (!hasIn) return doCheckIn(emp, client, replyToken, loc, gps);
+  return client.replyMessage(replyToken, [withMenu('今日已完成打卡。')]);
+}
+
 // ===== Check-in Flex =====
 async function doCheckIn(emp, client, replyToken, loc, gps) {
   const today = await db.getTodayCheckins(emp.id);
@@ -277,6 +291,21 @@ const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick'
 
 function ceilHours(diffMs) { return Math.ceil(Math.max(0, diffMs) / 3600000); }
 // 請假時數：取整後，跨天每日最多 8 小時
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  if (!lat1 || !lng1 || !lat2 || !lng2) return null;
+  var R = 6371000, dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
+  var a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+async function checkGpsRange(lat, lng) {
+  var officeLat = parseFloat(await db.getSetting('office_lat') || '0');
+  var officeLng = parseFloat(await db.getSetting('office_lng') || '0');
+  var range = parseInt(await db.getSetting('gps_range_meters') || '200');
+  if (!officeLat || !officeLng) return { inRange: true, distance: 0 };
+  var dist = haversineDistance(officeLat, officeLng, lat, lng);
+  return { inRange: dist <= range, distance: dist };
+}
+
 function leaveHours(startStr, endStr) {
   if (!startStr) return 0;
   var s = new Date(startStr), e = new Date(endStr||startStr);

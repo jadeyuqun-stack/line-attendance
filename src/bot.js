@@ -363,6 +363,21 @@ async function handleFlow(text, uid, client, replyToken, emp) {
     }
     if (state.step === "reason") {
       state.reason = text;
+      // 驗證時間
+      var punchDt = new Date(state.punchDate + ' ' + state.punchTime);
+      var now = new Date();
+      if (punchDt > now) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 不能補打卡未來時間')]); }
+      var threeDaysAgo = new Date(now);
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      threeDaysAgo.setHours(0, 0, 0, 0);
+      if (punchDt < threeDaysAgo) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 只能補打 3 天內的卡')]); }
+      // 檢查當天是否已有打卡
+      var punchDateOnly = state.punchDate;
+      var todayCheckins = await db.queryCheckins(emp.id, punchDateOnly, punchDateOnly, 10, 0);
+      var alreadyIn = todayCheckins.some(function(r) { return r.type === 'check_in'; });
+      var alreadyOut = todayCheckins.some(function(r) { return r.type === 'check_out'; });
+      if (state.punchType === 'check_in' && alreadyIn) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 當天已有上班打卡記錄')]); }
+      if (state.punchType === 'check_out' && alreadyOut) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 當天已有下班打卡記錄')]); }
       try {
         var mpId = await db.createMissedPunch(emp.id, state.punchType, state.punchDate, state.punchTime, state.reason);
         states.delete(uid);

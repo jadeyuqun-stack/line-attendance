@@ -29,7 +29,7 @@ a{text-decoration:none}
 .header h2{font-size:22px;font-weight:700}
 .header .date{color:#999;font-size:14px}
 /* Cards */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:24px}
 .stat{background:#fff;padding:24px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.04);display:flex;align-items:center;gap:16px}
 .stat .icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
 .stat .icon.green{background:#e6f9ee;color:#06c755}
@@ -121,8 +121,8 @@ function sidebar(active) {
 }
 
 function layout(title, active, body) {
-  return '<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+' - 打卡系統</title><style>'+CSS+'</style></head><body>'
-    + '<div class="sidebar"><div class="logo"><h1>📋<span>打卡系統</span></h1></div><nav>'+sidebar(active)+'</nav><div class="user">管理員 <a href="/admin/logout">登出</a></div></div>'
+  return '<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+' - 玉群環境科技考勤系統</title><style>'+CSS+'</style></head><body>'
+    + '<div class="sidebar"><div class="logo"><h1>📋<span>玉群環境科技考勤系統</span></h1></div><nav>'+sidebar(active)+'</nav><div class="user">管理員 <a href="/admin/logout">登出</a></div></div>'
     + '<div class="main"><div class="header"><h2>'+title+'</h2><div class="date">'+new Date().toLocaleDateString('zh-TW',{year:'numeric',month:'long',day:'numeric',weekday:'long'})+'</div></div>'
     + body + '</div></body></html>';
 }
@@ -148,14 +148,41 @@ router.get('/', auth, async (_, res) => {
     var r = recent[i];
     recentRows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.type==='check_in'?'<span class="badge badge-in">上班</span>':'<span class="badge badge-out">下班</span>')+'</td><td>'+fmt(r.check_time)+'</td><td>'+(r.in_range===false?'<span class="badge badge-warn">⚠️超出</span>':'-')+'</td></tr>';
   }
+  // 今日請假狀況
+  var todayStr = new Date().toISOString().split('T')[0];
+  var allLeaves = await db.getLeaveRequests('approved', 500);
+  var todayLeaves = [];
+  var leaveEmpIds = {};
+  for (var li = 0; li < allLeaves.length; li++) {
+    var l = allLeaves[li];
+    var lStart = typeof l.start_date === 'string' ? l.start_date.split(' ')[0] : '';
+    var lEnd = typeof l.end_date === 'string' ? l.end_date.split(' ')[0] : lStart;
+    if (lStart <= todayStr && lEnd >= todayStr) {
+      if (!leaveEmpIds[l.employee_id]) {
+        leaveEmpIds[l.employee_id] = true;
+        var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type;
+        todayLeaves.push({ name: l.name, no: l.employee_no, dept: l.department, type: leaveLabel, start: lStart, end: lEnd });
+      }
+    }
+  }
+  var leaveRows = '';
+  for (var lj = 0; lj < todayLeaves.length; lj++) {
+    var tl = todayLeaves[lj];
+    var dateRange = tl.start === tl.end ? tl.start : tl.start + ' ~ ' + tl.end;
+    leaveRows += '<tr><td>'+h(tl.no)+'</td><td>'+h(tl.name)+'</td><td>'+h(tl.dept||'')+'</td><td>'+h(tl.type)+'</td><td>'+dateRange+'</td></tr>';
+  }
+  var leaveCount = todayLeaves.length;
+  var leavePct = s.total_employees > 0 ? Math.round(leaveCount / s.total_employees * 100) : 0;
 
   var body = '<div class="stats">'
     + '<div class="stat"><div class="icon green">👥</div><div class="info"><div class="num">'+s.total_employees+'</div><div class="lbl">總員工人數</div></div></div>'
     + '<div class="stat"><div class="icon blue">✅</div><div class="info"><div class="num">'+s.checked_in+'</div><div class="lbl">已上班打卡</div></div></div>'
     + '<div class="stat"><div class="icon orange">📤</div><div class="info"><div class="num">'+s.checked_out+'</div><div class="lbl">已下班打卡</div></div></div>'
     + '<div class="stat"><div class="icon red">⏳</div><div class="info"><div class="num">'+s.not_checked_in+'</div><div class="lbl">尚未打卡</div></div></div>'
+    + '<div class="stat"><div class="icon orange">🏖</div><div class="info"><div class="num">'+leaveCount+'</div><div class="lbl">請假中（'+leavePct+'%）</div></div></div>'
     + '</div>'
     + '<div class="card"><h3>今日出勤率</h3><div style="font-size:36px;font-weight:700;color:#06c755;margin:8px 0">'+pct+'%</div><div class="progress"><div style="width:'+pct+'%"></div></div><p style="color:#999;font-size:12px;margin-top:4px">'+s.checked_in+' / '+s.total_employees+' 人已打卡</p></div>'
+    + '<div class="card"><h3>🏖 今日請假狀況</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期</th></tr>'+(leaveRows||'<tr><td colspan="5">🎉 今日無人請假</td></tr>')+'</table></div>'
     + '<div class="card"><h3>最近打卡</h3><table><tr><th>編號</th><th>姓名</th><th>類型</th><th>時間</th><th>GPS</th></tr>'+(recentRows||'<tr><td colspan="5">尚無記錄</td></tr>')+'</table></div>';
   res.send(layout('儀表板', '儀表板', body));
 });

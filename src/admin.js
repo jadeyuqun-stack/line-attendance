@@ -308,8 +308,8 @@ router.get('/records', auth, async (req, res) => {
     + lateSummary
     + '<div class="card"><h3>'+(month ? startDate+' ~ '+endDate : d)+' 打卡記錄' + (absentCount > 0 ? '（曠職 '+absentCount+' 人）' : '') + '</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th></tr>'+rows+'</table></div>'
     + '<button onclick="clearCheckins()" class="btn-sm btn-red">🗑 清除所有打卡記錄</button> '
-    + '<a href="/admin/export/checkins?month='+encodeURIComponent(month||d.substring(0,7))+'" class="btn-sm btn" style="margin-left:8px">📥 匯出 Excel</a>'
-    + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}</script>';
+    + '<input type="date" id="expStart" value="'+d+'" style="width:auto;margin-left:8px" title="開始日期"> ~ <input type="date" id="expEnd" value="'+d+'" style="width:auto" title="結束日期"> <button onclick="exportCheckins()" class="btn-sm btn" style="margin-left:4px">📥 匯出 Excel</button>'
+    + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}function exportCheckins(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/checkins?start="+s+"&end="+e;}</script>';
   res.send(layout('打卡記錄', '打卡記錄', body));
 });
 
@@ -472,7 +472,7 @@ router.get('/leaves', auth, async (req, res) => {
   var opts = '<option value="">全部員工</option>';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'"'+(filterEid===emps[j].id?' selected':'')+'>'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
   var filterBar = '<div class="card"><form class="inline" method="GET"><div><label>員工篩選</label><select name="eid">'+opts+'</select></div><div><label>狀態</label><select name="status"><option value=""'+(status===''?' selected':'')+'>全部</option><option value="pending"'+(status==='pending'?' selected':'')+'>待審核</option><option value="approved"'+(status==='approved'?' selected':'')+'>已核准</option><option value="rejected"'+(status==='rejected'?' selected':'')+'>已駁回</option></select></div><button class="btn">篩選</button></form></div>';
-  var body = filterBar + '<div class="card" style="display:flex;gap:16px;padding:16px"><button onclick="clearLeaves()" class="btn-sm btn-red" style="margin-right:12px">🗑 清除所有請假</button><a href="/admin/export/leaves?month='+encodeURIComponent(thisMonth)+'" class="btn-sm btn">📥 匯出 Excel</a><div><span style="font-size:24px;font-weight:700">'+companyMonth+'h</span><br><span style="color:#999;font-size:12px">全公司本月</span></div><div><span style="font-size:24px;font-weight:700">'+companyTotal+'h</span><br><span style="color:#999;font-size:12px">全公司累計</span></div></div>' + personSummary
+  var body = filterBar + '<div class="card" style="display:flex;gap:16px;padding:16px"><button onclick="clearLeaves()" class="btn-sm btn-red" style="margin-right:12px">🗑 清除所有請假</button><input type="date" id="leaveExpStart" value="'+thisMonth+'-01" style="width:auto" title="開始日期"> ~ <input type="date" id="leaveExpEnd" value="'+thisMonth+'-'+String(new Date(now.getFullYear(),now.getMonth()+1,0).getDate()).padStart(2,'0')+'" style="width:auto" title="結束日期"> <button onclick="exportLeaves()" class="btn-sm btn">📥 匯出 Excel</button><div><span style="font-size:24px;font-weight:700">'+companyMonth+'h</span><br><span style="color:#999;font-size:12px">全公司本月</span></div><div><span style="font-size:24px;font-weight:700">'+companyTotal+'h</span><br><span style="color:#999;font-size:12px">全公司累計</span></div></div>' + personSummary
     + '<div class="tabs">'
     + '<a href="?status=" class="'+(status===''?'active':'')+'">全部</a>'
     + '<a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a>'
@@ -481,7 +481,7 @@ router.get('/leaves', auth, async (req, res) => {
     + '</div>'
     + '<div style="margin-bottom:8px"><button onclick="batchAction(\"leave\",\"approved\")" class="btn-sm btn">✅ 批次核准</button> <button onclick="batchAction(\"leave\",\"rejected\")" class="btn-sm btn-red">❌ 批次駁回</button></div>'
     + '<div class="card"><table><tr><th><input type="checkbox" onclick="toggleAll(\"leaveCb\")" style="width:auto;height:auto"></th><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期時間</th><th>時數</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="10">無請假記錄</td></tr>')+'</table></div>'
-    + '<script>async function approveLeave(id){await fetch("/admin/api/leaves/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectLeave(id){await fetch("/admin/api/leaves/"+id+"/reject",{method:"PUT"});location.reload();}async function clearLeaves(){if(!confirm("⚠️ 確定刪除所有請假記錄？"))return;await fetch("/admin/api/leaves/clear",{method:"DELETE"});location.reload();}async function deleteLeave(id){if(!confirm("確定刪除此筆請假？"))return;await fetch("/admin/api/leaves/"+id,{method:"DELETE"});location.reload();}'
+    + '<script>async function approveLeave(id){await fetch("/admin/api/leaves/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectLeave(id){await fetch("/admin/api/leaves/"+id+"/reject",{method:"PUT"});location.reload();}async function clearLeaves(){if(!confirm("⚠️ 確定刪除所有請假記錄？"))return;await fetch("/admin/api/leaves/clear",{method:"DELETE"});location.reload();}async function deleteLeave(id){if(!confirm("確定刪除此筆請假？"))return;await fetch("/admin/api/leaves/"+id,{method:"DELETE"});location.reload();}function exportLeaves(){var s=document.getElementById("leaveExpStart").value;var e=document.getElementById("leaveExpEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/leaves?start="+s+"&end="+e;}'
     + 'function toggleAll(cls){var cbs=document.querySelectorAll("."+cls);for(var i=0;i<cbs.length;i++)cbs[i].checked=event.target.checked;}'
     + 'async function batchAction(type,action){var cbs=document.querySelectorAll(".leaveCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+ (action==="approved"?"核准":"駁回") +" "+ids.length+" 筆？"))return;await fetch("/admin/api/"+type+"s/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
   res.send(layout('請假管理', '請假管理', body));
@@ -699,7 +699,7 @@ router.get('/overtime', auth, async function(_, res) {
   var body = filterBar
     + '<div style="margin-bottom:8px"><button onclick="batchOt(\"approved\")" class="btn-sm btn">✅ 批次核准</button> <button onclick="batchOt(\"rejected\")" class="btn-sm btn-red">❌ 批次駁回</button></div>'
     + '<div class="card"><table><tr><th><input type="checkbox" onclick="toggleAll(\"otCb\")" style="width:auto;height:auto"></th><th>編號</th><th>姓名</th><th>部門</th><th>時間</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="8">無加班記錄</td></tr>')+'</table></div>'
-    + '<div style="margin-top:12px"><button onclick="clearOt()" class="btn-sm btn-red">🗑 清除所有加班記錄</button> <a href="/admin/export/overtime?month='+encodeURIComponent(filterMonth||(new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')))+'" class="btn-sm btn">📥 匯出 Excel</a></div><script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT"});location.reload();}async function clearOt(){if(!confirm("⚠️ 確定刪除所有加班記錄？"))return;await fetch("/admin/api/overtime/clear",{method:"DELETE"});location.reload();}async function deleteOt(id){if(!confirm("確定刪除此筆加班？"))return;await fetch("/admin/api/overtime/"+id,{method:"DELETE"});location.reload();}function toggleAll(cls){var cbs=document.querySelectorAll("."+cls);for(var i=0;i<cbs.length;i++)cbs[i].checked=event.target.checked;}async function batchOt(action){var cbs=document.querySelectorAll(".otCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+(action==="approved"?"核准":"駁回")+" "+ids.length+" 筆？"))return;await fetch("/admin/api/overtimes/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
+    + '<div style="margin-top:12px"><button onclick="clearOt()" class="btn-sm btn-red">🗑 清除所有加班記錄</button> <input type="date" id="otExpStart" value="'+(filterMonth||(new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')))+'-01" style="width:auto" title="開始日期"> ~ <input type="date" id="otExpEnd" value="'+(filterMonth||(new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')))+'-'+String(new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate()).padStart(2,'0')+'" style="width:auto" title="結束日期"> <button onclick="exportOt()" class="btn-sm btn">📥 匯出 Excel</button></div><script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT"});location.reload();}async function clearOt(){if(!confirm("⚠️ 確定刪除所有加班記錄？"))return;await fetch("/admin/api/overtime/clear",{method:"DELETE"});location.reload();}async function deleteOt(id){if(!confirm("確定刪除此筆加班？"))return;await fetch("/admin/api/overtime/"+id,{method:"DELETE"});location.reload();}function exportOt(){var s=document.getElementById("otExpStart").value;var e=document.getElementById("otExpEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/overtime?start="+s+"&end="+e;}function toggleAll(cls){var cbs=document.querySelectorAll("."+cls);for(var i=0;i<cbs.length;i++)cbs[i].checked=event.target.checked;}async function batchOt(action){var cbs=document.querySelectorAll(".otCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+(action==="approved"?"核准":"駁回")+" "+ids.length+" 筆？"))return;await fetch("/admin/api/overtimes/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
   res.send(layout('加班管理', '加班管理', body));
 });
 
@@ -899,14 +899,32 @@ async function doSend(data, client, baseUrl) {
 }
 
 // ===== Excel 匯出 =====
+// 請假時數計算（跨天每日最多 8h，午休扣 1h）
+function exportLeaveHours(startStr, endStr) {
+  if (!startStr) return 0;
+  var s = new Date(startStr), e = new Date(endStr||startStr);
+  var diff = e - s;
+  if (diff <= 0) return 1;
+  var raw = Math.ceil(diff / 3600000);
+  var days = Math.ceil(diff / 86400000);
+  var cap = Math.min(raw, days * 8);
+  if (days <= 1 && s.getHours() < 12 && e.getHours() >= 13) cap = Math.max(1, cap - 1);
+  return cap;
+}
+
 router.get('/export/checkins', auth, async function(req, res) {
   try {
-    var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
-    var parts = month.split('-');
-    var y = parseInt(parts[0]), m = parseInt(parts[1]);
-    var startDate = y+'-'+String(m).padStart(2,'0')+'-01';
-    var lastDay = new Date(y, m, 0).getDate();
-    var endDate = y+'-'+String(m).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+    var startDate = req.query.start || '';
+    var endDate = req.query.end || '';
+    if (!startDate) {
+      var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+      var parts = month.split('-');
+      var y = parseInt(parts[0]), m = parseInt(parts[1]);
+      startDate = y+'-'+String(m).padStart(2,'0')+'-01';
+      var lastDay = new Date(y, m, 0).getDate();
+      endDate = y+'-'+String(m).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+    }
+    if (!endDate) endDate = startDate;
 
     var records = await db.queryCheckins(null, startDate, endDate, 10000, 0);
     var missed = await db.getMissedPunches('approved', 500);
@@ -929,8 +947,7 @@ router.get('/export/checkins', auth, async function(req, res) {
     }
     for (var j = 0; j < missed.length; j++) {
       var mp = missed[j];
-      var mpMonth = (mp.punch_date || '').substring(0, 7);
-      if (mpMonth !== month) continue;
+      if (mp.punch_date < startDate || mp.punch_date > endDate) continue;
       data.push({
         '日期': mp.punch_date,
         '時間': mp.punch_date + ' ' + mp.punch_time,
@@ -943,13 +960,16 @@ router.get('/export/checkins', auth, async function(req, res) {
         '備註': mp.reason || ''
       });
     }
+    // 按日期排序
+    data.sort(function(a, b) { return a['日期'].localeCompare(b['日期']) || a['時間'].localeCompare(b['時間']); });
 
     var wb = XLSX.utils.book_new();
     var ws = XLSX.utils.json_to_sheet(data, { header: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'] });
     XLSX.utils.book_append_sheet(wb, ws, '打卡記錄');
     var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    var label = startDate === endDate ? startDate : startDate + '_' + endDate;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('打卡記錄_'+month+'.xlsx'));
+    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('打卡記錄_'+label+'.xlsx'));
     res.end(buf);
   } catch(e) {
     console.error('[Export] checkins error:', e);
@@ -959,15 +979,28 @@ router.get('/export/checkins', auth, async function(req, res) {
 
 router.get('/export/leaves', auth, async function(req, res) {
   try {
-    var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+    var startDate = req.query.start || '';
+    var endDate = req.query.end || '';
+    if (!startDate) {
+      var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+      startDate = month + '-01';
+      var parts2 = month.split('-');
+      var ly = parseInt(parts2[0]), lm = parseInt(parts2[1]);
+      endDate = month + '-' + String(new Date(ly, lm, 0).getDate()).padStart(2,'0');
+    }
+    if (!endDate) endDate = startDate;
+
     var all = await db.getLeaveRequests('', 2000);
     var data = [];
+    var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
+    var typeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出' };
     for (var i = 0; i < all.length; i++) {
       var l = all[i];
-      var lStart = (typeof l.start_date === 'string' ? l.start_date : '').substring(0, 7);
-      if (lStart !== month) continue;
-      var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-      var typeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出' };
+      var lStart = typeof l.start_date === 'string' ? (l.start_date.indexOf(' ')!==-1 ? l.start_date.split(' ')[0] : l.start_date.split('T')[0]) : '';
+      var lEnd = typeof l.end_date === 'string' ? (l.end_date.indexOf(' ')!==-1 ? l.end_date.split(' ')[0] : l.end_date.split('T')[0]) : lStart;
+      // 檢查日期區間是否重疊
+      if (lEnd < startDate || lStart > endDate) continue;
+      var hours = exportLeaveHours(l.start_date, l.end_date);
       data.push({
         '員工編號': l.employee_no || '-',
         '姓名': l.name || '-',
@@ -975,16 +1008,18 @@ router.get('/export/leaves', auth, async function(req, res) {
         '假別': typeLabels[l.leave_type] || l.leave_type,
         '開始時間': l.start_date || '',
         '結束時間': l.end_date || '',
+        '時數(h)': hours,
         '原因': l.reason || '',
         '狀態': statusLabels[l.status] || l.status
       });
     }
     var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','假別','開始時間','結束時間','原因','狀態'] });
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','假別','開始時間','結束時間','時數(h)','原因','狀態'] });
     XLSX.utils.book_append_sheet(wb, ws, '請假記錄');
     var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    var label2 = startDate === endDate ? startDate : startDate + '_' + endDate;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('請假記錄_'+month+'.xlsx'));
+    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('請假記錄_'+label2+'.xlsx'));
     res.end(buf);
   } catch(e) {
     console.error('[Export] leaves error:', e);
@@ -994,30 +1029,50 @@ router.get('/export/leaves', auth, async function(req, res) {
 
 router.get('/export/overtime', auth, async function(req, res) {
   try {
-    var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+    var startDate = req.query.start || '';
+    var endDate = req.query.end || '';
+    if (!startDate) {
+      var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+      startDate = month + '-01';
+      var parts3 = month.split('-');
+      var oy = parseInt(parts3[0]), om = parseInt(parts3[1]);
+      endDate = month + '-' + String(new Date(oy, om, 0).getDate()).padStart(2,'0');
+    }
+    if (!endDate) endDate = startDate;
+
     var all = await db.getOvertimeRequests('', 2000);
     var data = [];
+    var statusLabels2 = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
     for (var i = 0; i < all.length; i++) {
       var ot = all[i];
-      var otStart = (typeof ot.start_time === 'string' ? ot.start_time : '').substring(0, 7);
-      if (otStart !== month) continue;
-      var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
+      var otStart = typeof ot.start_time === 'string' ? (ot.start_time.indexOf(' ')!==-1 ? ot.start_time.split(' ')[0] : ot.start_time.split('T')[0]) : '';
+      // 檢查日期區間是否重疊
+      if (otStart < startDate || otStart > endDate) continue;
+      // 計算加班時數
+      var otHours = 0;
+      if (ot.start_time && ot.end_time) {
+        var s2 = new Date(ot.start_time), e2 = new Date(ot.end_time);
+        var diffMs = e2 - s2;
+        if (diffMs > 0) otHours = Math.round(diffMs / 3600000 * 10) / 10;
+      }
       data.push({
         '員工編號': ot.employee_no || '-',
         '姓名': ot.name || '-',
         '部門': ot.department || '',
         '開始時間': ot.start_time || '',
         '結束時間': ot.end_time || '',
+        '時數(h)': otHours,
         '原因': ot.reason || '',
-        '狀態': statusLabels[ot.status] || ot.status
+        '狀態': statusLabels2[ot.status] || ot.status
       });
     }
     var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','開始時間','結束時間','原因','狀態'] });
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','開始時間','結束時間','時數(h)','原因','狀態'] });
     XLSX.utils.book_append_sheet(wb, ws, '加班記錄');
     var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    var label3 = startDate === endDate ? startDate : startDate + '_' + endDate;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('加班記錄_'+month+'.xlsx'));
+    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('加班記錄_'+label3+'.xlsx'));
     res.end(buf);
   } catch(e) {
     console.error('[Export] overtime error:', e);

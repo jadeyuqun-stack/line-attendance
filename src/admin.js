@@ -215,14 +215,7 @@ router.get('/records', auth, async (req, res) => {
     if (!empMap[key]) empMap[key] = { emp: { employee_no: r.employee_no, name: r.name, department: r.department }, checkIn: null, checkOut: null, status: '' };
     if (r.type === 'check_in') empMap[key].checkIn = r; else empMap[key].checkOut = r;
   }
-  // 判斷考勤狀態
-  function dateOverlaps(startStr, endStr, targetDate) {
-    if (!startStr) return false;
-    var s = startStr.indexOf(' ') !== -1 ? startStr.split(' ')[0] : startStr;
-    var e = endStr || s;
-    if (e.indexOf(' ') !== -1) e = e.split(' ')[0];
-    return s <= targetDate && e >= targetDate;
-  }
+  // 判斷考勤狀態（dateOverlaps 已提取至模組層級）
   var keys = Object.keys(empMap);
   var rows = '', absentCount = 0;
   for (var k = 0; k < keys.length; k++) {
@@ -308,8 +301,8 @@ router.get('/records', auth, async (req, res) => {
     + lateSummary
     + '<div class="card"><h3>'+(month ? startDate+' ~ '+endDate : d)+' 打卡記錄' + (absentCount > 0 ? '（曠職 '+absentCount+' 人）' : '') + '</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th></tr>'+rows+'</table></div>'
     + '<button onclick="clearCheckins()" class="btn-sm btn-red">🗑 清除所有打卡記錄</button> '
-    + '<input type="date" id="expStart" value="'+d+'" style="width:auto;margin-left:8px" title="開始日期"> ~ <input type="date" id="expEnd" value="'+d+'" style="width:auto" title="結束日期"> <button onclick="exportCheckins()" class="btn-sm btn" style="margin-left:4px">📥 匯出 Excel</button>'
-    + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}function exportCheckins(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/checkins?start="+s+"&end="+e;}</script>';
+    + '<input type="date" id="expStart" value="'+d+'" style="width:auto;margin-left:8px" title="開始日期"> ~ <input type="date" id="expEnd" value="'+d+'" style="width:auto" title="結束日期"> <button onclick="exportCheckins()" class="btn-sm btn" style="margin-left:4px">📥 匯出 Excel</button> <button onclick="exportSummary()" class="btn-sm btn" style="margin-left:4px;background:#3498db">📊 匯出彙總</button>'
+    + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}function exportCheckins(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/checkins?start="+s+"&end="+e;}function exportSummary(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/summary?start="+s+"&end="+e;}</script>';
   res.send(layout('打卡記錄', '打卡記錄', body));
 });
 
@@ -633,6 +626,13 @@ router.post('/api/settings', auth, express.json(), async (req, res) => {
 function h(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function esc(s) { return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 function fmt(ts) { var d = new Date(ts); return d.getFullYear()+' '+(d.getMonth()+1)+'月'+d.getDate()+'日 '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function dateOverlaps(startStr, endStr, targetDate) {
+  if (!startStr) return false;
+  var s = startStr.indexOf(' ') !== -1 ? startStr.split(' ')[0] : startStr;
+  var e = endStr || s;
+  if (e.indexOf(' ') !== -1) e = e.split(' ')[0];
+  return s <= targetDate && e >= targetDate;
+}
 function modalHtml() {
   return '<div id="modal" class="modal"><div><h3>綁定 LINE ID</h3><p id="modalEmp" style="color:#999;margin-bottom:12px"></p><label>LINE User ID</label><input id="lineIdInput" placeholder="貼上員工的 LINE User ID"><p style="color:#999;font-size:12px;margin:8px 0">💡 員工在 LINE Bot 輸入「我的ID」取得</p><div class="actions"><button onclick="closeModal()" class="btn-sm btn-gray">取消</button><button onclick="saveLine()" class="btn-sm btn">儲存</button></div></div></div>';
 }
@@ -1078,6 +1078,150 @@ router.get('/export/overtime', auth, async function(req, res) {
     console.error('[Export] overtime error:', e);
     res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
   }
+});
+
+// ===== 出勤彙總匯出 =====
+router.get('/export/summary', auth, async function(req, res) {
+	try {
+		// 解析日期範圍
+		var startDate = req.query.start || '';
+		var endDate = req.query.end || '';
+		if (!startDate) {
+			var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+			var parts = month.split('-');
+			var y = parseInt(parts[0]), m = parseInt(parts[1]);
+			startDate = y+'-'+String(m).padStart(2,'0')+'-01';
+			var lastDay = new Date(y, m, 0).getDate();
+			endDate = y+'-'+String(m).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+		}
+		if (!endDate) endDate = startDate;
+
+		// 取得資料
+		var summaryRows = await db.getCheckinSummary(startDate, endDate);
+		var leaves = await db.getLeaveRequests('approved', 2000);
+		var missedPunches = await db.getMissedPunches('approved', 500);
+
+		// 設定
+		var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
+		var lateBufMin = parseInt(await db.getSetting('late_buffer_minutes') || '30');
+
+		// 時間格式化
+		function fmtTime(d) {
+			return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+		}
+
+		// 假別標籤
+		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出' };
+
+		// 建立請假查詢用 Map（employee_id → 當天有效的請假）
+		var leaveByEmp = {};
+		for (var li = 0; li < leaves.length; li++) {
+			var l = leaves[li];
+			if (!leaveByEmp[l.employee_id]) leaveByEmp[l.employee_id] = [];
+			leaveByEmp[l.employee_id].push(l);
+		}
+
+		// 建立補打卡查詢用 Set（employee_id::punch_date）
+		var missedSet = {};
+		for (var mi = 0; mi < missedPunches.length; mi++) {
+			var mp = missedPunches[mi];
+			missedSet[mp.employee_id + '::' + mp.punch_date] = true;
+		}
+
+		// 逐列分析
+		var data = [];
+		for (var i = 0; i < summaryRows.length; i++) {
+			var r = summaryRows[i];
+			var ci = r.check_in_time ? new Date(r.check_in_time) : null;
+			var co = r.check_out_time ? new Date(r.check_out_time) : null;
+			var totalHours = null;
+			var netHours = null;
+			var under9h = '';
+			var lateMin = 0;
+			var status = '曠職';
+			var leaveType = '';
+			var note = '';
+
+			if (ci && co) {
+				var totalMs = co - ci;
+				if (totalMs > 0) {
+					totalHours = Math.round(totalMs / 3600000 * 10) / 10;
+
+					// 午休扣除：若跨 12:00-13:00 扣 1h
+					var lunchStart = new Date(ci);
+					lunchStart.setHours(12, 0, 0, 0);
+					var lunchEnd = new Date(ci);
+					lunchEnd.setHours(13, 0, 0, 0);
+					var spansLunch = ci < lunchEnd && co > lunchStart;
+					netHours = totalHours;
+					if (spansLunch) netHours = Math.max(0, totalHours - 1);
+					netHours = Math.round(netHours * 10) / 10;
+
+					// 總工時 < 9h 標記（含午休 1h = 8h 工作 + 1h 午休）
+					if (totalHours < 9) under9h = '是';
+				}
+
+				// 判斷遲到
+				var ciMins = ci.getHours() * 60 + ci.getMinutes();
+				lateMin = ciMins - (workStartH * 60 + lateBufMin);
+				if (lateMin > 0) {
+					status = '遲到';
+				} else {
+					status = '出勤';
+					lateMin = 0;
+				}
+			} else if (ci && !co) {
+				// 只有上班沒下班
+				status = '未下班';
+			} else {
+				// 無打卡 → 檢查請假
+				var empLeaves = leaveByEmp[r.employee_id] || [];
+				for (var lj = 0; lj < empLeaves.length; lj++) {
+					var el = empLeaves[lj];
+					if (dateOverlaps(el.start_date, el.end_date, r.work_date)) {
+						status = '請假';
+						leaveType = leaveTypeLabels[el.leave_type] || el.leave_type;
+						break;
+					}
+				}
+				// 檢查補打卡
+				if (status === '曠職' && missedSet[r.employee_id + '::' + r.work_date]) {
+					status = '已補卡';
+				}
+			}
+
+			data.push({
+				'日期': r.work_date,
+				'員工編號': r.employee_no || '-',
+				'姓名': r.name || '-',
+				'部門': r.department || '',
+				'上班時間': ci ? fmtTime(ci) : '',
+				'下班時間': co ? fmtTime(co) : '',
+				'總工時(h)': totalHours !== null ? totalHours : '',
+				'淨工時(h)': netHours !== null ? netHours : '',
+				'是否<9h': under9h,
+				'考勤狀態': status,
+				'遲到分鐘': lateMin > 0 ? lateMin : '',
+				'請假假別': leaveType,
+				'備註': note
+			});
+		}
+
+		// 建立 Excel
+		var wb = XLSX.utils.book_new();
+		var ws = XLSX.utils.json_to_sheet(data, {
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註']
+		});
+		XLSX.utils.book_append_sheet(wb, ws, '出勤彙總');
+		var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+		var label = startDate === endDate ? startDate : startDate + '_' + endDate;
+		res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('出勤彙總_'+label+'.xlsx'));
+		res.end(buf);
+	} catch(e) {
+		console.error('[Export] summary error:', e);
+		res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
+	}
 });
 
 module.exports = router;

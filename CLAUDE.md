@@ -72,8 +72,9 @@ src/
 
 ### Excel 匯出
 - 打卡記錄（含補打卡）、請假記錄（含時數）、加班記錄（含時數）
+- **出勤彙總**：每人每天工時（含午休扣除）、是否 <9h、遲到/曠職/請假狀態
 - 可選日期範圍，支援 `start`/`end` 或 `month` 參數
-- 檔案：`admin.js` — `/admin/export/checkins|leaves|overtime`
+- 檔案：`admin.js` — `/admin/export/checkins|leaves|overtime|summary`
 
 ### 薪資發送
 - 後台輸入文字 + 上傳圖片，儲存草稿，選擇日期時間發送
@@ -85,7 +86,7 @@ src/
 | 路由 | 功能 |
 |------|------|
 | `/admin` | 儀表板 — 5 格統計 + 出勤率 + 今日請假 + 最近打卡 |
-| `/admin/records` | 打卡記錄 — 篩選(日期/月份/員工) + 考勤狀態 + 遲到統計 + 清除 + 匯出 |
+| `/admin/records` | 打卡記錄 — 篩選(日期/月份/員工) + 考勤狀態 + 遲到統計 + 清除 + 匯出 + 彙總 |
 | `/admin/employees` | 員工管理 — 新增/編輯/離職/刪除 + LINE 綁定 + L1/L2/L3 簽核人 |
 | `/admin/leaves` | 請假管理 — 篩選 + 個人時數 + 核決 + 批次 + 單筆刪除 + 匯出 |
 | `/admin/overtime` | 加班管理 — 篩選 + 核決 + 批次 + 單筆刪除 + 匯出 |

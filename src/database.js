@@ -274,6 +274,25 @@ async function queryCheckins(empId, start, end, limit = 200, offset = 0) {
   const { rows } = await pool.query(sql, p);
   return rows;
 }
+async function getCheckinSummary(start, end) {
+  var sql = `SELECT
+      e.id AS employee_id,
+      e.employee_no,
+      e.name,
+      e.department,
+      d.work_date::text,
+      MIN(CASE WHEN c.type='check_in' THEN c.check_time END) AS check_in_time,
+      MAX(CASE WHEN c.type='check_out' THEN c.check_time END) AS check_out_time
+    FROM employees e
+    CROSS JOIN generate_series($1::date, $2::date, '1 day'::interval) AS d(work_date)
+    LEFT JOIN checkins c ON c.employee_id = e.id AND c.check_time::date = d.work_date
+    WHERE e.status = 'active'
+    GROUP BY e.id, e.employee_no, e.name, e.department, d.work_date
+    ORDER BY e.employee_no, d.work_date`;
+  var { rows } = await pool.query(sql, [start, end]);
+  return rows;
+}
+
 async function getTodaySummary() {
   const { rows: r1 } = await pool.query("SELECT COUNT(*)::int AS total FROM employees WHERE status='active'");
   const { rows: r2 } = await pool.query("SELECT COUNT(DISTINCT employee_id)::int AS ci FROM checkins WHERE check_time::date=CURRENT_DATE AND type='check_in'");
@@ -510,7 +529,7 @@ module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
   listActiveEmployees, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, hardDeleteEmployee, updateEmployee,
-  recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
+  recordCheckin, getTodayCheckins, queryCheckins, getCheckinSummary, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, deleteLeaveRequest, getEmployeeById, findApprovers, setApprover, listApprovers,
   saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll,

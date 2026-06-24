@@ -1,22 +1,47 @@
 /**
- * 每日出勤報表 — 事件驅動推播（解決 Render 休眠問題）
+ * 每日出勤報表 — setTimeout 精確定時 + Keep-Alive 防止休眠
  *
- * 策略：不依賴 setTimeout（休眠會失效），改為：
- *   每次 webhook 事件 / 後台請求 → 檢查是否該送日報
- *   用 last_report_date 記錄避免重複發送
- *   保留 setTimeout 作為備援
+ * 策略：
+ *   1. setTimeout 排定每日推播時間（精確到分鐘）
+ *   2. setInterval 每 10 分鐘自 ping 一次，防止 Render 15 分鐘休眠
+ *   3. 每次 webhook 事件也檢查 trySendReport（雙重保障）
+ *   4. last_report_date 記錄避免重複發送
+ *
+ *   只要當天有人跟 Bot 互動過一次，伺服器就會保持清醒直到日報發出
  */
 const db = require('./database');
+const http = require('http');
 
 var scheduleTimeout = null;
+var keepAliveInterval = null;
 var clientRef = null;
 
 /**
- * 嘗試發送今日日報（在多個觸發點呼叫，只會在條件符合時發送一次）
+ * 啟動 Keep-Alive：每 10 分鐘對自己發一個 HTTP 請求，防止 Render 休眠
+ * 只要有人觸發過一次 webhook，伺服器就會持續清醒
+ */
+function startKeepAlive() {
+  if (keepAliveInterval) clearInterval(keepAliveInterval);
+  var port = process.env.PORT || 3000;
+  keepAliveInterval = setInterval(function() {
+    http.get('http://0.0.0.0:' + port + '/health', function(res) {
+      res.resume();
+    }).on('error', function() {
+      // 忽略自 ping 錯誤
+    });
+  }, 10 * 60 * 1000); // 每 10 分鐘（低於 Render 15 分鐘休眠門檻）
+  console.log('[Report] Keep-Alive 已啟動（每 10 分鐘自 ping）');
+}
+
+/**
+ * 嘗試發送今日日報（多個觸發點呼叫，只會在條件符合時發送一次）
  * 條件：已啟用 + 今天是推播日 + 現在時間 ≥ 設定時間 + 今天尚未發送
  */
 async function trySendReport(client) {
   try {
+    // 確保 keep-alive 運行中
+    if (!keepAliveInterval) startKeepAlive();
+
     // 檢查是否啟用
     var enabled = await db.getSetting('report_enabled');
     if (enabled !== 'true' && enabled !== '1') return;
@@ -40,7 +65,6 @@ async function trySendReport(client) {
     var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
     var noDup = await db.getSetting('report_no_dup');
     if (noDup !== 'false' && noDup !== '0') {
-      // 預設啟用：同一天只發一次
       var lastDate = await db.getSetting('last_report_date') || '';
       if (lastDate === todayStr) return; // 今天已發送，跳過
     }
@@ -151,8 +175,9 @@ function fmtTime(d) {
 
 function startScheduler(client) {
   clientRef = client;
-  scheduleNext();
-  console.log('[Report] 排程已啟動（setTimeout 備援 + 事件驅動）');
+  startKeepAlive();   // 防休眠
+  scheduleNext();      // 精確排程
+  console.log('[Report] 排程已啟動（Keep-Alive + setTimeout + 事件驅動）');
 }
 
 function scheduleNext() {
@@ -169,11 +194,11 @@ function scheduleNext() {
     if (target <= now) target.setDate(target.getDate() + 1);
 
     var delay = target - now;
-    console.log('[Report] 下次備援推播：' + target.toLocaleString('zh-TW') + '（' + Math.round(delay / 60000) + ' 分鐘後）');
+    console.log('[Report] 下次推播：' + target.toLocaleString('zh-TW') + '（' + Math.round(delay / 60000) + ' 分鐘後）');
 
     scheduleTimeout = setTimeout(function() {
       trySendReport(clientRef).finally(function() {
-        scheduleNext();
+        scheduleNext(); // 排下一輪
       });
     }, delay);
   }).catch(function(e) {
@@ -184,7 +209,7 @@ function scheduleNext() {
   });
 }
 
-// sendDailyReport 保留向後相容（外部可能呼叫）
+// sendDailyReport 保留向後相容
 var sendDailyReport = doSendReport;
 
 module.exports = { startScheduler, trySendReport, sendDailyReport };

@@ -497,6 +497,17 @@ async function handlePostback(postback, uid, client, replyToken) {
       states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('❌ 結束時間必須在開始時間之後')]);
     }
+    // 檢查請假日期是否與已打卡記錄重複
+    var leaveStartDate = state.startDateTime.indexOf(' ') !== -1 ? state.startDateTime.split(' ')[0] : state.startDateTime.split('T')[0];
+    var leaveEndDate = dt.indexOf(' ') !== -1 ? dt.split(' ')[0] : dt.split('T')[0];
+    var leaveEmp = await db.getEmployeeByLineId(uid);
+    if (leaveEmp) {
+      var overlapCheckins = await db.queryCheckins(leaveEmp.id, leaveStartDate, leaveEndDate, 100, 0);
+      if (overlapCheckins.length > 0) {
+        states.delete(uid);
+        return client.replyMessage(replyToken, [withMenu('❌ ' + leaveStartDate + ' ~ ' + leaveEndDate + ' 期間已有打卡記錄\n\n請先刪除打卡記錄，或使用「補打卡」功能')]);
+      }
+    }
     state.endDateTime = dt; state.step = 'reason';
     var hours = leaveHours(state.startDateTime, dt);
     return client.replyMessage(replyToken, [withMenu('📅 ' + state.startDateTime + ' ~ ' + dt + '（' + hours + ' 小時）\n\n📝 請輸入請假原因：')]);

@@ -353,6 +353,9 @@ async function getLeaveById(id) {
   const { rows } = await pool.query("SELECT * FROM leave_requests WHERE id=$1", [id]);
   return rows[0] || null;
 }
+async function deleteLeaveRequest(id) {
+  await pool.query("DELETE FROM leave_requests WHERE id=$1", [id]);
+}
 async function getEmployeeById(id) {
   const { rows } = await pool.query("SELECT * FROM employees WHERE id=$1", [id]);
   return rows[0] || null;
@@ -471,6 +474,9 @@ async function getOvertimeById(id) {
   var { rows } = await pool.query('SELECT * FROM overtime_requests WHERE id=$1', [id]);
   return rows[0] || null;
 }
+async function deleteOvertimeRequest(id) {
+  await pool.query("DELETE FROM overtime_requests WHERE id=$1", [id]);
+}
 async function updateOvertimeStatus(id, status, approvedBy) {
   var ot = await getOvertimeById(id);
   if (!ot) return;
@@ -506,8 +512,8 @@ module.exports = {
   listActiveEmployees, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, hardDeleteEmployee, updateEmployee,
   recordCheckin, getTodayCheckins, queryCheckins, getTodaySummary,
   getSetting, setSetting,
-  createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, getEmployeeById, findApprovers, setApprover, listApprovers,
+  createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, deleteLeaveRequest, getEmployeeById, findApprovers, setApprover, listApprovers,
   saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll,
-  createOvertimeRequest, getOvertimeRequests, getOvertimeById, updateOvertimeStatus, getEmployeeOvertimeRequests,
+  createOvertimeRequest, getOvertimeRequests, getOvertimeById, deleteOvertimeRequest, updateOvertimeStatus, getEmployeeOvertimeRequests,
   createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus,
 };

@@ -1,23 +1,63 @@
 /**
- * 每日出勤報表 — 定時推播到 LINE 群組
+ * 每日出勤報表 — 事件驅動推播（解決 Render 休眠問題）
+ *
+ * 策略：不依賴 setTimeout（休眠會失效），改為：
+ *   每次 webhook 事件 / 後台請求 → 檢查是否該送日報
+ *   用 last_report_date 記錄避免重複發送
+ *   保留 setTimeout 作為備援
  */
 const db = require('./database');
 
 var scheduleTimeout = null;
 var clientRef = null;
 
-async function sendDailyReport(client) {
+/**
+ * 嘗試發送今日日報（在多個觸發點呼叫，只會在條件符合時發送一次）
+ * 條件：已啟用 + 今天是推播日 + 現在時間 ≥ 設定時間 + 今天尚未發送
+ */
+async function trySendReport(client) {
   try {
     // 檢查是否啟用
     var enabled = await db.getSetting('report_enabled');
-    if (enabled !== 'true' && enabled !== '1') { console.log('[Report] 未啟用，跳過'); return; }
+    if (enabled !== 'true' && enabled !== '1') return;
 
-    // 檢查今天是否為推播日（0=Sun,1=Mon,...,6=Sat）
+    // 檢查今天是否為推播日
     var daysStr = await db.getSetting('report_days') || '1,2,3,4,5';
     var days = daysStr.split(',').map(function(d) { return parseInt(d); });
-    var todayDow = new Date().getDay();
-    if (days.indexOf(todayDow) === -1) { console.log('[Report] 今天非推播日（' + todayDow + '），跳過'); return; }
+    var now = new Date();
+    var todayDow = now.getDay();
+    if (days.indexOf(todayDow) === -1) return;
 
+    // 檢查時間是否已到
+    var reportTime = await db.getSetting('report_time') || '17:00';
+    var parts = reportTime.split(':');
+    var targetH = parseInt(parts[0]), targetM = parseInt(parts[1] || '0');
+    var nowMinutes = now.getHours() * 60 + now.getMinutes();
+    var targetMinutes = targetH * 60 + targetM;
+    if (nowMinutes < targetMinutes) return; // 時間還沒到
+
+    // 檢查今天是否已發送
+    var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+    var lastDate = await db.getSetting('last_report_date') || '';
+    if (lastDate === todayStr) return; // 今天已發送
+
+    // 發送！
+    console.log('[Report] 觸發發送（今日尚未發送，時間已過 ' + reportTime + '）');
+    await doSendReport(client);
+
+    // 記錄已發送
+    await db.setSetting('last_report_date', todayStr);
+    console.log('[Report] 已記錄發送日期：' + todayStr);
+  } catch (e) {
+    console.error('[Report] trySendReport 錯誤:', e.message);
+  }
+}
+
+/**
+ * 實際發送日報內容
+ */
+async function doSendReport(client) {
+  try {
     var groupId = await db.getSetting('report_group_id');
     if (!groupId) { console.log('[Report] 未設定群組 ID，跳過'); return; }
 
@@ -29,7 +69,7 @@ async function sendDailyReport(client) {
     // 查詢今日請假
     var leaveCount = 0;
     var leaveNames = [];
-    var leaveEmpIds = {};  // employee_id → true，用於判斷缺席時排除
+    var leaveEmpIds = {};
     try {
       var allLeaves = await db.getLeaveRequests('approved', 500);
       for (var li = 0; li < allLeaves.length; li++) {
@@ -83,7 +123,6 @@ async function sendDailyReport(client) {
           lateList.push(e.no + ' ' + e.name + '（' + fmtTime(new Date(e.checkIn.check_time)) + '）');
         }
       } else {
-        // 檢查是否在請假中（用員工 ID 比對）
         if (!leaveEmpIds[empKeys[j]]) {
           absentList.push(e.no + ' ' + e.name);
         }
@@ -109,7 +148,7 @@ function fmtTime(d) {
 function startScheduler(client) {
   clientRef = client;
   scheduleNext();
-  console.log('[Report] 排程已啟動');
+  console.log('[Report] 排程已啟動（setTimeout 備援 + 事件驅動）');
 }
 
 function scheduleNext() {
@@ -126,10 +165,10 @@ function scheduleNext() {
     if (target <= now) target.setDate(target.getDate() + 1);
 
     var delay = target - now;
-    console.log('[Report] 下次推播：' + target.toLocaleString('zh-TW') + '（' + Math.round(delay / 60000) + ' 分鐘後）');
+    console.log('[Report] 下次備援推播：' + target.toLocaleString('zh-TW') + '（' + Math.round(delay / 60000) + ' 分鐘後）');
 
     scheduleTimeout = setTimeout(function() {
-      sendDailyReport(clientRef).finally(function() {
+      trySendReport(clientRef).finally(function() {
         scheduleNext();
       });
     }, delay);
@@ -141,4 +180,7 @@ function scheduleNext() {
   });
 }
 
-module.exports = { startScheduler, sendDailyReport };
+// sendDailyReport 保留向後相容（外部可能呼叫）
+var sendDailyReport = doSendReport;
+
+module.exports = { startScheduler, trySendReport, sendDailyReport };

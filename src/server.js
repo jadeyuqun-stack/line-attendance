@@ -31,8 +31,11 @@ async function main() {
     cookie: { httpOnly: true, maxAge: 8 * 60 * 60 * 1000 },
   }));
 
-  // 健康檢查
-  app.get('/health', (_, res) => res.json({ status: 'ok' }));
+  // 健康檢查（也會觸發日報檢查）
+  app.get('/health', (_, res) => {
+    res.json({ status: 'ok' });
+    report.trySendReport(app.locals.lineClient).catch(e => {});
+  });
   app.get('/', (_, res) => res.send('LINE Attendance System OK'));
   app.post('/', (req, res) => { res.status(200).send('OK'); });
 
@@ -50,6 +53,8 @@ async function main() {
           }
         }
         bot.handleEvents(events, client).catch(e => console.error(e));
+        // 每次 LINE 事件都檢查是否需要發送日報（解決 Render 休眠問題）
+        report.trySendReport(client).catch(e => console.error('[Report] check error:', e.message));
       }
     } catch (e) {
       console.error('[webhook] error:', e.message);

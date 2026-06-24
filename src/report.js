@@ -92,73 +92,87 @@ async function doSendReport(client) {
     var todayStr = new Date().toISOString().split('T')[0];
 
     var s = await db.getTodaySummary();
+
+    // 取得所有在職員工
+    var allEmps = await db.listActiveEmployees();
+
+    // 取得今日打卡記錄
     var records = await db.queryCheckins(null, todayStr, todayStr, 500, 0);
-
-    // 查詢今日請假
-    var leaveCount = 0;
-    var leaveNames = [];
-    var leaveEmpIds = {};
-    try {
-      var allLeaves = await db.getLeaveRequests('approved', 500);
-      for (var li = 0; li < allLeaves.length; li++) {
-        var l = allLeaves[li];
-        var lStart = typeof l.start_date === 'string' ? l.start_date.split(' ')[0] : '';
-        var lEnd = typeof l.end_date === 'string' ? l.end_date.split(' ')[0] : lStart;
-        if (lStart <= todayStr && lEnd >= todayStr) {
-          if (!leaveEmpIds[l.employee_id]) {
-            leaveEmpIds[l.employee_id] = true;
-            leaveCount++;
-            var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type;
-            leaveNames.push(l.name + '（' + leaveLabel + '）');
-          }
-        }
-      }
-    } catch(e) { console.error('[Report] 查詢請假失敗:', e.message); }
-
-    var empMap = {};
+    var checkinMap = {}; // employee_id → { checkIn, checkOut }
     for (var i = 0; i < records.length; i++) {
       var r = records[i];
-      var key = r.employee_id;
-      if (!empMap[key]) empMap[key] = { name: r.name, no: r.employee_no, dept: r.department, checkIn: null, checkOut: null };
-      if (r.type === 'check_in') empMap[key].checkIn = r;
-      else empMap[key].checkOut = r;
+      if (!checkinMap[r.employee_id]) checkinMap[r.employee_id] = { checkIn: null, checkOut: null };
+      if (r.type === 'check_in') checkinMap[r.employee_id].checkIn = r;
+      else checkinMap[r.employee_id].checkOut = r;
+    }
+
+    // 取得今日請假
+    var leaveMap = {}; // employee_id → { name, type }
+    var allLeaves = await db.getLeaveRequests('approved', 500);
+    for (var li = 0; li < allLeaves.length; li++) {
+      var l = allLeaves[li];
+      var lStart = typeof l.start_date === 'string' ? l.start_date.split(' ')[0] : '';
+      var lEnd = typeof l.end_date === 'string' ? l.end_date.split(' ')[0] : lStart;
+      if (lStart <= todayStr && lEnd >= todayStr) {
+        if (!leaveMap[l.employee_id]) {
+          var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type;
+          leaveMap[l.employee_id] = { name: l.name, no: l.employee_no, type: leaveLabel };
+        }
+      }
+    }
+
+    // 逐一分析每位員工
+    var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
+    var workBuf = parseInt(await db.getSetting('late_buffer_minutes') || '30');
+    var checkedInList = [];    // 已打卡（含遲到標記）
+    var lateList = [];         // 遲到
+    var leaveList = [];        // 請假中
+    var absentList = [];       // 未打卡（非請假）
+    var checkedOutCount = 0;
+
+    for (var j = 0; j < allEmps.length; j++) {
+      var emp = allEmps[j];
+      var ci = checkinMap[emp.id];
+      var onLeave = leaveMap[emp.id];
+
+      if (ci && ci.checkIn) {
+        checkedInList.push(emp.employee_no + ' ' + emp.name);
+        if (ci.checkOut) checkedOutCount++;
+        // 判斷遲到
+        var ciH = new Date(ci.checkIn.check_time).getHours();
+        var ciM = new Date(ci.checkIn.check_time).getMinutes();
+        var lateMin = ciH * 60 + ciM - (workStartH * 60 + workBuf);
+        if (lateMin > 0) {
+          lateList.push(emp.employee_no + ' ' + emp.name + '（' + fmtTime(new Date(ci.checkIn.check_time)) + '，晚 ' + lateMin + ' 分）');
+        }
+      } else if (onLeave) {
+        leaveList.push(emp.employee_no + ' ' + onLeave.name + '（' + onLeave.type + '）');
+      } else {
+        absentList.push(emp.employee_no + ' ' + emp.name);
+      }
     }
 
     var today = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 
     var msg = '📊 ' + today + ' 出勤報告\n\n';
-    msg += '👥 總人數：' + s.total_employees + '\n';
-    msg += '✅ 已上班：' + s.checked_in + ' 人\n';
-    msg += '📤 已下班：' + s.checked_out + ' 人\n';
-    msg += '🏖 請假中：' + leaveCount + ' 人\n';
-    msg += '⏳ 未打卡：' + s.not_checked_in + ' 人\n\n';
+    msg += '👥 總人數：' + allEmps.length + '\n';
+    msg += '✅ 已上班：' + checkedInList.length + ' 人\n';
+    msg += '📤 已下班：' + checkedOutCount + ' 人\n';
+    msg += '🏖 請假中：' + leaveList.length + ' 人\n';
+    msg += '❌ 未打卡：' + absentList.length + ' 人\n\n';
 
-    if (leaveNames.length > 0) {
-      msg += '🏖 請假名單：\n' + leaveNames.join('\n') + '\n\n';
+    if (checkedInList.length > 0) {
+      msg += '✅ 已打卡名單（' + checkedInList.length + ' 人）：\n' + checkedInList.join('\n') + '\n\n';
     }
-
-    var lateList = [];
-    var absentList = [];
-    var empKeys = Object.keys(empMap);
-    for (var j = 0; j < empKeys.length; j++) {
-      var e = empMap[empKeys[j]];
-      if (e.checkIn) {
-        var ciH = new Date(e.checkIn.check_time).getHours();
-        var ciM = new Date(e.checkIn.check_time).getMinutes();
-        var startH = parseInt(await db.getSetting('work_start_hour') || '8');
-        var buf = parseInt(await db.getSetting('late_buffer_minutes') || '30');
-        if (ciH * 60 + ciM > startH * 60 + buf) {
-          lateList.push(e.no + ' ' + e.name + '（' + fmtTime(new Date(e.checkIn.check_time)) + '）');
-        }
-      } else {
-        if (!leaveEmpIds[empKeys[j]]) {
-          absentList.push(e.no + ' ' + e.name);
-        }
-      }
+    if (lateList.length > 0) {
+      msg += '⚠️ 遲到名單（' + lateList.length + ' 人）：\n' + lateList.join('\n') + '\n\n';
     }
-
-    if (lateList.length > 0) msg += '⚠️ 遲到名單：\n' + lateList.join('\n') + '\n\n';
-    if (absentList.length > 0) msg += '❌ 未打卡名單（不含請假）：\n' + absentList.join('\n') + '\n\n';
+    if (leaveList.length > 0) {
+      msg += '🏖 請假名單（' + leaveList.length + ' 人）：\n' + leaveList.join('\n') + '\n\n';
+    }
+    if (absentList.length > 0) {
+      msg += '❌ 未打卡名單（' + absentList.length + ' 人）：\n' + absentList.join('\n') + '\n\n';
+    }
 
     msg += '📌 系統自動推播';
 

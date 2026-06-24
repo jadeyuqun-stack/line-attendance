@@ -900,114 +900,129 @@ async function doSend(data, client, baseUrl) {
 
 // ===== Excel 匯出 =====
 router.get('/export/checkins', auth, async function(req, res) {
-  var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
-  var parts = month.split('-');
-  var y = parseInt(parts[0]), m = parseInt(parts[1]);
-  var startDate = y+'-'+String(m).padStart(2,'0')+'-01';
-  var lastDay = new Date(y, m, 0).getDate();
-  var endDate = y+'-'+String(m).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+  try {
+    var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+    var parts = month.split('-');
+    var y = parseInt(parts[0]), m = parseInt(parts[1]);
+    var startDate = y+'-'+String(m).padStart(2,'0')+'-01';
+    var lastDay = new Date(y, m, 0).getDate();
+    var endDate = y+'-'+String(m).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
 
-  // 打卡記錄
-  var records = await db.queryCheckins(null, startDate, endDate, 10000, 0);
-  // 核准的補打卡
-  var missed = await db.getMissedPunches('approved', 500);
+    var records = await db.queryCheckins(null, startDate, endDate, 10000, 0);
+    var missed = await db.getMissedPunches('approved', 500);
 
-  var data = [];
-  for (var i = 0; i < records.length; i++) {
-    var r = records[i];
-    data.push({
-      '日期': new Date(r.check_time).toISOString().split('T')[0],
-      '時間': fmt(r.check_time),
-      '員工編號': r.employee_no || '-',
-      '姓名': r.name || '-',
-      '部門': r.department || '',
-      '類型': r.type === 'check_in' ? '上班' : '下班',
-      '打卡位置': r.address || '',
-      'GPS範圍內': r.in_range === false ? '超出' : '範圍內',
-    });
+    var data = [];
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      var ts = r.check_time ? new Date(r.check_time) : new Date();
+      data.push({
+        '日期': ts.getFullYear()+'-'+String(ts.getMonth()+1).padStart(2,'0')+'-'+String(ts.getDate()).padStart(2,'0'),
+        '時間': fmt(r.check_time),
+        '員工編號': r.employee_no || '-',
+        '姓名': r.name || '-',
+        '部門': r.department || '',
+        '類型': r.type === 'check_in' ? '上班' : '下班',
+        '位置': (r.address || '').substring(0, 80),
+        'GPS': r.in_range === false ? '超出範圍' : '範圍內',
+        '備註': ''
+      });
+    }
+    for (var j = 0; j < missed.length; j++) {
+      var mp = missed[j];
+      var mpMonth = (mp.punch_date || '').substring(0, 7);
+      if (mpMonth !== month) continue;
+      data.push({
+        '日期': mp.punch_date,
+        '時間': mp.punch_date + ' ' + mp.punch_time,
+        '員工編號': mp.employee_no || '-',
+        '姓名': mp.name || '-',
+        '部門': mp.department || '',
+        '類型': mp.punch_type === 'check_in' ? '上班(補卡)' : '下班(補卡)',
+        '位置': '',
+        'GPS': '補打卡',
+        '備註': mp.reason || ''
+      });
+    }
+
+    var wb = XLSX.utils.book_new();
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'] });
+    XLSX.utils.book_append_sheet(wb, ws, '打卡記錄');
+    var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('打卡記錄_'+month+'.xlsx'));
+    res.end(buf);
+  } catch(e) {
+    console.error('[Export] checkins error:', e);
+    res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
   }
-  // 補打卡（已核准寫入打卡記錄的）
-  for (var j = 0; j < missed.length; j++) {
-    var mp = missed[j];
-    var mpMonth = (mp.punch_date || '').substring(0, 7);
-    if (mpMonth !== month) continue;
-    data.push({
-      '日期': mp.punch_date,
-      '時間': mp.punch_date + ' ' + mp.punch_time,
-      '員工編號': mp.employee_no || '-',
-      '姓名': mp.name || '-',
-      '部門': mp.department || '',
-      '類型': mp.punch_type === 'check_in' ? '上班(補卡)' : '下班(補卡)',
-      '打卡位置': '',
-      'GPS範圍內': '補打卡',
-    });
-  }
-
-  var wb = XLSX.utils.book_new();
-  var ws = XLSX.utils.json_to_sheet(data);
-  XLSX.utils.book_append_sheet(wb, ws, '打卡記錄');
-  var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  res.setHeader('Content-Disposition', 'attachment; filename=打卡記錄_' + month + '.xlsx');
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.send(buf);
 });
 
 router.get('/export/leaves', auth, async function(req, res) {
-  var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
-  var all = await db.getLeaveRequests('', 2000);
-  var data = [];
-  for (var i = 0; i < all.length; i++) {
-    var l = all[i];
-    var lStart = (typeof l.start_date === 'string' ? l.start_date : '').substring(0, 7);
-    if (lStart !== month) continue;
-    var statusLabel = l.status === 'approved' ? '已核准' : l.status === 'rejected' ? '已駁回' : '待審核';
-    var typeLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type;
-    data.push({
-      '員工編號': l.employee_no || '-',
-      '姓名': l.name || '-',
-      '部門': l.department || '',
-      '假別': typeLabel,
-      '開始時間': l.start_date || '',
-      '結束時間': l.end_date || '',
-      '原因': l.reason || '',
-      '狀態': statusLabel,
-    });
+  try {
+    var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+    var all = await db.getLeaveRequests('', 2000);
+    var data = [];
+    for (var i = 0; i < all.length; i++) {
+      var l = all[i];
+      var lStart = (typeof l.start_date === 'string' ? l.start_date : '').substring(0, 7);
+      if (lStart !== month) continue;
+      var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
+      var typeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出' };
+      data.push({
+        '員工編號': l.employee_no || '-',
+        '姓名': l.name || '-',
+        '部門': l.department || '',
+        '假別': typeLabels[l.leave_type] || l.leave_type,
+        '開始時間': l.start_date || '',
+        '結束時間': l.end_date || '',
+        '原因': l.reason || '',
+        '狀態': statusLabels[l.status] || l.status
+      });
+    }
+    var wb = XLSX.utils.book_new();
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','假別','開始時間','結束時間','原因','狀態'] });
+    XLSX.utils.book_append_sheet(wb, ws, '請假記錄');
+    var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('請假記錄_'+month+'.xlsx'));
+    res.end(buf);
+  } catch(e) {
+    console.error('[Export] leaves error:', e);
+    res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
   }
-  var wb = XLSX.utils.book_new();
-  var ws = XLSX.utils.json_to_sheet(data);
-  XLSX.utils.book_append_sheet(wb, ws, '請假記錄');
-  var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  res.setHeader('Content-Disposition', 'attachment; filename=請假記錄_' + month + '.xlsx');
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.send(buf);
 });
 
 router.get('/export/overtime', auth, async function(req, res) {
-  var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
-  var all = await db.getOvertimeRequests('', 2000);
-  var data = [];
-  for (var i = 0; i < all.length; i++) {
-    var ot = all[i];
-    var otStart = (typeof ot.start_time === 'string' ? ot.start_time : '').substring(0, 7);
-    if (otStart !== month) continue;
-    var statusLabel = ot.status === 'approved' ? '已核准' : ot.status === 'rejected' ? '已駁回' : '待審核';
-    data.push({
-      '員工編號': ot.employee_no || '-',
-      '姓名': ot.name || '-',
-      '部門': ot.department || '',
-      '開始時間': ot.start_time || '',
-      '結束時間': ot.end_time || '',
-      '原因': ot.reason || '',
-      '狀態': statusLabel,
-    });
+  try {
+    var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+    var all = await db.getOvertimeRequests('', 2000);
+    var data = [];
+    for (var i = 0; i < all.length; i++) {
+      var ot = all[i];
+      var otStart = (typeof ot.start_time === 'string' ? ot.start_time : '').substring(0, 7);
+      if (otStart !== month) continue;
+      var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
+      data.push({
+        '員工編號': ot.employee_no || '-',
+        '姓名': ot.name || '-',
+        '部門': ot.department || '',
+        '開始時間': ot.start_time || '',
+        '結束時間': ot.end_time || '',
+        '原因': ot.reason || '',
+        '狀態': statusLabels[ot.status] || ot.status
+      });
+    }
+    var wb = XLSX.utils.book_new();
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','開始時間','結束時間','原因','狀態'] });
+    XLSX.utils.book_append_sheet(wb, ws, '加班記錄');
+    var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('加班記錄_'+month+'.xlsx'));
+    res.end(buf);
+  } catch(e) {
+    console.error('[Export] overtime error:', e);
+    res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
   }
-  var wb = XLSX.utils.book_new();
-  var ws = XLSX.utils.json_to_sheet(data);
-  XLSX.utils.book_append_sheet(wb, ws, '加班記錄');
-  var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  res.setHeader('Content-Disposition', 'attachment; filename=加班記錄_' + month + '.xlsx');
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.send(buf);
 });
 
 module.exports = router;

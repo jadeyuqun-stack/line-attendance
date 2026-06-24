@@ -161,9 +161,6 @@ async function doSendReport(client) {
     msg += '🏖 請假中：' + leaveList.length + ' 人\n';
     msg += '❌ 未打卡：' + absentList.length + ' 人\n\n';
 
-    if (checkedInList.length > 0) {
-      msg += '✅ 已打卡名單（' + checkedInList.length + ' 人）：\n' + checkedInList.join('\n') + '\n\n';
-    }
     if (lateList.length > 0) {
       msg += '⚠️ 遲到名單（' + lateList.length + ' 人）：\n' + lateList.join('\n') + '\n\n';
     }

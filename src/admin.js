@@ -514,6 +514,7 @@ router.get('/settings', auth, async (_, res) => {
   var reportTime = await db.getSetting('report_time') || '17:00';
   var reportEnabled = await db.getSetting('report_enabled') || '';
   var reportDays = await db.getSetting('report_days') || '1,2,3,4,5';
+  var reportNoDup = await db.getSetting('report_no_dup') || 'true';
   var reportDaysArr = reportDays.split(',');
   var dayNames = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -535,6 +536,7 @@ router.get('/settings', auth, async (_, res) => {
     + '<p style="color:#999;font-size:13px;margin-bottom:12px">每天固定時間自動推播出勤彙總到 LINE 群組。</p>'
     + '<form id="reportForm" class="inline">'
     + '<div style="flex-direction:row;align-items:center;gap:6px;margin-right:16px"><input type="checkbox" id="rptEnabled" '+(reportEnabled==='true'||reportEnabled==='1'?'checked':'')+' style="width:16px;height:16px"><label for="rptEnabled" style="margin:0">啟用每日推播</label></div>'
+    + '<div style="flex-direction:row;align-items:center;gap:6px;margin-right:16px"><input type="checkbox" id="rptNoDup" '+(reportNoDup==='true'||reportNoDup==='1'?'checked':'')+' style="width:16px;height:16px"><label for="rptNoDup" style="margin:0" title="開啟後同一天只會發送一次，避免重複推播">同日不重複發送</label></div>'
     + '<div><label>LINE 群組 ID</label><input id="groupId" value="'+h(reportGroupId)+'" placeholder="加入群組後自動取得" style="width:260px;font-size:12px"></div>'
     + '<div><label>推播時間</label><input id="rptTime" value="'+h(reportTime)+'" placeholder="17:00" style="width:70px"></div>'
     + '<button class="btn">儲存</button>'
@@ -551,7 +553,7 @@ router.get('/settings', auth, async (_, res) => {
     + '<script>'
     + 'document.getElementById("hourForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({work_start_hour:document.getElementById("workStart").value,work_end_hour:document.getElementById("workEnd").value,late_buffer_minutes:document.getElementById("lateBuf").value})});if(r.ok)document.getElementById("hourMsg").textContent="✅已儲存";};'
     + 'document.getElementById("gpsForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({office_lat:document.getElementById("lat").value,office_lng:document.getElementById("lng").value,gps_range_meters:document.getElementById("range").value})});if(r.ok)document.getElementById("gpsMsg").textContent="✅已儲存";};'
-    + 'document.getElementById("reportForm").onsubmit=async function(e){e.preventDefault();var days=[];var cbs=document.querySelectorAll(".rptDay:checked");for(var i=0;i<cbs.length;i++)days.push(cbs[i].value);var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({report_group_id:document.getElementById("groupId").value,report_time:document.getElementById("rptTime").value,report_enabled:document.getElementById("rptEnabled").checked?"true":"false",report_days:days.join(",")})});if(r.ok)document.getElementById("rptMsg").textContent="✅已儲存 重新整理後生效";};'
+    + 'document.getElementById("reportForm").onsubmit=async function(e){e.preventDefault();var days=[];var cbs=document.querySelectorAll(".rptDay:checked");for(var i=0;i<cbs.length;i++)days.push(cbs[i].value);var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({report_group_id:document.getElementById("groupId").value,report_time:document.getElementById("rptTime").value,report_enabled:document.getElementById("rptEnabled").checked?"true":"false",report_days:days.join(","),report_no_dup:document.getElementById("rptNoDup").checked?"true":"false"})});if(r.ok)document.getElementById("rptMsg").textContent="✅已儲存 重新整理後生效";};'
     + '</script>';
   res.send(layout('系統設定', '系統設定', body));
 });

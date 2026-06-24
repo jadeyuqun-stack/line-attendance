@@ -36,10 +36,14 @@ async function trySendReport(client) {
     var targetMinutes = targetH * 60 + targetM;
     if (nowMinutes < targetMinutes) return; // 時間還沒到
 
-    // 檢查今天是否已發送
+    // 檢查同日不重複發送（選項控制）
     var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-    var lastDate = await db.getSetting('last_report_date') || '';
-    if (lastDate === todayStr) return; // 今天已發送
+    var noDup = await db.getSetting('report_no_dup');
+    if (noDup !== 'false' && noDup !== '0') {
+      // 預設啟用：同一天只發一次
+      var lastDate = await db.getSetting('last_report_date') || '';
+      if (lastDate === todayStr) return; // 今天已發送，跳過
+    }
 
     // 發送！
     console.log('[Report] 觸發發送（今日尚未發送，時間已過 ' + reportTime + '）');

@@ -707,7 +707,7 @@ async function setupRichMenu() {
 		// Step 3: 上傳圖片
 		var png = makePng();
 		console.log('[RichMenu] PNG 大小:', png.length, 'bytes');
-		var res2 = await fetch('https://api.line.me/v2/bot/richmenu/' + data.richMenuId + '/content', {
+		var res2 = await fetch('https://api-data.line.me/v2/bot/richmenu/' + data.richMenuId + '/content', {
 			method: 'POST',
 			headers: { 'Content-Type': 'image/png', 'Authorization': 'Bearer ' + token },
 			body: png

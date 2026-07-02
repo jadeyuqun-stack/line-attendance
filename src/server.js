@@ -102,21 +102,27 @@ async function main() {
         html += '<p><a href="/admin/setup-richmenu">🔄 重新建立 Rich Menu</a> | <a href="/admin/setup-richmenu?check=1">🔍 重新診斷</a></p>';
         return res.send(html);
       }
-      var id = await bot.setupRichMenu();
-      if (id) {
+      var result = await bot.setupRichMenu();
+      if (result.error) {
+        var errHtml = '<h2>❌ Rich Menu 設定失敗</h2>';
+        errHtml += '<p style="color:#e74c3c"><b>錯誤：</b>' + result.error + '</p>';
+        errHtml += '<p><a href="/admin/setup-richmenu?check=1">🔍 診斷狀態</a></p>';
+        return res.send(errHtml);
+      }
+      if (result.richMenuId) {
         var html2 = '<h2>✅ Rich Menu 建立成功</h2>';
-        html2 += '<p>Rich Menu ID: <code>' + id + '</code></p>';
-        html2 += '<p>請確認以下事項：</p>';
+        html2 += '<p>Rich Menu ID: <code>' + result.richMenuId + '</code></p>';
+        html2 += '<p style="color:#27ae60">✔ 圖片上傳完成<br>✔ 已設為所有用戶預設</p>';
+        html2 += '<p>🔍 <b>若 LINE 仍未顯示：</b></p>';
         html2 += '<ol style="color:#e74c3c">';
-        html2 += '<li>前往 <a href="https://developers.line.biz/console/" target="_blank">LINE Developers Console</a> → 你的 Channel → <b>Messaging API</b> 分頁</li>';
-        html2 += '<li>拉到最下面 <b>「LINE Official Account features」</b></li>';
-        html2 += '<li>確認 <b>「Rich menu」</b> 已勾選 ✅</li>';
-        html2 += '<li>回到 LINE，關閉聊天室再重新打開</li>';
+        html2 += '<li>關閉 LINE 聊天室 → 重新打開（必要！）</li>';
+        html2 += '<li>確認已加 Bot 為好友</li>';
+        html2 += '<li><a href="https://developers.line.biz/console/" target="_blank">LINE Developers Console</a> → Messaging API → LINE Official Account features → 勾選 <b>Rich menu</b></li>';
         html2 += '</ol>';
         html2 += '<p><a href="/admin/setup-richmenu?check=1">🔍 診斷 Rich Menu 狀態</a></p>';
         res.send(html2);
       } else {
-        res.json({ error: '失敗，請看 Render logs' });
+        res.json({ error: '未知錯誤' });
       }
     } catch (e) {
       res.status(500).json({ error: e.message });

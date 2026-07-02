@@ -670,32 +670,71 @@ async function handlePostback(postback, uid, client, replyToken) {
 }
 
 async function setupRichMenu() {
-  try {
-    const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-    const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
-    const existing = await fetch('https://api.line.me/v2/bot/richmenu/list', { headers });
-    const list = await existing.json();
-    for (const rm of (list.richmenus || [])) await fetch('https://api.line.me/v2/bot/richmenu/' + rm.richMenuId, { method: 'DELETE', headers });
-    const menu = {
-      size: { width: 2500, height: 843 }, selected: true, name: '主選單', chatBarText: '📋 點此開啟功能選單',
-      areas: [
-        { bounds: { x: 0, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '上班' } },
-        { bounds: { x: 625, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '下班' } },
-        { bounds: { x: 1250, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '查詢' } },
-        { bounds: { x: 1875, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '請假' } },
-        { bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
-        { bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '補打卡' } },
-        { bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '核准全部' } },
-        { bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '駁回全部' } },
-      ]
-    };
-    const res1 = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu) });
-    const data = await res1.json();
-    const png = makePng();
-    await fetch('https://api.line.me/v2/bot/richmenu/' + data.richMenuId + '/content', { method: 'POST', headers: { 'Content-Type': 'image/png', 'Authorization': 'Bearer ' + token }, body: png });
-    await fetch('https://api.line.me/v2/bot/user/all/richmenu/' + data.richMenuId, { method: 'POST', headers });
-    return data.richMenuId;
-  } catch (e) { console.error('[RichMenu] error:', e.message); return null; }
+	try {
+		var token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+		var headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
+
+		// Step 1: 刪除舊 Rich Menu
+		var existing = await fetch('https://api.line.me/v2/bot/richmenu/list', { headers });
+		var list = await existing.json();
+		for (var i = 0; i < (list.richmenus || []).length; i++) {
+			var rm = list.richmenus[i];
+			await fetch('https://api.line.me/v2/bot/richmenu/' + rm.richMenuId, { method: 'DELETE', headers });
+		}
+
+		// Step 2: 建立新 Rich Menu
+		var menu = {
+			size: { width: 2500, height: 843 }, selected: true, name: '主選單', chatBarText: '📋 點此開啟功能選單',
+			areas: [
+				{ bounds: { x: 0, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '上班' } },
+				{ bounds: { x: 625, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '下班' } },
+				{ bounds: { x: 1250, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '查詢' } },
+				{ bounds: { x: 1875, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '請假' } },
+				{ bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
+				{ bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '補打卡' } },
+				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '核准全部' } },
+				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '駁回全部' } },
+			]
+		};
+		var res1 = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu) });
+		var data = await res1.json();
+		if (!data || !data.richMenuId) {
+			console.error('[RichMenu] 建立失敗:', JSON.stringify(data));
+			return { error: '建立失敗: ' + JSON.stringify(data) };
+		}
+		console.log('[RichMenu] 建立成功:', data.richMenuId);
+
+		// Step 3: 上傳圖片
+		var png = makePng();
+		console.log('[RichMenu] PNG 大小:', png.length, 'bytes');
+		var res2 = await fetch('https://api.line.me/v2/bot/richmenu/' + data.richMenuId + '/content', {
+			method: 'POST',
+			headers: { 'Content-Type': 'image/png', 'Authorization': 'Bearer ' + token },
+			body: png
+		});
+		if (res2.status !== 200) {
+			var err2 = await res2.text();
+			console.error('[RichMenu] 圖片上傳失敗:', res2.status, err2);
+			// 刪除已建立的 Rich Menu
+			await fetch('https://api.line.me/v2/bot/richmenu/' + data.richMenuId, { method: 'DELETE', headers });
+			return { error: '圖片上傳失敗 HTTP ' + res2.status + ': ' + err2 };
+		}
+		console.log('[RichMenu] 圖片上傳成功');
+
+		// Step 4: 設為所有用戶預設
+		var res3 = await fetch('https://api.line.me/v2/bot/user/all/richmenu/' + data.richMenuId, { method: 'POST', headers });
+		if (res3.status !== 200) {
+			var err3 = await res3.text();
+			console.error('[RichMenu] 設定預設失敗:', res3.status, err3);
+			return { error: '設定預設失敗 HTTP ' + res3.status + ': ' + err3, richMenuId: data.richMenuId };
+		}
+		console.log('[RichMenu] 已設為所有用戶預設');
+
+		return { richMenuId: data.richMenuId };
+	} catch (e) {
+		console.error('[RichMenu] error:', e.message);
+		return { error: e.message };
+	}
 }
 function makePng() {
 	var zlib = require('zlib');

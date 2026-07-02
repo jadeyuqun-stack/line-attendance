@@ -64,11 +64,60 @@ async function main() {
 
   app.use('/admin', admin);
 
-  // Rich Menu 設定（一次性）
-  app.get('/admin/setup-richmenu', async (_, res) => {
+  // Rich Menu 診斷 / 設定
+  app.get('/admin/setup-richmenu', async (req, res) => {
     try {
-      const id = await bot.setupRichMenu();
-      res.json(id ? { success: true, richMenuId: id } : { error: '失敗，請看 Render logs' });
+      var check = req.query.check;
+      if (check === '1') {
+        // 診斷模式：列出目前的 Rich Menu 和預設狀態
+        var token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+        var headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
+        var existing = await fetch('https://api.line.me/v2/bot/richmenu/list', { headers });
+        var list = await existing.json();
+        var defaultRm = '無';
+        try {
+          var dr = await fetch('https://api.line.me/v2/bot/user/all/richmenu', { headers });
+          if (dr.status === 200) {
+            var drData = await dr.json();
+            defaultRm = drData.richMenuId || '無';
+          } else {
+            defaultRm = 'API 錯誤 ' + dr.status;
+          }
+        } catch (e2) {
+          defaultRm = '查詢失敗: ' + e2.message;
+        }
+        var html = '<h2>Rich Menu 診斷</h2>';
+        html += '<p><b>現有 Rich Menu 數量：</b>' + (list.richmenus ? list.richmenus.length : 0) + '</p>';
+        if (list.richmenus) {
+          for (var i = 0; i < list.richmenus.length; i++) {
+            var rm = list.richmenus[i];
+            html += '<p style="margin-left:16px">📋 ' + rm.richMenuId + ' — ' + (rm.name || '無名稱') + ' (' + (rm.selected ? '已選取' : '未選取') + ')</p>';
+          }
+        }
+        html += '<p><b>所有用戶預設 Rich Menu：</b>' + defaultRm + '</p>';
+        html += '<p style="color:#e74c3c;margin-top:16px">⚠️ 如 Rich Menu 未顯示，請檢查：<br>';
+        html += '1. <a href="https://developers.line.biz/console/" target="_blank">LINE Developers Console</a> → 你的 Channel → Messaging API → LINE Official Account features → 勾選 <b>Rich menu</b><br>';
+        html += '2. 重新加入好友或關閉重開 LINE 聊天室<br>';
+        html += '3. 確認 PNG 圖片是否正確（2500×843）</p>';
+        html += '<p><a href="/admin/setup-richmenu">🔄 重新建立 Rich Menu</a> | <a href="/admin/setup-richmenu?check=1">🔍 重新診斷</a></p>';
+        return res.send(html);
+      }
+      var id = await bot.setupRichMenu();
+      if (id) {
+        var html2 = '<h2>✅ Rich Menu 建立成功</h2>';
+        html2 += '<p>Rich Menu ID: <code>' + id + '</code></p>';
+        html2 += '<p>請確認以下事項：</p>';
+        html2 += '<ol style="color:#e74c3c">';
+        html2 += '<li>前往 <a href="https://developers.line.biz/console/" target="_blank">LINE Developers Console</a> → 你的 Channel → <b>Messaging API</b> 分頁</li>';
+        html2 += '<li>拉到最下面 <b>「LINE Official Account features」</b></li>';
+        html2 += '<li>確認 <b>「Rich menu」</b> 已勾選 ✅</li>';
+        html2 += '<li>回到 LINE，關閉聊天室再重新打開</li>';
+        html2 += '</ol>';
+        html2 += '<p><a href="/admin/setup-richmenu?check=1">🔍 診斷 Rich Menu 狀態</a></p>';
+        res.send(html2);
+      } else {
+        res.json({ error: '失敗，請看 Render logs' });
+      }
     } catch (e) {
       res.status(500).json({ error: e.message });
     }

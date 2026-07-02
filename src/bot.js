@@ -75,20 +75,12 @@ const GPS_BUTTONS = {
   items: [
     { type: 'action', action: { type: 'location', label: '📍 上班打卡' } },
     { type: 'action', action: { type: 'location', label: '📍 下班打卡' } },
-    { type: 'action', action: { type: 'message', label: '📋 查詢', text: '查詢' } },
-    { type: 'action', action: { type: 'message', label: '🏖 請假', text: '請假' } },
-    { type: 'action', action: { type: 'message', label: '🕐 加班', text: '加班' } },
-    { type: 'action', action: { type: 'message', label: '📝 補打卡', text: '補打卡' } },
   ]
 };
 const APPROVER_BUTTONS = {
   items: [
     { type: 'action', action: { type: 'location', label: '📍 上班打卡' } },
     { type: 'action', action: { type: 'location', label: '📍 下班打卡' } },
-    { type: 'action', action: { type: 'message', label: '📋 查詢', text: '查詢' } },
-    { type: 'action', action: { type: 'message', label: '🏖 請假', text: '請假' } },
-    { type: 'action', action: { type: 'message', label: '🕐 加班', text: '加班' } },
-    { type: 'action', action: { type: 'message', label: '📝 補打卡', text: '補打卡' } },
     { type: 'action', action: { type: 'message', label: '✅ 核准全部', text: '核准全部' } },
     { type: 'action', action: { type: 'message', label: '❌ 駁回全部', text: '駁回全部' } },
   ]
@@ -756,14 +748,12 @@ async function setupRichMenu() {
 		var menu = {
 			size: { width: 2500, height: 843 }, selected: true, name: '主選單', chatBarText: '📋 點此開啟功能選單',
 			areas: [
-				{ bounds: { x: 0, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '上班' } },
-				{ bounds: { x: 625, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '下班' } },
-				{ bounds: { x: 1250, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '查詢' } },
-				{ bounds: { x: 1875, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '請假' } },
-				{ bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
-				{ bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '補打卡' } },
-				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '核准全部' } },
-				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '駁回全部' } },
+				{ bounds: { x: 0, y: 0, width: 833, height: 421 }, action: { type: 'message', text: '上班' } },
+				{ bounds: { x: 833, y: 0, width: 834, height: 421 }, action: { type: 'message', text: '下班' } },
+				{ bounds: { x: 1667, y: 0, width: 833, height: 421 }, action: { type: 'message', text: '查詢' } },
+				{ bounds: { x: 0, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '請假' } },
+				{ bounds: { x: 833, y: 421, width: 834, height: 422 }, action: { type: 'message', text: '加班' } },
+				{ bounds: { x: 1667, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '補打卡' } },
 			]
 		};
 		var res1 = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu) });
@@ -824,14 +814,12 @@ function makePng() {
 
 	// 區塊定義
 	var areas = [
-		{ x: 0, y: 0, w: 625, h: 421, color: '#06C755', label: '上班' },
-		{ x: 625, y: 0, w: 625, h: 421, color: '#F39C12', label: '下班' },
-		{ x: 1250, y: 0, w: 625, h: 421, color: '#3498DB', label: '查詢' },
-		{ x: 1875, y: 0, w: 625, h: 421, color: '#1ABC9C', label: '請假' },
-		{ x: 0, y: 421, w: 625, h: 422, color: '#9B59B6', label: '加班' },
-		{ x: 625, y: 421, w: 625, h: 422, color: '#34495E', label: '補打卡' },
-		{ x: 1250, y: 421, w: 625, h: 422, color: '#27AE60', label: '核准全部' },
-		{ x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '駁回全部' },
+		{ x: 0, y: 0, w: 833, h: 421, color: '#06C755', label: '上班' },
+		{ x: 833, y: 0, w: 834, h: 421, color: '#F39C12', label: '下班' },
+		{ x: 1667, y: 0, w: 833, h: 421, color: '#3498DB', label: '查詢' },
+		{ x: 0, y: 421, w: 833, h: 422, color: '#1ABC9C', label: '請假' },
+		{ x: 833, y: 421, w: 834, h: 422, color: '#9B59B6', label: '加班' },
+		{ x: 1667, y: 421, w: 833, h: 422, color: '#34495E', label: '補打卡' },
 	];
 
 	// 中文字型 fallback
@@ -839,7 +827,7 @@ function makePng() {
 
 	for (var i = 0; i < areas.length; i++) {
 		var a = areas[i];
-		var isTop = i < 4;
+		var isTop = i < 3;
 		var cx = a.x + a.w / 2;
 
 		// 填滿背景
@@ -912,17 +900,6 @@ function makePng() {
 				ctx.moveTo(cx + 6, iy - 11);
 				ctx.lineTo(cx - 8, iy + 28);
 				break;
-			case 6: // 核准全部 ✓
-				ctx.moveTo(cx - 35, iy + 8);
-				ctx.lineTo(cx - 6, iy + 35);
-				ctx.lineTo(cx + 38, iy - 28);
-				break;
-			case 7: // 駁回全部 ✗
-				ctx.moveTo(cx - 28, iy - 28);
-				ctx.lineTo(cx + 28, iy + 28);
-				ctx.moveTo(cx + 28, iy - 28);
-				ctx.lineTo(cx - 28, iy + 28);
-				break;
 		}
 		ctx.stroke();
 	}
@@ -954,14 +931,16 @@ function makeSimplePng() {
 				p(xx, yy, r, g, b);
 	}
 	var colors = [
-		[6, 199, 85], [243, 156, 18], [52, 152, 219], [26, 188, 156],
-		[155, 89, 182], [52, 73, 94], [39, 174, 96], [231, 76, 60]
+		[6, 199, 85], [243, 156, 18], [52, 152, 219],
+		[26, 188, 156], [155, 89, 182], [52, 73, 94]
 	];
-	var labels = ['上班', '下班', '查詢', '請假', '加班', '補打卡', '核准全部', '駁回全部'];
-	for (var i = 0; i < 8; i++) {
-		var col = i % 4, row = Math.floor(i / 4);
-		var bx = col * 625, by = row < 1 ? 0 : 421;
-		var bw = 625, bh = row < 1 ? 421 : 422;
+	var labels = ['上班', '下班', '查詢', '請假', '加班', '補打卡'];
+	for (var i = 0; i < 6; i++) {
+		var col = i % 3, row = Math.floor(i / 3);
+		var bx = col < 1 ? 0 : (col === 1 ? 833 : 1667);
+		var bw = col === 1 ? 834 : 833;
+		var by = row < 1 ? 0 : 421;
+		var bh = row < 1 ? 421 : 422;
 		fr(bx, by, bw, bh, colors[i][0], colors[i][1], colors[i][2]);
 	}
 	var deflated = zlib.deflateSync(d);

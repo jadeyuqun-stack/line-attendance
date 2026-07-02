@@ -1,6 +1,76 @@
 const db = require('./database');
 const states = new Map();
 
+// 中文字型初始化（從 Google Fonts 下載子集）
+var _cnFontFamily = null;
+var _fontReady = false;
+async function initFont() {
+	try {
+		var canvasLib = require('canvas');
+		var fs = require('fs');
+		var https = require('https');
+		var path = require('path');
+
+		// 檢查 macOS 是否有內建中文字型
+		var testFonts = [
+			'/System/Library/Fonts/STHeiti Medium.ttc',
+			'/System/Library/Fonts/PingFang.ttc',
+			'/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+			'/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+		];
+
+		for (var i = 0; i < testFonts.length; i++) {
+			if (fs.existsSync(testFonts[i])) {
+				canvasLib.registerFont(testFonts[i], { family: 'CnFont' });
+				_cnFontFamily = 'CnFont';
+				_fontReady = true;
+				console.log('[Font] 使用系統字型:', testFonts[i]);
+				return;
+			}
+		}
+
+		// 從 Google Fonts 下載子集（只含需要的 16 個字）
+		var text = '上班下班查詢請假加班補打卡核准全部駁回';
+		var cssUrl = 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700&text=' + encodeURIComponent(text);
+
+		console.log('[Font] 下載字型...');
+		var css = await new Promise(function(resolve, reject) {
+			https.get(cssUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, function(res) {
+				var body = '';
+				res.on('data', function(c) { body += c; });
+				res.on('end', function() { resolve(body); });
+			}).on('error', reject);
+		});
+
+		// 解析字型 URL
+		var match = css.match(/url\((https:\/\/[^)]+)\)/);
+		if (!match) {
+			console.log('[Font] 無法解析字型 URL，使用無文字模式');
+			return;
+		}
+
+		var fontUrl = match[1];
+		var fontPath = path.join('/tmp', 'cn-font-subset.ttf');
+
+		// 下載字型檔
+		await new Promise(function(resolve, reject) {
+			var file = fs.createWriteStream(fontPath);
+			https.get(fontUrl, function(res) {
+				res.pipe(file);
+				file.on('finish', function() { file.close(); resolve(); });
+			}).on('error', function(e) { fs.unlink(fontPath, function(){}); reject(e); });
+		});
+
+		canvasLib.registerFont(fontPath, { family: 'CnFont' });
+		_cnFontFamily = 'CnFont';
+		_fontReady = true;
+		console.log('[Font] 字型已註冊');
+
+	} catch (e) {
+		console.log('[Font] 字型初始化失敗（將使用簡單模式）:', e.message);
+	}
+}
+
 const GPS_BUTTONS = {
   items: [
     { type: 'action', action: { type: 'location', label: '📍 上班打卡' } },
@@ -765,7 +835,7 @@ function makePng() {
 	];
 
 	// 中文字型 fallback
-	var fontFamily = '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
+	var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
 
 	for (var i = 0; i < areas.length; i++) {
 		var a = areas[i];
@@ -926,4 +996,4 @@ function checkLate(now) {
   return Math.max(0, now.getHours() * 60 + now.getMinutes() - (parseInt(process.env.WORK_START_HOUR || '8') * 60 + parseInt(process.env.LATE_BUFFER_MINUTES || '30')));
 }
 
-module.exports = { handleEvents, setupRichMenu, makePng };
+module.exports = { handleEvents, setupRichMenu, makePng, initFont };

@@ -13,6 +13,9 @@ const report = require('./report');
 async function main() {
   await db.initDatabase();
 
+  // 初始化中文字型（Rich Menu 用）
+  bot.initFont().catch(function(e) { console.error('[Server] font init error:', e.message); });
+
   const client = new Client({
     channelSecret: process.env.LINE_CHANNEL_SECRET,
     channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,

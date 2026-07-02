@@ -96,9 +96,9 @@ async function main() {
         }
         html += '<p><b>所有用戶預設 Rich Menu：</b>' + defaultRm + '</p>';
         html += '<p style="color:#e74c3c;margin-top:16px">⚠️ 如 Rich Menu 未顯示，請檢查：<br>';
-        html += '1. <a href="https://developers.line.biz/console/" target="_blank">LINE Developers Console</a> → 你的 Channel → Messaging API → LINE Official Account features → 勾選 <b>Rich menu</b><br>';
+        html += '1. <a href="https://manager.line.biz/" target="_blank">LINE Official Account Manager</a> → 設定 → 回訊設定 → 啟用 <b>圖文選單</b><br>';
         html += '2. 重新加入好友或關閉重開 LINE 聊天室<br>';
-        html += '3. 確認 PNG 圖片是否正確（2500×843）</p>';
+        html += '3. <a href="/admin/richmenu-preview" target="_blank">📷 預覽 Rich Menu 圖片</a>（確認圖片正常）</p>';
         html += '<p><a href="/admin/setup-richmenu">🔄 重新建立 Rich Menu</a> | <a href="/admin/setup-richmenu?check=1">🔍 重新診斷</a></p>';
         return res.send(html);
       }
@@ -117,7 +117,8 @@ async function main() {
         html2 += '<ol style="color:#e74c3c">';
         html2 += '<li>關閉 LINE 聊天室 → 重新打開（必要！）</li>';
         html2 += '<li>確認已加 Bot 為好友</li>';
-        html2 += '<li><a href="https://developers.line.biz/console/" target="_blank">LINE Developers Console</a> → Messaging API → LINE Official Account features → 勾選 <b>Rich menu</b></li>';
+        html2 += '<li>前往 <a href="https://manager.line.biz/" target="_blank">LINE Official Account Manager</a> → 設定 → 回訊設定 → 確認 <b>圖文選單</b> 已啟用</li>';
+        html2 += '<li><a href="/admin/richmenu-preview" target="_blank">📷 預覽 Rich Menu 圖片</a>（確認圖片正常）</li>';
         html2 += '</ol>';
         html2 += '<p><a href="/admin/setup-richmenu?check=1">🔍 診斷 Rich Menu 狀態</a></p>';
         res.send(html2);
@@ -126,6 +127,18 @@ async function main() {
       }
     } catch (e) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Rich Menu PNG 預覽
+  app.get('/admin/richmenu-preview', async (_, res) => {
+    try {
+      var png = bot.makePng();
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Disposition', 'inline; filename=richmenu.png');
+      res.end(png);
+    } catch (e) {
+      res.status(500).send('PNG 產生失敗: ' + e.message);
     }
   });
 

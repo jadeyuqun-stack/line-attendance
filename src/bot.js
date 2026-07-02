@@ -954,4 +954,4 @@ function checkLate(now) {
   return Math.max(0, now.getHours() * 60 + now.getMinutes() - (parseInt(process.env.WORK_START_HOUR || '8') * 60 + parseInt(process.env.LATE_BUFFER_MINUTES || '30')));
 }
 
-module.exports = { handleEvents, setupRichMenu };
+module.exports = { handleEvents, setupRichMenu, makePng };

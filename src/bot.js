@@ -737,6 +737,131 @@ async function setupRichMenu() {
 	}
 }
 function makePng() {
+	var canvasLib;
+	try {
+		canvasLib = require('canvas');
+	} catch (e) {
+		return makeSimplePng();
+	}
+
+	var w = 2500, h = 843;
+	var cv = canvasLib.createCanvas(w, h);
+	var ctx = cv.getContext('2d');
+
+	// 背景
+	ctx.fillStyle = '#f0f0f0';
+	ctx.fillRect(0, 0, w, h);
+
+	// 區塊定義
+	var areas = [
+		{ x: 0, y: 0, w: 625, h: 421, color: '#06C755', label: '上班' },
+		{ x: 625, y: 0, w: 625, h: 421, color: '#F39C12', label: '下班' },
+		{ x: 1250, y: 0, w: 625, h: 421, color: '#3498DB', label: '查詢' },
+		{ x: 1875, y: 0, w: 625, h: 421, color: '#1ABC9C', label: '請假' },
+		{ x: 0, y: 421, w: 625, h: 422, color: '#9B59B6', label: '加班' },
+		{ x: 625, y: 421, w: 625, h: 422, color: '#34495E', label: '補打卡' },
+		{ x: 1250, y: 421, w: 625, h: 422, color: '#27AE60', label: '核准全部' },
+		{ x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '駁回全部' },
+	];
+
+	// 中文字型 fallback
+	var fontFamily = '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
+
+	for (var i = 0; i < areas.length; i++) {
+		var a = areas[i];
+		var isTop = i < 4;
+		var cx = a.x + a.w / 2;
+
+		// 填滿背景
+		ctx.fillStyle = a.color;
+		ctx.fillRect(a.x, a.y, a.w, a.h);
+
+		// 繪製文字
+		ctx.fillStyle = '#ffffff';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+
+		var label = a.label;
+		if (label.length <= 2) {
+			ctx.font = 'bold 68px ' + fontFamily;
+		} else if (label.length === 3) {
+			ctx.font = 'bold 56px ' + fontFamily;
+		} else {
+			ctx.font = 'bold 48px ' + fontFamily;
+		}
+		ctx.fillText(label, cx, a.y + a.h * 0.38);
+
+		// 繪製圖示
+		ctx.strokeStyle = '#ffffff';
+		ctx.lineWidth = 7;
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+		ctx.beginPath();
+		var iy = a.y + a.h * 0.72;
+
+		switch (i) {
+			case 0: // 上班 ▲
+				ctx.moveTo(cx, iy + 30);
+				ctx.lineTo(cx, iy - 30);
+				ctx.moveTo(cx - 28, iy - 8);
+				ctx.lineTo(cx, iy - 30);
+				ctx.lineTo(cx + 28, iy - 8);
+				break;
+			case 1: // 下班 ▼
+				ctx.moveTo(cx, iy - 30);
+				ctx.lineTo(cx, iy + 30);
+				ctx.moveTo(cx - 28, iy + 8);
+				ctx.lineTo(cx, iy + 30);
+				ctx.lineTo(cx + 28, iy + 8);
+				break;
+			case 2: // 查詢 🔍
+				ctx.arc(cx - 5, iy - 5, 22, 0, Math.PI * 2);
+				ctx.moveTo(cx + 12, iy + 12);
+				ctx.lineTo(cx + 38, iy + 38);
+				break;
+			case 3: // 請假 📄
+				ctx.rect(cx - 30, iy - 35, 60, 70);
+				ctx.moveTo(cx - 16, iy - 12);
+				ctx.lineTo(cx - 16, iy + 5);
+				ctx.moveTo(cx, iy - 12);
+				ctx.lineTo(cx, iy + 5);
+				ctx.moveTo(cx + 16, iy - 12);
+				ctx.lineTo(cx + 16, iy + 5);
+				break;
+			case 4: // 加班 🕐
+				ctx.arc(cx, iy, 30, 0, Math.PI * 2);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx, iy - 20);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx + 16, iy);
+				break;
+			case 5: // 補打卡 ✏️
+				ctx.moveTo(cx - 18, iy - 35);
+				ctx.lineTo(cx + 6, iy - 11);
+				ctx.lineTo(cx + 24, iy + 7);
+				ctx.moveTo(cx + 6, iy - 11);
+				ctx.lineTo(cx - 8, iy + 28);
+				break;
+			case 6: // 核准全部 ✓
+				ctx.moveTo(cx - 35, iy + 8);
+				ctx.lineTo(cx - 6, iy + 35);
+				ctx.lineTo(cx + 38, iy - 28);
+				break;
+			case 7: // 駁回全部 ✗
+				ctx.moveTo(cx - 28, iy - 28);
+				ctx.lineTo(cx + 28, iy + 28);
+				ctx.moveTo(cx + 28, iy - 28);
+				ctx.lineTo(cx - 28, iy + 28);
+				break;
+		}
+		ctx.stroke();
+	}
+
+	return cv.toBuffer('image/png');
+}
+
+// 備用：無 canvas 時用純色塊 PNG
+function makeSimplePng() {
 	var zlib = require('zlib');
 	var w = 2500, h = 843;
 	var d = Buffer.alloc(h * (1 + w * 4));
@@ -748,181 +873,28 @@ function makePng() {
 			d[o] = 255; d[o+1] = 255; d[o+2] = 255; d[o+3] = 255;
 		}
 	}
-	// Helper: draw pixel
 	function p(x, y, r, g, b) {
 		if (x < 0 || x >= w || y < 0 || y >= h) return;
 		var o = y * (1 + w * 4) + 1 + x * 4;
 		d[o] = r; d[o+1] = g; d[o+2] = b; d[o+3] = 255;
 	}
-	// Helper: fill rect
 	function fr(x, y, w2, h2, r, g, b) {
 		for (var yy = y; yy < y + h2; yy++)
 			for (var xx = x; xx < x + w2; xx++)
 				p(xx, yy, r, g, b);
 	}
-	// Helper: draw circle
-	function circle(cx, cy, rad, r, g, b) {
-		for (var y2 = cy - rad; y2 <= cy + rad; y2++)
-			for (var x2 = cx - rad; x2 <= cx + rad; x2++)
-				if (Math.pow(x2 - cx, 2) + Math.pow(y2 - cy, 2) <= Math.pow(rad, 2))
-					p(x2, y2, r, g, b);
+	var colors = [
+		[6, 199, 85], [243, 156, 18], [52, 152, 219], [26, 188, 156],
+		[155, 89, 182], [52, 73, 94], [39, 174, 96], [231, 76, 60]
+	];
+	var labels = ['上班', '下班', '查詢', '請假', '加班', '補打卡', '核准全部', '駁回全部'];
+	for (var i = 0; i < 8; i++) {
+		var col = i % 4, row = Math.floor(i / 4);
+		var bx = col * 625, by = row < 1 ? 0 : 421;
+		var bw = 625, bh = row < 1 ? 421 : 422;
+		fr(bx, by, bw, bh, colors[i][0], colors[i][1], colors[i][2]);
 	}
-	// Helper: draw line (Bresenham)
-	function line(x1, y1, x2, y2, thick, r, g, b) {
-		var dx = Math.abs(x2 - x1), dy = Math.abs(y2 - y1);
-		var sx = x1 < x2 ? 1 : -1, sy = y1 < y2 ? 1 : -1;
-		var err = dx - dy;
-		while (true) {
-			for (var ty = -Math.floor(thick/2); ty <= Math.floor(thick/2); ty++)
-				for (var tx = -Math.floor(thick/2); tx <= Math.floor(thick/2); tx++)
-					p(x1 + tx, y1 + ty, r, g, b);
-			if (x1 === x2 && y1 === y2) break;
-			var e2 = 2 * err;
-			if (e2 > -dy) { err -= dy; x1 += sx; }
-			if (e2 < dx) { err += dx; y1 += sy; }
-		}
-	}
-
-	var bg = 248;
-	fr(0, 0, w, h, bg, bg, bg);
-
-	// ===== 上排 4 區（y: 0-421）=====
-	// 1. 上班 (x: 0-625): 綠色 #06C755
-	fr(0, 0, 625, 421, 6, 199, 85);
-	// 2. 下班 (x: 625-1250): 橘色 #F39C12
-	fr(625, 0, 625, 421, 243, 156, 18);
-	// 3. 查詢 (x: 1250-1875): 藍色 #3498DB
-	fr(1250, 0, 625, 421, 52, 152, 219);
-	// 4. 請假 (x: 1875-2500): 青色 #1ABC9C
-	fr(1875, 0, 625, 421, 26, 188, 156);
-
-	// ===== 下排 4 區（y: 421-843）=====
-	// 5. 加班 (x: 0-625): 紫色 #9B59B6
-	fr(0, 421, 625, 422, 155, 89, 182);
-	// 6. 補打卡 (x: 625-1250): 深藍灰 #34495E
-	fr(625, 421, 625, 422, 52, 73, 94);
-	// 7. 核准全部 (x: 1250-1875): 翠綠 #27AE60
-	fr(1250, 421, 625, 422, 39, 174, 96);
-	// 8. 駁回全部 (x: 1875-2500): 紅色 #E74C3C
-	fr(1875, 421, 625, 422, 231, 76, 60);
-
-	var WHT = 255;
-
-	// ---- 繪製文字（5x7 點陣大字型）----
-	function drawChar5x7(cx, cy, size, pattern, r, g, b) {
-		var cell = Math.floor(size / 5);
-		var offX = cx - Math.floor(5 * cell / 2);
-		var offY = cy - 50;
-		for (var row = 0; row < 7; row++) {
-			for (var col = 0; col < 5; col++) {
-				if (pattern[row] && pattern[row][col] === '#') {
-					fr(offX + col * cell, offY + row * cell, cell, cell, r, g, b);
-				}
-			}
-		}
-	}
-
-	// 5x7 點陣字型
-	var font = {
-		'上': ['..#..', '.###.', '..#..', '..#..', '..#..', '..#..', '#####'],
-		'下': ['#####', '..#..', '..#..', '..#..', '..#..', '.###.', '..#..'],
-		'班': ['#...#', '#.#.#', '#.#.#', '#####', '..#..', '.#.#.', '#...#'],
-		'查': ['#####', '#...#', '#...#', '#####', '#...#', '#...#', '#####'],
-		'詢': ['.####', '#....', '#....', '.####', '....#', '....#', '.####'],
-		'請': ['#####', '#...#', '#...#', '#####', '#...#', '#...#', '#####'],
-		'假': ['#.###', '#.#.#', '#.#.#', '#####', '.#.#.', '.#.#.', '.#.#.'],
-		'加': ['#...#', '#...#', '#####', '#...#', '#...#', '.#.#.', '.###.'],
-		'補': ['#####', '#...#', '#...#', '#####', '#...#', '#...#', '#####'],
-		'打': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
-		'卡': ['#####', '#...#', '#...#', '#####', '#...#', '#...#', '#####'],
-		'核': ['#...#', '#.#.#', '#.#.#', '#####', '#...#', '#...#', '#...#'],
-		'准': ['.#.#.', '.#.#.', '.#.#.', '.###.', '#####', '..#..', '..#..'],
-		'駁': ['#####', '#...#', '#...#', '#####', '#...#', '#...#', '#####'],
-		'回': ['#####', '....#', '....#', '.####', '#...#', '#...#', '.####'],
-		'全': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
-		'部': ['#####', '#...#', '#...#', '#####', '.#.#.', '.#.#.', '.#.#.'],
-	};
-
-	// 上排文字（y 中心 ~210）
-	// 上班
-	drawChar5x7(312 - 48, 180, 40, font['上'], WHT, WHT, WHT);
-	drawChar5x7(312 + 48, 180, 40, font['班'], WHT, WHT, WHT);
-	// 下班
-	drawChar5x7(937 - 48, 180, 40, font['下'], WHT, WHT, WHT);
-	drawChar5x7(937 + 48, 180, 40, font['班'], WHT, WHT, WHT);
-	// 查詢
-	drawChar5x7(1562 - 48, 180, 40, font['查'], WHT, WHT, WHT);
-	drawChar5x7(1562 + 48, 180, 40, font['詢'], WHT, WHT, WHT);
-	// 請假
-	drawChar5x7(2187 - 48, 180, 40, font['請'], WHT, WHT, WHT);
-	drawChar5x7(2187 + 48, 180, 40, font['假'], WHT, WHT, WHT);
-
-	// 下排文字（y 中心 ~632）
-	// 加班
-	drawChar5x7(312 - 48, 602, 40, font['加'], WHT, WHT, WHT);
-	drawChar5x7(312 + 48, 602, 40, font['班'], WHT, WHT, WHT);
-	// 補打卡
-	drawChar5x7(937 - 48, 602, 40, font['補'], WHT, WHT, WHT);
-	drawChar5x7(937 + 48, 602, 40, font['打'], WHT, WHT, WHT);
-	// 核准
-	drawChar5x7(1562 - 48, 602, 40, font['核'], WHT, WHT, WHT);
-	drawChar5x7(1562 + 48, 602, 40, font['准'], WHT, WHT, WHT);
-	// 駁回
-	drawChar5x7(2187 - 48, 602, 40, font['駁'], WHT, WHT, WHT);
-	drawChar5x7(2187 + 48, 602, 40, font['回'], WHT, WHT, WHT);
-
-	// ---- 繪製圖示（每區中央偏下）----
-	// 區域 1 上班: 上箭頭
-	var ax = 312, ay = 270;
-	fr(ax - 10, ay - 20, 20, 45, WHT, WHT, WHT);
-	line(ax - 32, ay - 10, ax, ay - 45, 10, WHT, WHT, WHT);
-	line(ax + 32, ay - 10, ax, ay - 45, 10, WHT, WHT, WHT);
-
-	// 區域 2 下班: 下箭頭
-	ax = 937; ay = 270;
-	fr(ax - 10, ay - 25, 20, 45, WHT, WHT, WHT);
-	line(ax - 32, ay + 10, ax, ay + 45, 10, WHT, WHT, WHT);
-	line(ax + 32, ay + 10, ax, ay + 45, 10, WHT, WHT, WHT);
-
-	// 區域 3 查詢: 放大鏡
-	ax = 1562; ay = 270;
-	circle(ax - 5, ay - 5, 28, WHT, WHT, WHT);
-	circle(ax - 5, ay - 5, 16, 52, 152, 219);
-	fr(ax + 12, ay + 8, 10, 28, WHT, WHT, WHT);
-
-	// 區域 4 請假: 文件
-	ax = 2187; ay = 270;
-	fr(ax - 32, ay - 28, 64, 56, WHT, WHT, WHT);
-	fr(ax - 32, ay - 28, 64, 12, 26, 188, 156);
-	fr(ax - 18, ay - 8, 14, 14, 26, 188, 156);
-	fr(ax + 4, ay - 8, 14, 14, 26, 188, 156);
-	fr(ax - 18, ay + 12, 36, 8, 200, 200, 200);
-
-	// 區域 5 加班: 時鐘
-	ax = 312; ay = 692;
-	circle(ax, ay, 32, WHT, WHT, WHT);
-	circle(ax, ay, 25, 155, 89, 182);
-	fr(ax - 3, ay - 26, 6, 16, WHT, WHT, WHT);
-	fr(ax - 3, ay - 6, 18, 6, WHT, WHT, WHT);
-
-	// 區域 6 補打卡: 鉛筆
-	ax = 937; ay = 692;
-	fr(ax - 5, ay - 35, 10, 55, WHT, WHT, WHT);
-	line(ax - 5, ay - 35, ax - 20, ay - 18, 8, WHT, WHT, WHT);
-	line(ax + 5, ay - 35, ax + 20, ay - 18, 8, WHT, WHT, WHT);
-
-	// 區域 7 核准全部: 打勾
-	ax = 1562; ay = 692;
-	line(ax - 30, ay + 6, ax - 5, ay + 30, 10, WHT, WHT, WHT);
-	line(ax - 5, ay + 30, ax + 35, ay - 20, 10, WHT, WHT, WHT);
-
-	// 區域 8 駁回全部: 叉叉
-	ax = 2187; ay = 692;
-	line(ax - 28, ay - 28, ax + 28, ay + 28, 10, WHT, WHT, WHT);
-	line(ax + 28, ay - 28, ax - 28, ay + 28, 10, WHT, WHT, WHT);
-
-	// ===== PNG 編碼輸出 =====
-	var def = zlib.deflateSync(d);
+	var deflated = zlib.deflateSync(d);
 	function crc(b) {
 		var c = 0xffffffff;
 		var t = new Uint32Array(256);
@@ -931,7 +903,7 @@ function makePng() {
 			for (var k = 0; k < 8; k++) cc = cc & 1 ? 0xedb88320 ^ (cc >>> 1) : cc >>> 1;
 			t[n] = cc;
 		}
-		for (var i = 0; i < b.length; i++) c = t[(c ^ b[i]) & 0xff] ^ (c >>> 8);
+		for (var i2 = 0; i2 < b.length; i2++) c = t[(c ^ b[i2]) & 0xff] ^ (c >>> 8);
 		return (c ^ 0xffffffff) >>> 0;
 	}
 	function ch(type, dd) {
@@ -948,7 +920,7 @@ function makePng() {
 	ihdr.writeUInt32BE(h, 4);
 	ihdr[8] = 8;
 	ihdr[9] = 6;
-	return Buffer.concat([sig, ch('IHDR', ihdr), ch('IDAT', def), ch('IEND', Buffer.alloc(0))]);
+	return Buffer.concat([sig, ch('IHDR', ihdr), ch('IDAT', deflated), ch('IEND', Buffer.alloc(0))]);
 }
 function checkLate(now) {
   return Math.max(0, now.getHours() * 60 + now.getMinutes() - (parseInt(process.env.WORK_START_HOUR || '8') * 60 + parseInt(process.env.LATE_BUFFER_MINUTES || '30')));

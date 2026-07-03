@@ -272,7 +272,9 @@ router.get('/records', auth, async (req, res) => {
       var lunchDed2 = (ci.getHours() < 12 && co.getHours() >= 13) ? 1 : 0;
       workH = Math.round((totalH - lunchDed2) * 10) / 10;
       hours = totalH + 'h / ' + workH + 'h';
-      if (totalH < 9) hours += ' <span class="badge badge-warn">⚠️</span>';
+      var nEnd2 = new Date(ci); nEnd2.setHours(17, 30, 0, 0);
+      var normalH2 = Math.round(Math.max(0, ((co > nEnd2 ? nEnd2 : co) - ci) / 3600000) * 10) / 10;
+      if (normalH2 < 9) hours += ' <span class="badge badge-warn">⚠️</span>';
     }
     var statusBadge = d2.status === '❌曠職' ? '<span class="badge badge-out">❌曠職</span>'
       : d2.status === '⚠️遲到' ? '<span class="badge badge-warn">⚠️遲到</span>'
@@ -1200,8 +1202,11 @@ router.get('/export/summary', auth, async function(req, res) {
 					if (spansLunch) netHours = Math.max(0, totalHours - 1);
 					netHours = Math.round(netHours * 10) / 10;
 
-					// 總工時 < 9h 標記（含午休 1h = 8h 工作 + 1h 午休）
-					if (totalHours < 9) under9h = '是';
+					// 正常工時 < 9h 標記（僅計算 8:00-17:30，超過屬加班不計）
+					var normalEnd3 = new Date(ci);
+					normalEnd3.setHours(17, 30, 0, 0);
+					var normalH3 = Math.round(Math.max(0, ((co > normalEnd3 ? normalEnd3 : co) - ci) / 3600000) * 10) / 10;
+					if (normalH3 < 9) under9h = '是';
 				}
 
 				// 判斷遲到

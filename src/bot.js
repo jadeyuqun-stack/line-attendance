@@ -308,6 +308,11 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   const totalH = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
   var lunchDeduct = (ci.getHours() < 12 && co.getHours() >= 13) ? 1 : 0;
   var netH = Math.round((totalH - lunchDeduct) * 10) / 10;
+  // 正常工時：僅計算 8:00-17:30 區間，17:30 後屬加班不計入
+  var normalEnd = new Date(ci);
+  normalEnd.setHours(17, 30, 0, 0);
+  var cappedCo = co > normalEnd ? normalEnd : co;
+  var normalH = Math.round(Math.max(0, (cappedCo - ci) / 3600000) * 10) / 10;
 
   var contents = [
     { type: 'text', text: '🏠 下班打卡成功', weight: 'bold', size: 'lg', color: '#3498db' },
@@ -315,8 +320,8 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
     { type: 'text', text: '⏰ ' + fmt(co), margin: 'md', size: 'xl', weight: 'bold' },
     { type: 'text', text: '📊 總工時：' + totalH + 'h / 淨工時：' + netH + 'h', margin: 'sm', size: 'sm' },
   ];
-  if (totalH < 9) {
-    contents.push({ type: 'text', text: '⚠️ 總工時未滿 9 小時（正常 8:00-17:30）\n請記得申請請假補足時數', margin: 'sm', color: '#f39c12', size: 'sm', wrap: true });
+  if (normalH < 9) {
+    contents.push({ type: 'text', text: '⚠️ 正常工時（8:00-17:30）未滿 9 小時\n請記得申請請假補足時數', margin: 'sm', color: '#f39c12', size: 'sm', wrap: true });
   }
   if (loc) {
     var locText = '📍 ' + (loc.address || loc.latitude.toFixed(4) + ', ' + loc.longitude.toFixed(4));
@@ -358,7 +363,9 @@ async function doQuery(emp, client, replyToken) {
     var rawWorkH = Math.round(Math.max(0, (coDt - ciDt) / 3600000) * 10) / 10;
     var lunchDed = (ciDt.getHours() < 12 && coDt.getHours() >= 13) ? 1 : 0;
     var workH = Math.round((rawWorkH - lunchDed) * 10) / 10;
-    punchText += '\n📊 總工時 ' + rawWorkH + 'h / 淨工時 ' + workH + 'h' + (rawWorkH < 9 ? ' ⚠️未滿9h' : '');
+    var nEnd = new Date(ciDt); nEnd.setHours(17, 30, 0, 0);
+    var normalWH = Math.round(Math.max(0, ((coDt > nEnd ? nEnd : coDt) - ciDt) / 3600000) * 10) / 10;
+    punchText += '\n📊 總工時 ' + rawWorkH + 'h / 淨工時 ' + workH + 'h' + (normalWH < 9 ? ' ⚠️未滿9h' : '');
   }
   contents.push({ type: 'text', text: punchText, margin: 'md', size: 'sm', wrap: true });
 

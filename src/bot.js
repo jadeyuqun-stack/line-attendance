@@ -86,7 +86,11 @@ function getMenu(emp) {
   if (role === '簽核人員' || role === '經理' || emp.can_approve) return APPROVER_BUTTONS;
   return GPS_BUTTONS;
 }
-function withMenu(text, emp) { return { type: 'text', text: text, quickReply: emp ? getMenu(emp) : GPS_BUTTONS }; }
+function withMenu(text, emp) {
+  var qr = emp ? getMenu(emp) : GPS_BUTTONS;
+  if (!qr.items || qr.items.length === 0) return { type: 'text', text: text };
+  return { type: 'text', text: text, quickReply: qr };
+}
 // 文字 + 選單 + 日期時間選擇器（保留選單按鈕）
 function withDatePicker(text, data) {
   return { type: 'text', text: text, quickReply: { items: [
@@ -136,6 +140,12 @@ async function handleText(text, uid, client, replyToken) {
       return client.replyMessage(replyToken, [withMenu('✅ 綁定成功！歡迎，' + (name || cmd) + '\n\n📋 下方圖文選單可直接點選操作')]);
     }
     return client.replyMessage(replyToken, [withMenu('❌ 找不到員工編號「' + cmd + '」\n\n🆔 輸入「我的ID」取得 LINE ID 洽管理員')]);
+  }
+
+  // 每次互動檢查主管角色是否需要重新連結 8 格選單
+  var empRole = emp.role || '';
+  if (empRole === '經理' || empRole === '老闆' || empRole === 'boss' || empRole === '簽核人員') {
+    assignRichMenu(uid, empRole).catch(function(e2) {});
   }
 
   if (cmd === '我的ID' || cmd.toLowerCase() === 'my id') {

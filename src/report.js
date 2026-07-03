@@ -128,8 +128,6 @@ async function doSendReport(client) {
     var lateList = [];         // 遲到
     var leaveList = [];        // 請假中
     var absentList = [];       // 未打卡（非請假）
-    var checkedOutCount = 0;
-
     for (var j = 0; j < allEmps.length; j++) {
       var emp = allEmps[j];
       var ci = checkinMap[emp.id];
@@ -137,7 +135,6 @@ async function doSendReport(client) {
 
       if (ci && ci.checkIn) {
         checkedInList.push(emp.employee_no + ' ' + emp.name);
-        if (ci.checkOut) checkedOutCount++;
         // 判斷遲到
         var ciH = new Date(ci.checkIn.check_time).getHours();
         var ciM = new Date(ci.checkIn.check_time).getMinutes();
@@ -157,7 +154,6 @@ async function doSendReport(client) {
     var msg = '📊 ' + today + ' 出勤報告\n\n';
     msg += '👥 總人數：' + allEmps.length + '\n';
     msg += '✅ 已上班：' + checkedInList.length + ' 人\n';
-    msg += '📤 已下班：' + checkedOutCount + ' 人\n';
     msg += '🏖 請假中：' + leaveList.length + ' 人\n';
     msg += '❌ 未打卡：' + absentList.length + ' 人\n\n';
 
@@ -188,7 +184,132 @@ function startScheduler(client) {
   clientRef = client;
   startKeepAlive();   // 防休眠
   scheduleNext();      // 精確排程
-  console.log('[Report] 排程已啟動（Keep-Alive + setTimeout + 事件驅動）');
+  startApprovalReminder(client); // 簽核提醒
+  console.log('[Report] 排程已啟動（Keep-Alive + setTimeout + 事件驅動 + 簽核提醒）');
+}
+
+var _remindInterval = null;
+
+function startApprovalReminder(client) {
+  if (_remindInterval) clearInterval(_remindInterval);
+  // 每 30 分鐘檢查一次待簽核項目
+  _remindInterval = setInterval(function() {
+    checkPendingApprovals(client).catch(function(e) {
+      console.error('[Remind] error:', e.message);
+    });
+  }, 30 * 60 * 1000);
+  // 啟動時也立即檢查一次
+  checkPendingApprovals(client).catch(function(e) {});
+  console.log('[Remind] 簽核提醒已啟動（每 30 分鐘檢查）');
+}
+
+async function checkPendingApprovals(client) {
+  try {
+    var hoursStr = await db.getSetting('approval_remind_hours') || '0';
+    var hours = parseInt(hoursStr);
+    if (hours <= 0) return;
+
+    var threshold = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    // 取得所有待審核請假
+    var pendingLeaves = await db.getLeaveRequests('pending', 500);
+    var remindedLeaves = pendingLeaves.filter(function(l) {
+      return l.created_at && new Date(l.created_at) < threshold;
+    });
+
+    // 取得所有待審核加班
+    var pendingOTs = await db.getOvertimeRequests('pending', 500);
+    var remindedOTs = pendingOTs.filter(function(o) {
+      return o.created_at && new Date(o.created_at) < threshold;
+    });
+
+    // 取得所有待審核補打卡
+    var pendingMPs = await db.getMissedPunches('pending', 500);
+    var remindedMPs = pendingMPs.filter(function(m) {
+      return m.created_at && new Date(m.created_at) < threshold;
+    });
+
+    // 收集需要提醒的簽核人
+    var approverMap = {}; // approver_id → { leaves: [...], ots: [...], mps: [...] }
+
+    for (var i = 0; i < remindedLeaves.length; i++) {
+      var l = remindedLeaves[i];
+      var lEmp = await db.getEmployeeById(l.employee_id);
+      if (!lEmp) continue;
+      var approvers = await db.findApprovers(lEmp.id, l.approval_level || 1);
+      for (var a = 0; a < approvers.length; a++) {
+        var ap = approvers[a];
+        if (!approverMap[ap.id]) approverMap[ap.id] = { emp: ap, leaves: [], ots: [], mps: [] };
+        approverMap[ap.id].leaves.push({ id: l.id, empName: lEmp.name, empNo: lEmp.employee_no, date: l.start_date });
+      }
+    }
+
+    for (var j = 0; j < remindedOTs.length; j++) {
+      var o = remindedOTs[j];
+      var oEmp = await db.getEmployeeById(o.employee_id);
+      if (!oEmp) continue;
+      var oApprovers = await db.findApprovers(oEmp.id, o.approval_level || 1);
+      for (var b = 0; b < oApprovers.length; b++) {
+        var oa = oApprovers[b];
+        if (!approverMap[oa.id]) approverMap[oa.id] = { emp: oa, leaves: [], ots: [], mps: [] };
+        approverMap[oa.id].ots.push({ id: o.id, empName: oEmp.name, empNo: oEmp.employee_no, date: o.start_time });
+      }
+    }
+
+    for (var k = 0; k < remindedMPs.length; k++) {
+      var m = remindedMPs[k];
+      var mEmp = await db.getEmployeeById(m.employee_id);
+      if (!mEmp) continue;
+      var mApprovers = await db.findApprovers(mEmp.id);
+      for (var c = 0; c < mApprovers.length; c++) {
+        var ma = mApprovers[c];
+        if (!approverMap[ma.id]) approverMap[ma.id] = { emp: ma, leaves: [], ots: [], mps: [] };
+        approverMap[ma.id].mps.push({ id: m.id, empName: mEmp.name, empNo: mEmp.employee_no, date: m.punch_date });
+      }
+    }
+
+    // 發送提醒給每位簽核人
+    var approverIds = Object.keys(approverMap);
+    for (var d = 0; d < approverIds.length; d++) {
+      var info = approverMap[approverIds[d]];
+      if (!info.emp.line_user_id) continue;
+      var total = info.leaves.length + info.ots.length + info.mps.length;
+      if (total === 0) continue;
+
+      var msg = '⏰ 簽核提醒\n\n您有 ' + total + ' 筆待簽核項目超過 ' + hours + ' 小時未處理：\n';
+      if (info.leaves.length > 0) {
+        msg += '\n🏖 請假（' + info.leaves.length + ' 筆）：';
+        for (var li = 0; li < Math.min(info.leaves.length, 5); li++) {
+          msg += '\n  ' + info.leaves[li].empName + ' ' + info.leaves[li].date;
+        }
+        if (info.leaves.length > 5) msg += '\n  ...及其他 ' + (info.leaves.length - 5) + ' 筆';
+      }
+      if (info.ots.length > 0) {
+        msg += '\n\n🕐 加班（' + info.ots.length + ' 筆）：';
+        for (var oi = 0; oi < Math.min(info.ots.length, 5); oi++) {
+          msg += '\n  ' + info.ots[oi].empName + ' ' + info.ots[oi].date;
+        }
+        if (info.ots.length > 5) msg += '\n  ...及其他 ' + (info.ots.length - 5) + ' 筆';
+      }
+      if (info.mps.length > 0) {
+        msg += '\n\n📝 補打卡（' + info.mps.length + ' 筆）：';
+        for (var mi = 0; mi < Math.min(info.mps.length, 5); mi++) {
+          msg += '\n  ' + info.mps[mi].empName + ' ' + info.mps[mi].date;
+        }
+        if (info.mps.length > 5) msg += '\n  ...及其他 ' + (info.mps.length - 5) + ' 筆';
+      }
+      msg += '\n\n📌 請盡速處理！';
+
+      try {
+        await client.pushMessage(info.emp.line_user_id, [{ type: 'text', text: msg }]);
+        console.log('[Remind] 已提醒 ' + info.emp.name + '（' + total + ' 筆）');
+      } catch (e2) {
+        console.error('[Remind] 推播失敗 ' + info.emp.name + ':', e2.message);
+      }
+    }
+  } catch (e) {
+    console.error('[Remind] 檢查失敗:', e.message);
+  }
 }
 
 function scheduleNext() {

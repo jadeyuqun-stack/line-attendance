@@ -224,10 +224,22 @@ router.get('/records', auth, async (req, res) => {
 
     // 判斷狀態
     if (hasCheckIn) {
-      var ciH = new Date(d2.checkIn.check_time).getHours(), ciM = new Date(d2.checkIn.check_time).getMinutes();
+      var ciDt = new Date(d2.checkIn.check_time);
+      var ciH = ciDt.getHours(), ciM = ciDt.getMinutes();
       var startH = parseInt(await db.getSetting('work_start_hour') || '8');
       var buf = parseInt(await db.getSetting('late_buffer_minutes') || '30');
-      d2.status = (ciH*60+ciM > startH*60+buf) ? '⚠️遲到' : '✅出勤';
+      // 假日不計遲到
+      var ciDay = ciDt.getDay();
+      var ciDateStr = d; // d is the current date being checked (YYYY-MM-DD)
+      var isHoliday2 = ciDay === 0 || ciDay === 6;
+      if (!isHoliday2) {
+        try {
+          var holidaysRaw = await db.getSetting('tw_holidays') || '[]';
+          var holidaysArr = JSON.parse(holidaysRaw);
+          if (holidaysArr.indexOf(ciDateStr) !== -1) isHoliday2 = true;
+        } catch(e2) {}
+      }
+      d2.status = (!isHoliday2 && ciH*60+ciM > startH*60+buf) ? '⚠️遲到' : '✅出勤';
     } else {
       // 檢查當天是否有核准的請假
       var hasLeave = false;
@@ -265,7 +277,10 @@ router.get('/records', auth, async (req, res) => {
       : d2.status === '🏖請假' ? '<span class="badge badge-info">🏖請假</span>'
       : d2.status === '📝已補卡' ? '<span class="badge badge-in">📝已補卡</span>'
       : '<span class="badge badge-in">✅出勤</span>';
-    rows += '<tr><td>'+h(e.employee_no)+'</td><td>'+h(e.name)+'</td><td>'+h(e.department||'')+'</td><td>'+inHtml+'</td><td>'+outHtml+'</td><td>'+hours+'</td><td>'+statusBadge+'</td></tr>';
+    var delBtn = '';
+    if (d2.checkIn) delBtn += '<button onclick="deleteCheckin('+d2.checkIn.id+')" class="btn-sm btn-red" style="font-size:10px;padding:1px 5px">✕</button> ';
+    if (d2.checkOut) delBtn += '<button onclick="deleteCheckin('+d2.checkOut.id+')" class="btn-sm btn-red" style="font-size:10px;padding:1px 5px">✕</button>';
+    rows += '<tr><td>'+h(e.employee_no)+'</td><td>'+h(e.name)+'</td><td>'+h(e.department||'')+'</td><td>'+inHtml+'</td><td>'+outHtml+'</td><td>'+hours+'</td><td>'+statusBadge+'</td><td>'+delBtn+'</td></tr>';
   }
   var opts = '';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'">'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
@@ -299,10 +314,10 @@ router.get('/records', auth, async (req, res) => {
   var monthVal = month || d.substring(0,7);
   var body = '<div class="card"><form class="inline" method="GET"><div><label>日期</label><input type="date" name="date" value="'+d+'"></div><div><label>月份</label><input type="month" name="month" value="'+h(month)+'" style="width:160px"></div><div><label>員工</label><select name="eid"><option value="">全部員工</option>'+opts+'</select></div><button class="btn">🔍 查詢</button></form></div>'
     + lateSummary
-    + '<div class="card"><h3>'+(month ? startDate+' ~ '+endDate : d)+' 打卡記錄' + (absentCount > 0 ? '（曠職 '+absentCount+' 人）' : '') + '</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th></tr>'+rows+'</table></div>'
+    + '<div class="card"><h3>'+(month ? startDate+' ~ '+endDate : d)+' 打卡記錄' + (absentCount > 0 ? '（曠職 '+absentCount+' 人）' : '') + '</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th><th>操作</th></tr>'+rows+'</table></div>'
     + '<button onclick="clearCheckins()" class="btn-sm btn-red">🗑 清除所有打卡記錄</button> '
     + '<input type="date" id="expStart" value="'+d+'" style="width:auto;margin-left:8px" title="開始日期"> ~ <input type="date" id="expEnd" value="'+d+'" style="width:auto" title="結束日期"> <button onclick="exportCheckins()" class="btn-sm btn" style="margin-left:4px">📥 匯出 Excel</button> <button onclick="exportSummary()" class="btn-sm btn" style="margin-left:4px;background:#3498db">📊 匯出彙總</button>'
-    + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}function exportCheckins(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/checkins?start="+s+"&end="+e;}function exportSummary(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/summary?start="+s+"&end="+e;}</script>';
+    + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}async function deleteCheckin(id){if(!confirm("確定刪除此筆打卡記錄？"))return;var r=await fetch("/admin/api/checkins/"+id,{method:"DELETE"});if(r.ok)location.reload();else alert("刪除失敗");}function exportCheckins(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/checkins?start="+s+"&end="+e;}function exportSummary(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/summary?start="+s+"&end="+e;}</script>';
   res.send(layout('打卡記錄', '打卡記錄', body));
 });
 
@@ -523,6 +538,14 @@ router.delete('/api/overtime/:id', auth, async (req, res) => {
 router.delete('/api/checkins/clear', auth, async (_, res) => {
   await db.clearAll('checkins'); res.json({ success: true });
 });
+router.delete('/api/checkins/:id', auth, async (req, res) => {
+  try {
+    await db.deleteCheckin(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ===== 系統設定 =====
 router.get('/settings', auth, async (_, res) => {
@@ -539,6 +562,8 @@ router.get('/settings', auth, async (_, res) => {
   var reportNoDup = await db.getSetting('report_no_dup') || 'true';
   var reportDaysArr = reportDays.split(',');
   var dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  var remindHours = await db.getSetting('approval_remind_hours') || '0';
+  var twHolidays = await db.getSetting('tw_holidays') || '[]';
 
   var body = '<div class="card"><h3>⏰ 上下班時間</h3>'
     + '<p style="color:#999;font-size:13px;margin-bottom:12px">目前：彈性上班 '+workStart+':00 ~ '+(parseInt(workStart)+Math.ceil(parseInt(lateBuf)/60))+':'+String(parseInt(lateBuf)%60).padStart(2,'0')+'，下班 '+workEnd+':00 起，需滿 8 小時</p>'
@@ -572,10 +597,22 @@ router.get('/settings', auth, async (_, res) => {
     body += '<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="checkbox" class="rptDay" value="'+d+'"'+checked+' style="width:auto;margin:0"> 週'+dayNames[d]+'</label>';
   }
   body += '</div></div>'
+    + '<div class="card"><h3>⏰ 簽核提醒</h3>'
+    + '<p style="color:#999;font-size:13px;margin-bottom:12px">設定 N 小時後仍未簽核的申請，系統自動提醒簽核人。</p>'
+    + '<form id="remindForm" class="inline">'
+    + '<div><label>未簽核提醒（小時）</label><input id="remindHours" value="' + h(remindHours) + '" placeholder="0 表示停用" style="width:80px"></div>'
+    + '<button class="btn">儲存</button><span id="remindMsg" style="color:#06c755"></span></form></div>'
+    + '<div class="card"><h3>🇹🇼 國定假日</h3>'
+    + '<p style="color:#999;font-size:13px;margin-bottom:12px">假日上班打卡不計遲到。格式：JSON 日期陣列，例：["2026-01-01","2026-02-28"]</p>'
+    + '<form id="holidayForm" class="inline">'
+    + '<div><label>假日日期</label><input id="twHolidays" value="' + h(twHolidays) + '" style="width:500px"></div>'
+    + '<button class="btn">儲存</button><span id="holidayMsg" style="color:#06c755"></span></form></div>'
     + '<script>'
     + 'document.getElementById("hourForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({work_start_hour:document.getElementById("workStart").value,work_end_hour:document.getElementById("workEnd").value,late_buffer_minutes:document.getElementById("lateBuf").value})});if(r.ok)document.getElementById("hourMsg").textContent="✅已儲存";};'
     + 'document.getElementById("gpsForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({office_lat:document.getElementById("lat").value,office_lng:document.getElementById("lng").value,gps_range_meters:document.getElementById("range").value})});if(r.ok)document.getElementById("gpsMsg").textContent="✅已儲存";};'
     + 'document.getElementById("reportForm").onsubmit=async function(e){e.preventDefault();var days=[];var cbs=document.querySelectorAll(".rptDay:checked");for(var i=0;i<cbs.length;i++)days.push(cbs[i].value);var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({report_group_id:document.getElementById("groupId").value,report_time:document.getElementById("rptTime").value,report_enabled:document.getElementById("rptEnabled").checked?"true":"false",report_days:days.join(","),report_no_dup:document.getElementById("rptNoDup").checked?"true":"false"})});if(r.ok)document.getElementById("rptMsg").textContent="✅已儲存 重新整理後生效";};'
+    + 'document.getElementById("remindForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approval_remind_hours:document.getElementById("remindHours").value})});if(r.ok)document.getElementById("remindMsg").textContent="✅已儲存";};'
+    + 'document.getElementById("holidayForm").onsubmit=async function(e){e.preventDefault();var val=document.getElementById("twHolidays").value;try{JSON.parse(val);}catch(ex){alert("JSON 格式錯誤");return;}var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tw_holidays:val})});if(r.ok)document.getElementById("holidayMsg").textContent="✅已儲存";};'
     + '</script>';
   res.send(layout('系統設定', '系統設定', body));
 });

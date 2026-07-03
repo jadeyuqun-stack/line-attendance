@@ -271,7 +271,9 @@ async function doCheckIn(emp, client, replyToken, loc, gps) {
   }
   const r = await db.recordCheckin(emp.id, 'check_in', loc, gps ? gps.inRange : true, gps ? gps.distance : 0);
   const now = r.check_time ? new Date(r.check_time) : new Date();
-  const late = await checkLate(now);
+  var todayStr2 = now.toISOString().split('T')[0];
+  var holiday = await isHoliday(todayStr2);
+  const late = holiday ? 0 : checkLate(now);
 
   var contents = [
     { type: 'text', text: '✅ 上班打卡成功', weight: 'bold', size: 'lg', color: '#06c755' },
@@ -1100,6 +1102,24 @@ function makeSimplePng() {
 	ihdr[9] = 6;
 	return Buffer.concat([sig, ch('IHDR', ihdr), ch('IDAT', deflated), ch('IEND', Buffer.alloc(0))]);
 }
+// 檢查是否為假日（週末或國定假日）
+var _holidaysCache = null;
+var _holidaysCacheDate = '';
+async function isHoliday(dateStr) {
+  var d = new Date(dateStr);
+  var day = d.getDay();
+  if (day === 0 || day === 6) return true;
+  // 檢查國定假日設定
+  var todayStr = new Date().toISOString().split('T')[0];
+  if (_holidaysCacheDate !== todayStr) {
+    var raw = await db.getSetting('tw_holidays') || '[]';
+    try { _holidaysCache = JSON.parse(raw); } catch(e) { _holidaysCache = []; }
+    _holidaysCacheDate = todayStr;
+  }
+  if (_holidaysCache && _holidaysCache.indexOf(dateStr) !== -1) return true;
+  return false;
+}
+
 function checkLate(now) {
   return Math.max(0, now.getHours() * 60 + now.getMinutes() - (parseInt(process.env.WORK_START_HOUR || '8') * 60 + parseInt(process.env.LATE_BUFFER_MINUTES || '30')));
 }

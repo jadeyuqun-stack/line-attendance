@@ -111,6 +111,7 @@ function sidebar(active) {
     ['/admin/salary', '💵', '薪資發送'],
     ['/admin/overtime', '🕐', '加班管理'],
     ['/admin/missed', '📝', '補打卡'],
+    ['/admin/data', '📦', '資料彙整'],
     ['/admin/settings', '⚙️', '系統設定'],
   ];
   var html = '';
@@ -940,6 +941,78 @@ async function doSend(data, client, baseUrl) {
     + (failed > 0 ? '<div class="stat"><div class="icon red">❌</div><div class="info"><div class="num">'+failed+'</div><div class="lbl">發送失敗</div></div></div>' : '')
     + '</div></div><a href="/admin/salary" class="btn">返回薪資發送</a>';
 }
+
+// ===== 資料彙整 =====
+router.get('/data', auth, async function(_, res) {
+	var now = new Date();
+	var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+	var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+
+	var cards = [
+		{ icon: '📋', title: '打卡記錄', desc: '上下班打卡 + 補打卡記錄', color: '#06c755', url: '/admin/export/checkins' },
+		{ icon: '🏖', title: '請假記錄', desc: '請假申請明細（含時數）', color: '#3498db', url: '/admin/export/leaves' },
+		{ icon: '🕐', title: '加班記錄', desc: '加班申請明細（含時數）', color: '#e67e22', url: '/admin/export/overtime' },
+		{ icon: '📊', title: '出勤彙總', desc: '每人每天工時 + 遲到/曠職/請假/未滿9h', color: '#9b59b6', url: '/admin/export/summary' },
+	];
+
+	var cardHtml = '';
+	for (var i = 0; i < cards.length; i++) {
+		var c = cards[i];
+		cardHtml += '<div style="background:#fff;border-radius:10px;padding:24px;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px">';
+		cardHtml += '<div style="font-size:40px">' + c.icon + '</div>';
+		cardHtml += '<div style="font-size:18px;font-weight:700;color:#333">' + c.title + '</div>';
+		cardHtml += '<div style="font-size:13px;color:#999">' + c.desc + '</div>';
+		cardHtml += '<button onclick="doExport(\'' + c.url + '\')" style="margin-top:8px;background:' + c.color + ';color:#fff;border:none;padding:10px 28px;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600;width:100%">📥 匯出 Excel</button>';
+		cardHtml += '</div>';
+	}
+
+	var body = '<div style="max-width:1000px">';
+
+	// 日期選擇區
+	body += '<div class="card" style="margin-bottom:20px">';
+	body += '<div style="font-size:15px;font-weight:600;margin-bottom:16px;color:#333">📅 選擇匯出日期範圍</div>';
+	body += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+	body += '<input type="date" id="expStart" value="' + thisMonth + '-01" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px">';
+	body += '<span style="color:#999">~</span>';
+	body += '<input type="date" id="expEnd" value="' + todayStr + '" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px">';
+
+	// 快速選擇
+	var months = [];
+	for (var m = 0; m < 6; m++) {
+		var d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+		months.push({ label: d.getFullYear() + '年' + (d.getMonth()+1) + '月', start: d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-01', end: d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(new Date(d.getFullYear(), d.getMonth()+1, 0).getDate()).padStart(2,'0') });
+	}
+
+	body += '<select onchange="pickMonth(this.value)" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;background:#fff">';
+	body += '<option value="">📆 快速選擇月份</option>';
+	for (var k = 0; k < months.length; k++) {
+		body += '<option value="' + months[k].start + '|' + months[k].end + '">' + months[k].label + '</option>';
+	}
+	body += '</select>';
+	body += '</div></div>';
+
+	// 匯出卡片
+	body += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px">' + cardHtml + '</div>';
+
+	body += '</div>';
+
+	body += '<script>';
+	body += 'function doExport(url) {';
+	body += '  var s = document.getElementById("expStart").value;';
+	body += '  var e = document.getElementById("expEnd").value;';
+	body += '  if (!s || !e) { alert("請選擇日期範圍"); return; }';
+	body += '  location.href = url + "?start=" + s + "&end=" + e;';
+	body += '}';
+	body += 'function pickMonth(val) {';
+	body += '  if (!val) return;';
+	body += '  var parts = val.split("|");';
+	body += '  document.getElementById("expStart").value = parts[0];';
+	body += '  document.getElementById("expEnd").value = parts[1];';
+	body += '}';
+	body += '</script>';
+
+	res.send(layout('資料彙整', '資料彙整', body));
+});
 
 // ===== Excel 匯出 =====
 // 請假時數計算（跨天每日最多 8h，午休扣 1h）

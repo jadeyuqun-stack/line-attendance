@@ -35,6 +35,11 @@ async function initDatabase() {
   // 簽核層級欄位
   try { await pool.query("ALTER TABLE leave_requests ADD COLUMN approval_level INTEGER DEFAULT 1"); } catch(e) {}
   try { await pool.query("ALTER TABLE overtime_requests ADD COLUMN approval_level INTEGER DEFAULT 1"); } catch(e) {}
+  // 駁回原因欄位
+  try { await pool.query("ALTER TABLE leave_requests ADD COLUMN reject_reason TEXT DEFAULT ''"); } catch(e) {}
+  try { await pool.query("ALTER TABLE overtime_requests ADD COLUMN reject_reason TEXT DEFAULT ''"); } catch(e) {}
+  try { await pool.query("ALTER TABLE missed_punch ADD COLUMN reject_reason TEXT DEFAULT ''"); } catch(e) {}
+
   // 打卡
   await pool.query(`
     CREATE TABLE IF NOT EXISTS checkins (
@@ -362,7 +367,7 @@ async function getLeaveRequests(status, limit = 100) {
   const { rows } = await pool.query(sql, p);
   return rows;
 }
-async function updateLeaveStatus(id, status, approvedBy) {
+async function updateLeaveStatus(id, status, approvedBy, rejectReason) {
   var leave = await getLeaveById(id);
   if (!leave) return;
   console.log('[DB] updateLeaveStatus id='+id+' status='+status+' currentLevel='+(leave.approval_level||1));
@@ -380,7 +385,7 @@ async function updateLeaveStatus(id, status, approvedBy) {
     await pool.query("UPDATE leave_requests SET status='approved', approved_by=$1, approved_at=NOW() WHERE id=$2", [approvedBy, id]);
     return { advanced: false };
   } else {
-    await pool.query("UPDATE leave_requests SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [status, approvedBy, id]);
+    await pool.query("UPDATE leave_requests SET status=$1, approved_by=$2, approved_at=NOW(), reject_reason=$4 WHERE id=$3", [status, approvedBy, id, rejectReason || '']);
     return { advanced: false };
   }
 }
@@ -461,11 +466,11 @@ async function getMissedPunchById(id) {
   var { rows } = await pool.query('SELECT * FROM missed_punch WHERE id=$1', [id]);
   return rows[0] || null;
 }
-async function updateMissedPunchStatus(id, status, approvedBy) {
+async function updateMissedPunchStatus(id, status, approvedBy, rejectReason) {
   if (approvedBy) {
-    await pool.query("UPDATE missed_punch SET status=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [status, approvedBy, id]);
+    await pool.query("UPDATE missed_punch SET status=$1, approved_by=$2, approved_at=NOW(), reject_reason=$4 WHERE id=$3", [status, approvedBy, id, rejectReason || '']);
   } else {
-    await pool.query("UPDATE missed_punch SET status=$1, approved_at=NOW() WHERE id=$2", [status, id]);
+    await pool.query("UPDATE missed_punch SET status=$1, approved_at=NOW(), reject_reason=$3 WHERE id=$2", [status, id, rejectReason || '']);
   }
   // 若核准，自動寫入打卡記錄
   if (status === 'approved') {
@@ -512,7 +517,7 @@ async function getOvertimeById(id) {
 async function deleteOvertimeRequest(id) {
   await pool.query("DELETE FROM overtime_requests WHERE id=$1", [id]);
 }
-async function updateOvertimeStatus(id, status, approvedBy) {
+async function updateOvertimeStatus(id, status, approvedBy, rejectReason) {
   var ot = await getOvertimeById(id);
   if (!ot) return;
   if (status === 'approved') {

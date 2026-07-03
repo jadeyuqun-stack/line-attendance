@@ -434,9 +434,11 @@ router.get('/leaves', auth, async (req, res) => {
     if (diff <= 0) return 1;
     var raw = Math.ceil(diff / 3600000);
     var days = Math.ceil(diff / 86400000);
-    var cap = Math.min(raw, days * 8);
-    if (days <= 1 && s2.getHours() < 12 && e2.getHours() >= 13) cap = Math.max(1, cap - 1);
-    return cap;
+    var lunch = 0;
+    if (days <= 1 && s2.getHours() < 12 && e2.getHours() >= 13) lunch = 1;
+    var workHours = raw - lunch;
+    if (workHours < 1) workHours = 1;
+    return Math.min(workHours, days * 8);
   }
   function sd(d) { return typeof d === 'string' ? d : (d ? d.toISOString().split('T')[0] : ''); }
   for (var i = 0; i < leaves.length; i++) {
@@ -464,7 +466,7 @@ router.get('/leaves', auth, async (req, res) => {
       personMap[l.employee_no].total += hours;
       if (startStr && startStr.indexOf(thisMonth) === 0) personMap[l.employee_no].month += hours;
     }
-    rows += '<tr><td>'+cb+'</td><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+'</td><td>'+actionHtml+'</td></tr>';
+    rows += '<tr><td>'+cb+'</td><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+(l.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(l.reject_reason)+'</small>':'')+'</td><td>'+actionHtml+'</td></tr>';
   }
   // 個人彙總表格
   var personRows = '';
@@ -489,7 +491,7 @@ router.get('/leaves', auth, async (req, res) => {
     + '</div>'
     + '<div style="margin-bottom:8px"><button onclick="batchAction(\"leave\",\"approved\")" class="btn-sm btn">✅ 批次核准</button> <button onclick="batchAction(\"leave\",\"rejected\")" class="btn-sm btn-red">❌ 批次駁回</button></div>'
     + '<div class="card"><table><tr><th><input type="checkbox" onclick="toggleAll(\"leaveCb\")" style="width:auto;height:auto"></th><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期時間</th><th>時數</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="10">無請假記錄</td></tr>')+'</table></div>'
-    + '<script>async function approveLeave(id){await fetch("/admin/api/leaves/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectLeave(id){await fetch("/admin/api/leaves/"+id+"/reject",{method:"PUT"});location.reload();}async function clearLeaves(){if(!confirm("⚠️ 確定刪除所有請假記錄？"))return;await fetch("/admin/api/leaves/clear",{method:"DELETE"});location.reload();}async function deleteLeave(id){if(!confirm("確定刪除此筆請假？"))return;await fetch("/admin/api/leaves/"+id,{method:"DELETE"});location.reload();}function exportLeaves(){var s=document.getElementById("leaveExpStart").value;var e=document.getElementById("leaveExpEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/leaves?start="+s+"&end="+e;}'
+    + '<script>async function approveLeave(id){await fetch("/admin/api/leaves/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectLeave(id){var reason=prompt("請輸入駁回原因：");if(reason===null)return;await fetch("/admin/api/leaves/"+id+"/reject",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason})});location.reload();}async function clearLeaves(){if(!confirm("⚠️ 確定刪除所有請假記錄？"))return;await fetch("/admin/api/leaves/clear",{method:"DELETE"});location.reload();}async function deleteLeave(id){if(!confirm("確定刪除此筆請假？"))return;await fetch("/admin/api/leaves/"+id,{method:"DELETE"});location.reload();}function exportLeaves(){var s=document.getElementById("leaveExpStart").value;var e=document.getElementById("leaveExpEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/leaves?start="+s+"&end="+e;}'
     + 'function toggleAll(cls){var cbs=document.querySelectorAll("."+cls);for(var i=0;i<cbs.length;i++)cbs[i].checked=event.target.checked;}'
     + 'async function batchAction(type,action){var cbs=document.querySelectorAll(".leaveCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+ (action==="approved"?"核准":"駁回") +" "+ids.length+" 筆？"))return;await fetch("/admin/api/"+type+"s/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
   res.send(layout('請假管理', '請假管理', body));
@@ -501,10 +503,10 @@ router.put('/api/leaves/:id/approve', auth, async (req, res) => {
   await db.updateLeaveStatus(leave.id, 'approved', null);
   res.json({ success: true });
 });
-router.put('/api/leaves/:id/reject', auth, async (req, res) => {
+router.put('/api/leaves/:id/reject', auth, express.json(), async (req, res) => {
   var leave = await db.getLeaveById(parseInt(req.params.id));
   if (!leave) return res.status(404).json({ error: '找不到' });
-  await db.updateLeaveStatus(leave.id, 'rejected', null);
+  await db.updateLeaveStatus(leave.id, 'rejected', null, req.body.reason || '');
   res.json({ success: true });
 });
 router.put('/api/leaves/batch', auth, express.json(), async (req, res) => {
@@ -696,15 +698,15 @@ router.get('/missed', auth, async function(_, res) {
     var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
     var ah = '';
     if (r.status === 'pending') ah = '<button onclick="approveMp('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectMp('+r.id+')" class="btn-sm btn-red">駁回</button>';
-    rows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.punch_type==='check_in'?'🔵補上班':'🔴補下班')+'</td><td>'+h(r.punch_date)+' '+h(r.punch_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+'</td><td>'+ah+'</td></tr>';
+    rows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.punch_type==='check_in'?'🔵補上班':'🔴補下班')+'</td><td>'+h(r.punch_date)+' '+h(r.punch_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(r.reject_reason)+'</small>':'')+'</td><td>'+ah+'</td></tr>';
   }
   var body = '<div class="tabs"><a href="?status=" class="'+(status===''?'active':'')+'">全部</a><a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a><a href="?status=approved" class="'+(status==='approved'?'active':'')+'">✅ 已核准</a></div>';
   body += '<div class="card"><table><tr><th>編號</th><th>姓名</th><th>類型</th><th>時間</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="7">無補打卡記錄</td></tr>')+'</table></div>';
-  body += '<script>async function approveMp(id){await fetch("/admin/api/missed/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectMp(id){await fetch("/admin/api/missed/"+id+"/reject",{method:"PUT"});location.reload();}</script>';
+  body += '<script>async function approveMp(id){await fetch("/admin/api/missed/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectMp(id){var reason=prompt("請輸入駁回原因：");if(reason===null)return;await fetch("/admin/api/missed/"+id+"/reject",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason})});location.reload();}</script>';
   res.send(layout('補打卡管理', '補打卡', body));
 });
 router.put('/api/missed/:id/approve', auth, async function(req, res) { await db.updateMissedPunchStatus(parseInt(req.params.id), 'approved', null); res.json({ success: true }); });
-router.put('/api/missed/:id/reject', auth, async function(req, res) { await db.updateMissedPunchStatus(parseInt(req.params.id), 'rejected', null); res.json({ success: true }); });
+router.put('/api/missed/:id/reject', auth, express.json(), async function(req, res) { await db.updateMissedPunchStatus(parseInt(req.params.id), 'rejected', null, req.body.reason || ''); res.json({ success: true }); });
 
 // ===== 加班管理 =====
 router.get('/overtime', auth, async function(_, res) {
@@ -728,7 +730,7 @@ router.get('/overtime', auth, async function(_, res) {
     var otCb = r.status === 'pending' ? '<input type="checkbox" class="otCb" value="'+r.id+'" style="width:auto;height:auto">' : '';
     if (r.status === 'pending') ah = '<button onclick="approveOt('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectOt('+r.id+')" class="btn-sm btn-red">駁回</button>';
     ah += ' <button onclick="deleteOt('+r.id+')" class="btn-sm btn-red" title="刪除">🗑</button>';
-    rows += '<tr><td>'+otCb+'</td><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+h(r.department||'')+'</td><td>'+h(r.start_time)+' ~ '+h(r.end_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+'</td><td>'+ah+'</td></tr>';
+    rows += '<tr><td>'+otCb+'</td><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+h(r.department||'')+'</td><td>'+h(r.start_time)+' ~ '+h(r.end_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(r.reject_reason)+'</small>':'')+'</td><td>'+ah+'</td></tr>';
   }
   var opts = '<option value="">全部員工</option>';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'"'+(filterEid===emps[j].id?' selected':'')+'>'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
@@ -736,15 +738,15 @@ router.get('/overtime', auth, async function(_, res) {
   var body = filterBar
     + '<div style="margin-bottom:8px"><button onclick="batchOt(\"approved\")" class="btn-sm btn">✅ 批次核准</button> <button onclick="batchOt(\"rejected\")" class="btn-sm btn-red">❌ 批次駁回</button></div>'
     + '<div class="card"><table><tr><th><input type="checkbox" onclick="toggleAll(\"otCb\")" style="width:auto;height:auto"></th><th>編號</th><th>姓名</th><th>部門</th><th>時間</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="8">無加班記錄</td></tr>')+'</table></div>'
-    + '<div style="margin-top:12px"><button onclick="clearOt()" class="btn-sm btn-red">🗑 清除所有加班記錄</button> <input type="date" id="otExpStart" value="'+(filterMonth||(new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')))+'-01" style="width:auto" title="開始日期"> ~ <input type="date" id="otExpEnd" value="'+(filterMonth||(new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')))+'-'+String(new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate()).padStart(2,'0')+'" style="width:auto" title="結束日期"> <button onclick="exportOt()" class="btn-sm btn">📥 匯出 Excel</button></div><script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT"});location.reload();}async function clearOt(){if(!confirm("⚠️ 確定刪除所有加班記錄？"))return;await fetch("/admin/api/overtime/clear",{method:"DELETE"});location.reload();}async function deleteOt(id){if(!confirm("確定刪除此筆加班？"))return;await fetch("/admin/api/overtime/"+id,{method:"DELETE"});location.reload();}function exportOt(){var s=document.getElementById("otExpStart").value;var e=document.getElementById("otExpEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/overtime?start="+s+"&end="+e;}function toggleAll(cls){var cbs=document.querySelectorAll("."+cls);for(var i=0;i<cbs.length;i++)cbs[i].checked=event.target.checked;}async function batchOt(action){var cbs=document.querySelectorAll(".otCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+(action==="approved"?"核准":"駁回")+" "+ids.length+" 筆？"))return;await fetch("/admin/api/overtimes/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
+    + '<div style="margin-top:12px"><button onclick="clearOt()" class="btn-sm btn-red">🗑 清除所有加班記錄</button> <input type="date" id="otExpStart" value="'+(filterMonth||(new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')))+'-01" style="width:auto" title="開始日期"> ~ <input type="date" id="otExpEnd" value="'+(filterMonth||(new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')))+'-'+String(new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate()).padStart(2,'0')+'" style="width:auto" title="結束日期"> <button onclick="exportOt()" class="btn-sm btn">📥 匯出 Excel</button></div><script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){var reason=prompt("請輸入駁回原因：");if(reason===null)return;await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason})});location.reload();}async function clearOt(){if(!confirm("⚠️ 確定刪除所有加班記錄？"))return;await fetch("/admin/api/overtime/clear",{method:"DELETE"});location.reload();}async function deleteOt(id){if(!confirm("確定刪除此筆加班？"))return;await fetch("/admin/api/overtime/"+id,{method:"DELETE"});location.reload();}function exportOt(){var s=document.getElementById("otExpStart").value;var e=document.getElementById("otExpEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/overtime?start="+s+"&end="+e;}function toggleAll(cls){var cbs=document.querySelectorAll("."+cls);for(var i=0;i<cbs.length;i++)cbs[i].checked=event.target.checked;}async function batchOt(action){var cbs=document.querySelectorAll(".otCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+(action==="approved"?"核准":"駁回")+" "+ids.length+" 筆？"))return;await fetch("/admin/api/overtimes/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
   res.send(layout('加班管理', '加班管理', body));
 });
 
 router.put('/api/overtime/:id/approve', auth, async function(req, res) {
   await db.updateOvertimeStatus(parseInt(req.params.id), 'approved', null); res.json({ success: true });
 });
-router.put('/api/overtime/:id/reject', auth, async function(req, res) {
-  await db.updateOvertimeStatus(parseInt(req.params.id), 'rejected', null); res.json({ success: true });
+router.put('/api/overtime/:id/reject', auth, express.json(), async function(req, res) {
+  await db.updateOvertimeStatus(parseInt(req.params.id), 'rejected', null, req.body.reason || ''); res.json({ success: true });
 });
 
 // ===== 薪資發送 =====
@@ -944,9 +946,11 @@ function exportLeaveHours(startStr, endStr) {
   if (diff <= 0) return 1;
   var raw = Math.ceil(diff / 3600000);
   var days = Math.ceil(diff / 86400000);
-  var cap = Math.min(raw, days * 8);
-  if (days <= 1 && s.getHours() < 12 && e.getHours() >= 13) cap = Math.max(1, cap - 1);
-  return cap;
+  var lunch = 0;
+  if (days <= 1 && s.getHours() < 12 && e.getHours() >= 13) lunch = 1;
+  var workHours = raw - lunch;
+  if (workHours < 1) workHours = 1;
+  return Math.min(workHours, days * 8);
 }
 
 router.get('/export/checkins', auth, async function(req, res) {

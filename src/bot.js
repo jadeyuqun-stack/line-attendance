@@ -776,7 +776,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
     if (state.flow === 'reject_leave') {
       var leave = await db.getLeaveById(state.id);
       var leaveEmp = leave ? await db.getEmployeeById(leave.employee_id) : null;
-      await db.updateLeaveStatus(state.id, 'rejected', approver.id);
+      await db.updateLeaveStatus(state.id, 'rejected', approver.id, reason);
       if (leaveEmp && leaveEmp.line_user_id && leave) {
         await client.pushMessage(leaveEmp.line_user_id, [{
           type: 'text', text: '❌ 請假被駁回\n時間：' + leave.start_date + ' ~ ' + leave.end_date + '\n駁回原因：' + reason
@@ -789,7 +789,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
     if (state.flow === 'reject_ot') {
       var ot = await db.getOvertimeById(state.id);
       var otEmp = ot ? await db.getEmployeeById(ot.employee_id) : null;
-      await db.updateOvertimeStatus(state.id, 'rejected', approver.id);
+      await db.updateOvertimeStatus(state.id, 'rejected', approver.id, reason);
       if (otEmp && otEmp.line_user_id && ot) {
         await client.pushMessage(otEmp.line_user_id, [{
           type: 'text', text: '❌ 加班被駁回\n時間：' + ot.start_time + ' ~ ' + ot.end_time + '\n駁回原因：' + reason
@@ -802,7 +802,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
     if (state.flow === 'reject_missed') {
       var mp = await db.getMissedPunchById(state.id);
       var mpEmp = mp ? await db.getEmployeeById(mp.employee_id) : null;
-      await db.updateMissedPunchStatus(state.id, 'rejected', approver.id);
+      await db.updateMissedPunchStatus(state.id, 'rejected', approver.id, reason);
       if (mpEmp && mpEmp.line_user_id && mp) {
         await client.pushMessage(mpEmp.line_user_id, [{
           type: 'text', text: '❌ 補打卡被駁回\n' + mp.punch_date + ' ' + mp.punch_time + '\n駁回原因：' + reason

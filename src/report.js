@@ -111,8 +111,8 @@ async function doSendReport(client) {
     var allLeaves = await db.getLeaveRequests('approved', 500);
     for (var li = 0; li < allLeaves.length; li++) {
       var l = allLeaves[li];
-      var lStart = typeof l.start_date === 'string' ? l.start_date.split(' ')[0] : '';
-      var lEnd = typeof l.end_date === 'string' ? l.end_date.split(' ')[0] : lStart;
+      var lStart = typeof l.start_date === 'string' ? l.start_date.substring(0, 10) : '';
+      var lEnd = typeof l.end_date === 'string' ? l.end_date.substring(0, 10) : lStart;
       if (lStart <= todayStr && lEnd >= todayStr) {
         if (!leaveMap[l.employee_id]) {
           var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type;

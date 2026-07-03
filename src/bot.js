@@ -30,7 +30,7 @@ async function initFont() {
 		}
 
 		// 從 Google Fonts 下載子集（只含需要的 16 個字）
-		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢當日遲到人員';
+		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢遲到曠職超出GPS人員';
 		var cssUrl = 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700&text=' + encodeURIComponent(text);
 
 		console.log('[Font] 下載字型...');
@@ -153,7 +153,7 @@ async function handleText(text, uid, client, replyToken) {
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
   if (cmd === '查詢當日請假人員') return queryTodayLeaves(emp, client, replyToken);
-  if (cmd === '查詢當日遲到與曠職人員') return queryTodayLates(emp, client, replyToken);
+  if (cmd === '查詢當日遲到與曠職人員' || cmd === '查詢遲到/曠職/超出GPS') return queryTodayLates(emp, client, replyToken);
   if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken);
   if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, 'leave');
@@ -414,9 +414,13 @@ function leaveHours(startStr, endStr) {
   if (diff <= 0) return 1;
   var raw = Math.ceil(diff / 3600000);
   var days = Math.ceil(diff / 86400000);
-  var cap = Math.min(raw, days * 8);
-  if (days <= 1 && s.getHours() < 12 && e.getHours() >= 13) cap = Math.max(1, cap - 1);
-  return cap;
+  // 午休扣除：單日且跨越 12:00-13:00 扣 1 小時
+  var lunch = 0;
+  if (days <= 1 && s.getHours() < 12 && e.getHours() >= 13) lunch = 1;
+  var workHours = raw - lunch;
+  if (workHours < 1) workHours = 1;
+  var cap = days * 8;
+  return Math.min(workHours, cap);
 }
 
 async function startLeaveFlow(uid, client, replyToken) {
@@ -626,11 +630,6 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (!state || state.flow !== 'overtime' || state.step !== 'end') return;
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
     if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
-    // 驗證加班時間範圍（17:30~23:00）
-    if (!validateOvertimeTime(state.otStart) || !validateOvertimeTime(dt)) {
-      states.delete(uid);
-      return client.replyMessage(replyToken, [withMenu("❌ 加班時間限於 17:30 ~ 23:00")]);
-    }
     state.otEnd = dt; state.step = 'reason';
     return client.replyMessage(replyToken, [withMenu('🕐 ' + state.otStart + ' ~ ' + dt + '\n\n📝 請輸入加班原因：')]);
   }
@@ -889,7 +888,7 @@ async function setupRichMenu() {
 				{ bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
 				{ bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢' } },
 				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日請假人員' } },
-				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日遲到與曠職人員' } },
+				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢遲到/曠職/超出GPS' } },
 			]
 		};
 		var res8a = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu8) });
@@ -1270,8 +1269,22 @@ async function queryTodayLates(emp, client, replyToken) {
     }
   }
 
-  if (lateEmployees.length === 0 && absentEmployees.length === 0) {
-    return client.replyMessage(replyToken, [withMenu('✅ 今日無遲到或曠職人員')]);
+  // GPS 超出範圍人員
+  var outOfRangeEmps = [];
+  var orSeen = {};
+  for (var g = 0; g < allCheckins.length; g++) {
+    var gc = allCheckins[g];
+    if (gc.in_range === false && !orSeen[gc.employee_id]) {
+      orSeen[gc.employee_id] = true;
+      // 簽核人員只顯示自己簽核的員工
+      if (isApproverRole(emp) && !canQueryAll(emp) && !designatedIds[gc.employee_id]) continue;
+      var gEmp = await db.getEmployeeById(gc.employee_id);
+      if (gEmp) outOfRangeEmps.push(gEmp);
+    }
+  }
+
+  if (lateEmployees.length === 0 && absentEmployees.length === 0 && outOfRangeEmps.length === 0) {
+    return client.replyMessage(replyToken, [withMenu('✅ 今日無遲到、曠職或超出 GPS 人員')]);
   }
 
   var lines = [];
@@ -1293,7 +1306,15 @@ async function queryTodayLates(emp, client, replyToken) {
     }
   }
 
-  return client.replyMessage(replyToken, [withMenu('📋 今日遲到與曠職查詢\n\n' + lines.join('\n'))]);
+  if (outOfRangeEmps.length > 0) {
+    lines.push('');
+    lines.push('📍 GPS 超出範圍（' + outOfRangeEmps.length + ' 人）：');
+    for (var n = 0; n < outOfRangeEmps.length; n++) {
+      lines.push('  ' + outOfRangeEmps[n].name + '（' + outOfRangeEmps[n].employee_no + '）');
+    }
+  }
+
+  return client.replyMessage(replyToken, [withMenu('📋 今日遲到/曠職/超出GPS查詢\n\n' + lines.join('\n'))]);
 }
 
 // 為使用者連結 8 格 Rich Menu
@@ -1349,7 +1370,7 @@ function makePng8() {
     { x: 0, y: 421, w: 625, h: 422, color: '#9B59B6', label: '加班' },
     { x: 625, y: 421, w: 625, h: 422, color: '#3498DB', label: '查詢' },
     { x: 1250, y: 421, w: 625, h: 422, color: '#E67E22', label: '查詢請假' },
-    { x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '查詢遲到\n與曠職' },
+    { x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '查詢遲到/曠職\n超出GPS人員' },
   ];
 
   var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
@@ -1435,7 +1456,7 @@ function makePng8() {
         ctx.moveTo(cx - 8, iy + 12);
         ctx.lineTo(cx + 10, iy + 12);
         break;
-      case 7: // 查詢遲到與曠職
+      case 7: // 查詢遲到/曠職/超出GPS
         ctx.arc(cx, iy, 24, 0, Math.PI * 2);
         ctx.moveTo(cx, iy);
         ctx.lineTo(cx, iy - 16);

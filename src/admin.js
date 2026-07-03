@@ -156,8 +156,8 @@ router.get('/', auth, async (_, res) => {
   var leaveEmpIds = {};
   for (var li = 0; li < allLeaves.length; li++) {
     var l = allLeaves[li];
-    var lStart = typeof l.start_date === 'string' ? l.start_date.split(' ')[0] : '';
-    var lEnd = typeof l.end_date === 'string' ? l.end_date.split(' ')[0] : lStart;
+    var lStart = typeof l.start_date === 'string' ? l.start_date.substring(0, 10) : '';
+    var lEnd = typeof l.end_date === 'string' ? l.end_date.substring(0, 10) : lStart;
     if (lStart <= todayStr && lEnd >= todayStr) {
       if (!leaveEmpIds[l.employee_id]) {
         leaveEmpIds[l.employee_id] = true;
@@ -665,9 +665,9 @@ function esc(s) { return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")
 function fmt(ts) { var d = new Date(ts); return d.getFullYear()+' '+(d.getMonth()+1)+'月'+d.getDate()+'日 '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function dateOverlaps(startStr, endStr, targetDate) {
   if (!startStr) return false;
-  var s = startStr.indexOf(' ') !== -1 ? startStr.split(' ')[0] : startStr;
+  var s = startStr.length >= 10 ? startStr.substring(0, 10) : startStr;
   var e = endStr || s;
-  if (e.indexOf(' ') !== -1) e = e.split(' ')[0];
+  if (e.length >= 10) e = e.substring(0, 10);
   return s <= targetDate && e >= targetDate;
 }
 function modalHtml() {

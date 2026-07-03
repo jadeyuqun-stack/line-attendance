@@ -304,22 +304,19 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   const r = await db.recordCheckin(emp.id, 'check_out', loc, gps ? gps.inRange : true, gps ? gps.distance : 0);
   const ci = new Date(today.find(r => r.type === 'check_in').check_time);
   const co = r.check_time ? new Date(r.check_time) : new Date();
-  // 工時計算範圍：8:00-17:30
-  var effStart = new Date(ci); effStart.setHours(8, 0, 0, 0); if (ci > effStart) effStart = ci;
-  var effEnd = new Date(ci); effEnd.setHours(17, 30, 0, 0); if (co < effEnd) effEnd = co;
-  const rawH = Math.round(Math.max(0, (effEnd - effStart) / 3600000) * 10) / 10;
-  var lunchDeduct = (effStart.getHours() < 12 && effEnd.getHours() >= 13) ? 1 : 0;
-  var netH = Math.round((rawH - lunchDeduct) * 10) / 10;
-  const requiredNetHours = 8;
+  // 總工時 = 實際打卡時間差，淨工時 = 總工時 - 午休 1h
+  const totalH = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
+  var lunchDeduct = (ci.getHours() < 12 && co.getHours() >= 13) ? 1 : 0;
+  var netH = Math.round((totalH - lunchDeduct) * 10) / 10;
 
   var contents = [
     { type: 'text', text: '🏠 下班打卡成功', weight: 'bold', size: 'lg', color: '#3498db' },
     { type: 'text', text: '👤 ' + emp.name + '  ' + emp.employee_no, margin: 'md', size: 'sm', color: '#666666' },
     { type: 'text', text: '⏰ ' + fmt(co), margin: 'md', size: 'xl', weight: 'bold' },
-    { type: 'text', text: '📊 總工時：' + rawH + 'h / 淨工時：' + netH + 'h', margin: 'sm', size: 'sm' },
+    { type: 'text', text: '📊 總工時：' + totalH + 'h / 淨工時：' + netH + 'h', margin: 'sm', size: 'sm' },
   ];
-  if (netH < requiredNetHours) {
-    contents.push({ type: 'text', text: '⚠️ 淨工時不足 ' + requiredNetHours + ' 小時（已扣午休）\n請記得申請請假補足時數', margin: 'sm', color: '#f39c12', size: 'sm', wrap: true });
+  if (totalH < 9) {
+    contents.push({ type: 'text', text: '⚠️ 總工時未滿 9 小時（正常 8:00-17:30）\n請記得申請請假補足時數', margin: 'sm', color: '#f39c12', size: 'sm', wrap: true });
   }
   if (loc) {
     var locText = '📍 ' + (loc.address || loc.latitude.toFixed(4) + ', ' + loc.longitude.toFixed(4));
@@ -358,12 +355,10 @@ async function doQuery(emp, client, replyToken) {
   if (checkOut && checkOut.address) punchText += '\n   📍' + checkOut.address;
   if (checkIn && checkOut) {
     var ciDt = new Date(checkIn.check_time), coDt = new Date(checkOut.check_time);
-    var effS = new Date(ciDt); effS.setHours(8, 0, 0, 0); if (ciDt > effS) effS = ciDt;
-    var effE = new Date(ciDt); effE.setHours(17, 30, 0, 0); if (coDt < effE) effE = coDt;
-    var rawWorkH = Math.round(Math.max(0, (effE - effS) / 3600000) * 10) / 10;
-    var lunchDed = (effS.getHours() < 12 && effE.getHours() >= 13) ? 1 : 0;
+    var rawWorkH = Math.round(Math.max(0, (coDt - ciDt) / 3600000) * 10) / 10;
+    var lunchDed = (ciDt.getHours() < 12 && coDt.getHours() >= 13) ? 1 : 0;
     var workH = Math.round((rawWorkH - lunchDed) * 10) / 10;
-    punchText += '\n📊 淨工時 ' + workH + 'h' + (workH < 8 ? ' ⚠️不足8h' : '');
+    punchText += '\n📊 總工時 ' + rawWorkH + 'h / 淨工時 ' + workH + 'h' + (rawWorkH < 9 ? ' ⚠️未滿9h' : '');
   }
   contents.push({ type: 'text', text: punchText, margin: 'md', size: 'sm', wrap: true });
 

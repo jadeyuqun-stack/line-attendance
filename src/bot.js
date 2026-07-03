@@ -152,8 +152,8 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '加班駁回全部') return batchRejectAll(emp, client, replyToken, 'overtime');
   if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消操作。')]); }
   if (states.has(uid)) return handleFlow(cmd, uid, client, replyToken, emp);
-  if (cmd.includes('上班')) { states.delete(uid); return doCheckIn(emp, client, replyToken); }
-  if (cmd.includes('下班')) { states.delete(uid); return doCheckOut(emp, client, replyToken); }
+  if (cmd.includes('上班')) { states.set(uid, { flow: 'gps_check', type: 'check_in' }); return client.replyMessage(replyToken, [{ type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
+  if (cmd.includes('下班')) { states.set(uid, { flow: 'gps_check', type: 'check_out' }); return client.replyMessage(replyToken, [{ type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
   if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken);
   if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
   return client.replyMessage(replyToken, [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
@@ -218,11 +218,29 @@ async function batchRejectAll(emp, client, replyToken, type) {
 async function handleLocation(msg, uid, client, replyToken) {
   var emp = await db.getEmployeeByLineId(uid);
   if (!emp) return client.replyMessage(replyToken, [withMenu('請先綁定員工編號。')]);
+
+  // 檢查是否是從 Rich Menu 觸發的 GPS 打卡流程
+  var state = states.get(uid);
+  var intendedType = (state && state.flow === 'gps_check') ? state.type : null;
+  states.delete(uid);
+
   var today = await db.getTodayCheckins(emp.id);
   var hasIn = today.some(function(r) { return r.type === 'check_in'; });
   var hasOut = today.some(function(r) { return r.type === 'check_out'; });
   var loc = { latitude: msg.latitude, longitude: msg.longitude, address: msg.address || '' };
   var gps = await checkGpsRange(msg.latitude, msg.longitude);
+
+  if (intendedType === 'check_in') {
+    if (hasIn) return client.replyMessage(replyToken, [withMenu('⚠️ 今天已上班打卡')]);
+    return doCheckIn(emp, client, replyToken, loc, gps);
+  }
+  if (intendedType === 'check_out') {
+    if (!hasIn) return client.replyMessage(replyToken, [withMenu('⚠️ 尚未上班打卡')]);
+    if (hasOut) return client.replyMessage(replyToken, [withMenu('⚠️ 今天已下班打卡')]);
+    return doCheckOut(emp, client, replyToken, loc, gps);
+  }
+
+  // 直接傳送位置訊息（無狀態）— 向後相容
   if (hasIn && !hasOut) return doCheckOut(emp, client, replyToken, loc, gps);
   if (!hasIn) return doCheckIn(emp, client, replyToken, loc, gps);
   return client.replyMessage(replyToken, [withMenu('今日已完成打卡。')]);
@@ -755,11 +773,11 @@ async function setupRichMenu() {
 			size: { width: 2500, height: 843 }, selected: true, name: '一般員工選單', chatBarText: '📋 點此開啟功能選單',
 			areas: [
 				{ bounds: { x: 0, y: 0, width: 833, height: 421 }, action: { type: 'message', text: '上班' } },
-				{ bounds: { x: 833, y: 0, width: 834, height: 421 }, action: { type: 'message', text: '下班' } },
-				{ bounds: { x: 1667, y: 0, width: 833, height: 421 }, action: { type: 'message', text: '查詢' } },
-				{ bounds: { x: 0, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '請假' } },
-				{ bounds: { x: 833, y: 421, width: 834, height: 422 }, action: { type: 'message', text: '加班' } },
-				{ bounds: { x: 1667, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '補打卡' } },
+				{ bounds: { x: 833, y: 0, width: 834, height: 421 }, action: { type: 'message', text: '請假' } },
+				{ bounds: { x: 1667, y: 0, width: 833, height: 421 }, action: { type: 'message', text: '下班' } },
+				{ bounds: { x: 0, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '加班' } },
+				{ bounds: { x: 833, y: 421, width: 834, height: 422 }, action: { type: 'message', text: '補打卡' } },
+				{ bounds: { x: 1667, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '查詢' } },
 			]
 		};
 		var res6a = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu6) });
@@ -801,11 +819,11 @@ async function setupRichMenu() {
 			size: { width: 2500, height: 843 }, selected: false, name: '主管選單', chatBarText: '📋 點此開啟功能選單',
 			areas: [
 				{ bounds: { x: 0, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '上班' } },
-				{ bounds: { x: 625, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '下班' } },
-				{ bounds: { x: 1250, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '查詢' } },
-				{ bounds: { x: 1875, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '請假' } },
+				{ bounds: { x: 625, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '請假' } },
+				{ bounds: { x: 1250, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '補打卡' } },
+				{ bounds: { x: 1875, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '下班' } },
 				{ bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
-				{ bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '補打卡' } },
+				{ bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢' } },
 				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日請假人員' } },
 				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日遲到人員' } },
 			]
@@ -820,6 +838,7 @@ async function setupRichMenu() {
 		var menu8Id = data8.richMenuId;
 		_richMenuId8 = menu8Id;
 		console.log('[RichMenu] 8格選單建立成功:', menu8Id);
+		await db.setSetting('richmenu_8_id', menu8Id);
 
 		// 上傳 8 格圖片
 		var png8 = makePng8();
@@ -863,11 +882,11 @@ function makePng() {
 	// 區塊定義
 	var areas = [
 		{ x: 0, y: 0, w: 833, h: 421, color: '#06C755', label: '上班' },
-		{ x: 833, y: 0, w: 834, h: 421, color: '#F39C12', label: '下班' },
-		{ x: 1667, y: 0, w: 833, h: 421, color: '#3498DB', label: '查詢' },
-		{ x: 0, y: 421, w: 833, h: 422, color: '#1ABC9C', label: '請假' },
-		{ x: 833, y: 421, w: 834, h: 422, color: '#9B59B6', label: '加班' },
-		{ x: 1667, y: 421, w: 833, h: 422, color: '#34495E', label: '補打卡' },
+		{ x: 833, y: 0, w: 834, h: 421, color: '#1ABC9C', label: '請假' },
+		{ x: 1667, y: 0, w: 833, h: 421, color: '#F39C12', label: '下班' },
+		{ x: 0, y: 421, w: 833, h: 422, color: '#9B59B6', label: '加班' },
+		{ x: 833, y: 421, w: 834, h: 422, color: '#34495E', label: '補打卡' },
+		{ x: 1667, y: 421, w: 833, h: 422, color: '#3498DB', label: '查詢' },
 	];
 
 	// 中文字型 fallback
@@ -913,19 +932,7 @@ function makePng() {
 				ctx.lineTo(cx, iy - 30);
 				ctx.lineTo(cx + 28, iy - 8);
 				break;
-			case 1: // 下班 ▼
-				ctx.moveTo(cx, iy - 30);
-				ctx.lineTo(cx, iy + 30);
-				ctx.moveTo(cx - 28, iy + 8);
-				ctx.lineTo(cx, iy + 30);
-				ctx.lineTo(cx + 28, iy + 8);
-				break;
-			case 2: // 查詢 🔍
-				ctx.arc(cx - 5, iy - 5, 22, 0, Math.PI * 2);
-				ctx.moveTo(cx + 12, iy + 12);
-				ctx.lineTo(cx + 38, iy + 38);
-				break;
-			case 3: // 請假 📄
+			case 1: // 請假 📄
 				ctx.rect(cx - 30, iy - 35, 60, 70);
 				ctx.moveTo(cx - 16, iy - 12);
 				ctx.lineTo(cx - 16, iy + 5);
@@ -934,19 +941,31 @@ function makePng() {
 				ctx.moveTo(cx + 16, iy - 12);
 				ctx.lineTo(cx + 16, iy + 5);
 				break;
-			case 4: // 加班 🕐
+			case 2: // 下班 ▼
+				ctx.moveTo(cx, iy - 30);
+				ctx.lineTo(cx, iy + 30);
+				ctx.moveTo(cx - 28, iy + 8);
+				ctx.lineTo(cx, iy + 30);
+				ctx.lineTo(cx + 28, iy + 8);
+				break;
+			case 3: // 加班 🕐
 				ctx.arc(cx, iy, 30, 0, Math.PI * 2);
 				ctx.moveTo(cx, iy);
 				ctx.lineTo(cx, iy - 20);
 				ctx.moveTo(cx, iy);
 				ctx.lineTo(cx + 16, iy);
 				break;
-			case 5: // 補打卡 ✏️
+			case 4: // 補打卡 ✏️
 				ctx.moveTo(cx - 18, iy - 35);
 				ctx.lineTo(cx + 6, iy - 11);
 				ctx.lineTo(cx + 24, iy + 7);
 				ctx.moveTo(cx + 6, iy - 11);
 				ctx.lineTo(cx - 8, iy + 28);
+				break;
+			case 5: // 查詢 🔍
+				ctx.arc(cx - 5, iy - 5, 22, 0, Math.PI * 2);
+				ctx.moveTo(cx + 12, iy + 12);
+				ctx.lineTo(cx + 38, iy + 38);
 				break;
 		}
 		ctx.stroke();
@@ -979,10 +998,10 @@ function makeSimplePng() {
 				p(xx, yy, r, g, b);
 	}
 	var colors = [
-		[6, 199, 85], [243, 156, 18], [52, 152, 219],
-		[26, 188, 156], [155, 89, 182], [52, 73, 94]
+		[6, 199, 85], [26, 188, 156], [243, 156, 18],
+		[155, 89, 182], [52, 73, 94], [52, 152, 219]
 	];
-	var labels = ['上班', '下班', '查詢', '請假', '加班', '補打卡'];
+	var labels = ['上班', '請假', '下班', '加班', '補打卡', '查詢'];
 	for (var i = 0; i < 6; i++) {
 		var col = i % 3, row = Math.floor(i / 3);
 		var bx = col < 1 ? 0 : (col === 1 ? 833 : 1667);
@@ -1152,7 +1171,13 @@ async function queryTodayLates(emp, client, replyToken) {
 
 // 為使用者連結 8 格 Rich Menu
 async function assignRichMenu(uid, role, token) {
-  if (!_richMenuId8) return false;
+  if (!_richMenuId8) {
+    _richMenuId8 = await db.getSetting('richmenu_8_id');
+  }
+  if (!_richMenuId8) {
+    console.log('[RichMenu] 8格選單尚未建立，請先至 /admin/setup-richmenu');
+    return false;
+  }
   try {
     var t = token || process.env.LINE_CHANNEL_ACCESS_TOKEN;
     var headers = { 'Authorization': 'Bearer ' + t };
@@ -1191,11 +1216,11 @@ function makePng8() {
 
   var areas = [
     { x: 0, y: 0, w: 625, h: 421, color: '#06C755', label: '上班' },
-    { x: 625, y: 0, w: 625, h: 421, color: '#F39C12', label: '下班' },
-    { x: 1250, y: 0, w: 625, h: 421, color: '#3498DB', label: '查詢' },
-    { x: 1875, y: 0, w: 625, h: 421, color: '#1ABC9C', label: '請假' },
+    { x: 625, y: 0, w: 625, h: 421, color: '#1ABC9C', label: '請假' },
+    { x: 1250, y: 0, w: 625, h: 421, color: '#34495E', label: '補打卡' },
+    { x: 1875, y: 0, w: 625, h: 421, color: '#F39C12', label: '下班' },
     { x: 0, y: 421, w: 625, h: 422, color: '#9B59B6', label: '加班' },
-    { x: 625, y: 421, w: 625, h: 422, color: '#34495E', label: '補打卡' },
+    { x: 625, y: 421, w: 625, h: 422, color: '#3498DB', label: '查詢' },
     { x: 1250, y: 421, w: 625, h: 422, color: '#E67E22', label: '查詢請假' },
     { x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '查詢遲到' },
   ];
@@ -1239,19 +1264,7 @@ function makePng8() {
         ctx.lineTo(cx, iy - 22);
         ctx.lineTo(cx + 22, iy - 4);
         break;
-      case 1: // 下班
-        ctx.moveTo(cx, iy - 22);
-        ctx.lineTo(cx, iy + 22);
-        ctx.moveTo(cx - 22, iy + 4);
-        ctx.lineTo(cx, iy + 22);
-        ctx.lineTo(cx + 22, iy + 4);
-        break;
-      case 2: // 查詢
-        ctx.arc(cx - 3, iy - 3, 18, 0, Math.PI * 2);
-        ctx.moveTo(cx + 10, iy + 10);
-        ctx.lineTo(cx + 30, iy + 30);
-        break;
-      case 3: case 4: // 請假/加班
+      case 1: case 4: // 請假/加班
         ctx.rect(cx - 24, iy - 28, 48, 56);
         ctx.moveTo(cx - 12, iy - 8);
         ctx.lineTo(cx - 12, iy + 6);
@@ -1260,12 +1273,24 @@ function makePng8() {
         ctx.moveTo(cx + 12, iy - 8);
         ctx.lineTo(cx + 12, iy + 6);
         break;
-      case 5: // 補打卡
+      case 2: // 補打卡
         ctx.moveTo(cx - 14, iy - 28);
         ctx.lineTo(cx + 6, iy - 8);
         ctx.lineTo(cx + 20, iy + 8);
         ctx.moveTo(cx + 6, iy - 8);
         ctx.lineTo(cx - 6, iy + 22);
+        break;
+      case 3: // 下班
+        ctx.moveTo(cx, iy - 22);
+        ctx.lineTo(cx, iy + 22);
+        ctx.moveTo(cx - 22, iy + 4);
+        ctx.lineTo(cx, iy + 22);
+        ctx.lineTo(cx + 22, iy + 4);
+        break;
+      case 5: // 查詢
+        ctx.arc(cx - 3, iy - 3, 18, 0, Math.PI * 2);
+        ctx.moveTo(cx + 10, iy + 10);
+        ctx.lineTo(cx + 30, iy + 30);
         break;
       case 6: // 查詢請假
         ctx.rect(cx - 20, iy - 26, 40, 52);
@@ -1317,8 +1342,8 @@ function makeSimplePng8() {
         p(xx, yy, r, g, b);
   }
   var colors = [
-    [6, 199, 85], [243, 156, 18], [52, 152, 219], [26, 188, 156],
-    [155, 89, 182], [52, 73, 94], [230, 126, 34], [231, 76, 60]
+    [6, 199, 85], [26, 188, 156], [52, 73, 94], [243, 156, 18],
+    [155, 89, 182], [52, 152, 219], [230, 126, 34], [231, 76, 60]
   ];
   for (var i = 0; i < 8; i++) {
     var col = i % 4, row = Math.floor(i / 4);

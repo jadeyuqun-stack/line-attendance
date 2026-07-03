@@ -304,17 +304,20 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   const r = await db.recordCheckin(emp.id, 'check_out', loc, gps ? gps.inRange : true, gps ? gps.distance : 0);
   const ci = new Date(today.find(r => r.type === 'check_in').check_time);
   const co = r.check_time ? new Date(r.check_time) : new Date();
-  const h = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
-  const requiredHours = 8;
+  const rawH = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
+  // 扣除午休（12:00-13:00），淨工時需滿 8 小時
+  var lunchDeduct = (ci.getHours() < 12 && co.getHours() >= 13) ? 1 : 0;
+  var netH = Math.round((rawH - lunchDeduct) * 10) / 10;
+  const requiredNetHours = 8;
 
   var contents = [
     { type: 'text', text: '🏠 下班打卡成功', weight: 'bold', size: 'lg', color: '#3498db' },
     { type: 'text', text: '👤 ' + emp.name + '  ' + emp.employee_no, margin: 'md', size: 'sm', color: '#666666' },
     { type: 'text', text: '⏰ ' + fmt(co), margin: 'md', size: 'xl', weight: 'bold' },
-    { type: 'text', text: '📊 今日工時：約 ' + h + ' 小時', margin: 'sm', size: 'sm' },
+    { type: 'text', text: '📊 總工時：' + rawH + 'h / 淨工時：' + netH + 'h', margin: 'sm', size: 'sm' },
   ];
-  if (co < new Date(ci.getTime() + requiredHours * 3600000)) {
-    contents.push({ type: 'text', text: '⚠️ 工時不足 ' + requiredHours + ' 小時\n請記得申請請假補足時數', margin: 'sm', color: '#f39c12', size: 'sm', wrap: true });
+  if (netH < requiredNetHours) {
+    contents.push({ type: 'text', text: '⚠️ 淨工時不足 ' + requiredNetHours + ' 小時（已扣午休）\n請記得申請請假補足時數', margin: 'sm', color: '#f39c12', size: 'sm', wrap: true });
   }
   if (loc) {
     var locText = '📍 ' + (loc.address || loc.latitude.toFixed(4) + ', ' + loc.longitude.toFixed(4));
@@ -352,8 +355,11 @@ async function doQuery(emp, client, replyToken) {
   punchText += '\n🔴 下班：' + (checkOut ? fmt(new Date(checkOut.check_time)) : '--:--');
   if (checkOut && checkOut.address) punchText += '\n   📍' + checkOut.address;
   if (checkIn && checkOut) {
-    var workH = Math.round(Math.max(0, (new Date(checkOut.check_time) - new Date(checkIn.check_time)) / 3600000) * 10) / 10;
-    punchText += '\n📊 ' + workH + 'h' + (workH < 8 ? ' ⚠️不足8h' : '');
+    var ciDt = new Date(checkIn.check_time), coDt = new Date(checkOut.check_time);
+    var rawWorkH = Math.round(Math.max(0, (coDt - ciDt) / 3600000) * 10) / 10;
+    var lunchDed = (ciDt.getHours() < 12 && coDt.getHours() >= 13) ? 1 : 0;
+    var workH = Math.round((rawWorkH - lunchDed) * 10) / 10;
+    punchText += '\n📊 淨工時 ' + workH + 'h' + (workH < 8 ? ' ⚠️不足8h' : '');
   }
   contents.push({ type: 'text', text: punchText, margin: 'md', size: 'sm', wrap: true });
 
@@ -599,17 +605,6 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (new Date(dt) < new Date(state.startDateTime)) {
       states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('❌ 結束時間必須在開始時間之後')]);
-    }
-    // 檢查請假日期是否與已打卡記錄重複
-    var leaveStartDate = state.startDateTime.indexOf(' ') !== -1 ? state.startDateTime.split(' ')[0] : state.startDateTime.split('T')[0];
-    var leaveEndDate = dt.indexOf(' ') !== -1 ? dt.split(' ')[0] : dt.split('T')[0];
-    var leaveEmp = await db.getEmployeeByLineId(uid);
-    if (leaveEmp) {
-      var overlapCheckins = await db.queryCheckins(leaveEmp.id, leaveStartDate, leaveEndDate, 100, 0);
-      if (overlapCheckins.length > 0) {
-        states.delete(uid);
-        return client.replyMessage(replyToken, [withMenu('❌ ' + leaveStartDate + ' ~ ' + leaveEndDate + ' 期間已有打卡記錄\n\n請先刪除打卡記錄，或使用「補打卡」功能')]);
-      }
     }
     state.endDateTime = dt; state.step = 'reason';
     var hours = leaveHours(state.startDateTime, dt);

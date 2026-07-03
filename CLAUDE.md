@@ -127,6 +127,23 @@ src/
 - 若該階無簽核人 → 直接核准（final）
 - `can_approve` 為全體簽核權限；指定簽核人只看自己負責的員工
 
+### 角色系統
+- 四種角色：`員工`（一般員工）、`簽核人員`、`經理`、`老闆`
+- 老闆不打卡、不列入考勤統計與日報
+- `listAttendanceEmployees()` 排除老闆，用於打卡/報表/統計
+- Rich Menu：一般員工 6 格（3×2），經理/老闆/簽核人員 8 格（4×2，多「查詢當日請假人員」「查詢當日遲到人員」）
+- 查詢權限：經理/老闆可查全體，簽核人員只查自己簽核的員工（L1/L2/L3）
+- `getDesignatedEmployeeIds(approverId)` — 查詢該簽核人員負責的員工清單
+- Quick Reply 不再顯示 GPS 定位按鈕，僅子選項流程才出現對應按鈕
+- 核准/駁回按鈕僅簽核人員/經理角色可見
+
+### Rich Menu 雙版本
+- `setupRichMenu()` 同時建立 6 格（預設）和 8 格（主管）兩組 Rich Menu
+- `assignRichMenu(uid, role)` 在 follow 事件或綁定時為主管角色連結 8 格選單
+- 一般員工使用預設 6 格選單
+- `makePng()` — 6 格 PNG，`makePng8()` — 8 格 PNG
+- `/admin/richmenu-preview` — 僅預覽 6 格，8 格需另加 ?type=8 參數
+
 ### Edit 工具注意
 - 檔案使用 tab 縮排，Edit 需精確匹配 tab
 - 複雜多行替換建議用 Python 腳本處理

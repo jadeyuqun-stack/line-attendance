@@ -94,7 +94,7 @@ async function doSendReport(client) {
     var s = await db.getTodaySummary();
 
     // 取得所有在職員工
-    var allEmps = await db.listActiveEmployees();
+    var allEmps = await db.listAttendanceEmployees();
 
     // 取得今日打卡記錄
     var records = await db.queryCheckins(null, todayStr, todayStr, 500, 0);

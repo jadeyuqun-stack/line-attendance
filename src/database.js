@@ -177,6 +177,19 @@ async function listActiveEmployees() {
   const { rows } = await pool.query("SELECT * FROM employees WHERE status='active' ORDER BY employee_no");
   return rows;
 }
+// 考勤用：排除老闆（老闆不打卡、不列入統計）
+async function listAttendanceEmployees() {
+  const { rows } = await pool.query("SELECT * FROM employees WHERE status='active' AND (role IS NULL OR role NOT IN ('老闆','boss')) ORDER BY employee_no");
+  return rows;
+}
+// 取得簽核人員負責的員工（L1/L2/L3 任一級）
+async function getDesignatedEmployeeIds(approverId) {
+  const { rows } = await pool.query(
+    "SELECT id, name, employee_no, department FROM employees WHERE status='active' AND (approver_id=$1 OR approver2_id=$1 OR approver3_id=$1) ORDER BY employee_no",
+    [approverId]
+  );
+  return rows;
+}
 async function createEmployee(no, name, dept, role, canApprove) {
   try {
     // 先檢查是否有 inactive 的同編號員工 → 復原
@@ -286,7 +299,7 @@ async function getCheckinSummary(start, end) {
     FROM employees e
     CROSS JOIN generate_series($1::date, $2::date, '1 day'::interval) AS d(work_date)
     LEFT JOIN checkins c ON c.employee_id = e.id AND c.check_time::date = d.work_date
-    WHERE e.status = 'active'
+    WHERE e.status = 'active' AND (e.role IS NULL OR e.role NOT IN ('老闆','boss'))
     GROUP BY e.id, e.employee_no, e.name, e.department, d.work_date
     ORDER BY e.employee_no, d.work_date`;
   var { rows } = await pool.query(sql, [start, end]);
@@ -294,7 +307,7 @@ async function getCheckinSummary(start, end) {
 }
 
 async function getTodaySummary() {
-  const { rows: r1 } = await pool.query("SELECT COUNT(*)::int AS total FROM employees WHERE status='active'");
+  const { rows: r1 } = await pool.query("SELECT COUNT(*)::int AS total FROM employees WHERE status='active' AND (role IS NULL OR role NOT IN ('老闆','boss'))");
   const { rows: r2 } = await pool.query("SELECT COUNT(DISTINCT employee_id)::int AS ci FROM checkins WHERE check_time::date=CURRENT_DATE AND type='check_in'");
   const { rows: r3 } = await pool.query("SELECT COUNT(DISTINCT employee_id)::int AS co FROM checkins WHERE check_time::date=CURRENT_DATE AND type='check_out'");
   return {
@@ -528,7 +541,7 @@ async function getEmployeeOvertimeRequests(employeeId, status, limit) {
 module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
-  listActiveEmployees, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, hardDeleteEmployee, updateEmployee,
+  listActiveEmployees, listAttendanceEmployees, getDesignatedEmployeeIds, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, hardDeleteEmployee, updateEmployee,
   recordCheckin, getTodayCheckins, queryCheckins, getCheckinSummary, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, deleteLeaveRequest, getEmployeeById, findApprovers, setApprover, listApprovers,

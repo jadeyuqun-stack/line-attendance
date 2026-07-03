@@ -101,7 +101,7 @@ async function main() {
         html += '<p style="color:#e74c3c;margin-top:16px">⚠️ 如 Rich Menu 未顯示，請檢查：<br>';
         html += '1. <a href="https://manager.line.biz/" target="_blank">LINE Official Account Manager</a> → 設定 → 回訊設定 → 啟用 <b>圖文選單</b><br>';
         html += '2. 重新加入好友或關閉重開 LINE 聊天室<br>';
-        html += '3. <a href="/admin/richmenu-preview" target="_blank">📷 預覽 Rich Menu 圖片</a>（確認圖片正常）</p>';
+        html += '3. <a href="/admin/richmenu-preview" target="_blank">📷 預覽 6 格 Rich Menu</a> | <a href="/admin/richmenu-preview?type=8" target="_blank">📷 預覽 8 格 Rich Menu</a></p>';
         html += '<p><a href="/admin/setup-richmenu">🔄 重新建立 Rich Menu</a> | <a href="/admin/setup-richmenu?check=1">🔍 重新診斷</a></p>';
         return res.send(html);
       }
@@ -114,14 +114,15 @@ async function main() {
       }
       if (result.richMenuId) {
         var html2 = '<h2>✅ Rich Menu 建立成功</h2>';
-        html2 += '<p>Rich Menu ID: <code>' + result.richMenuId + '</code></p>';
-        html2 += '<p style="color:#27ae60">✔ 圖片上傳完成<br>✔ 已設為所有用戶預設</p>';
+        html2 += '<p>6 格選單（預設）: <code>' + result.richMenuId + '</code></p>';
+        if (result.menu8Id) html2 += '<p>8 格選單（主管）: <code>' + result.menu8Id + '</code></p>';
+        html2 += '<p style="color:#27ae60">✔ 圖片上傳完成<br>✔ 6 格已設為所有用戶預設<br>✔ 主管角色將自動連結 8 格選單</p>';
         html2 += '<p>🔍 <b>若 LINE 仍未顯示：</b></p>';
         html2 += '<ol style="color:#e74c3c">';
         html2 += '<li>關閉 LINE 聊天室 → 重新打開（必要！）</li>';
         html2 += '<li>確認已加 Bot 為好友</li>';
         html2 += '<li>前往 <a href="https://manager.line.biz/" target="_blank">LINE Official Account Manager</a> → 設定 → 回訊設定 → 確認 <b>圖文選單</b> 已啟用</li>';
-        html2 += '<li><a href="/admin/richmenu-preview" target="_blank">📷 預覽 Rich Menu 圖片</a>（確認圖片正常）</li>';
+        html2 += '<li><a href="/admin/richmenu-preview" target="_blank">📷 預覽 6 格 Rich Menu</a> | <a href="/admin/richmenu-preview?type=8" target="_blank">📷 預覽 8 格 Rich Menu</a></li>';
         html2 += '</ol>';
         html2 += '<p><a href="/admin/setup-richmenu?check=1">🔍 診斷 Rich Menu 狀態</a></p>';
         res.send(html2);
@@ -134,11 +135,12 @@ async function main() {
   });
 
   // Rich Menu PNG 預覽
-  app.get('/admin/richmenu-preview', async (_, res) => {
+  app.get('/admin/richmenu-preview', async (req, res) => {
     try {
-      var png = bot.makePng();
+      var is8 = req.query.type === '8';
+      var png = is8 ? bot.makePng8() : bot.makePng();
       res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Content-Disposition', 'inline; filename=richmenu.png');
+      res.setHeader('Content-Disposition', 'inline; filename=richmenu' + (is8 ? '8' : '') + '.png');
       res.end(png);
     } catch (e) {
       res.status(500).send('PNG 產生失敗: ' + e.message);

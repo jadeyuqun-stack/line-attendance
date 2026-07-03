@@ -30,7 +30,7 @@ async function initFont() {
 		}
 
 		// 從 Google Fonts 下載子集（只含需要的 16 個字）
-		var text = '上班下班查詢請假加班補打卡核准全部駁回';
+		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢當日遲到人員';
 		var cssUrl = 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700&text=' + encodeURIComponent(text);
 
 		console.log('[Font] 下載字型...');
@@ -71,29 +71,27 @@ async function initFont() {
 	}
 }
 
-const GPS_BUTTONS = {
-  items: [
-    { type: 'action', action: { type: 'location', label: '📍 上班打卡' } },
-    { type: 'action', action: { type: 'location', label: '📍 下班打卡' } },
-  ]
-};
+const GPS_BUTTONS = { items: [] };
 const APPROVER_BUTTONS = {
   items: [
-    { type: 'action', action: { type: 'location', label: '📍 上班打卡' } },
-    { type: 'action', action: { type: 'location', label: '📍 下班打卡' } },
     { type: 'action', action: { type: 'message', label: '✅ 核准全部', text: '核准全部' } },
     { type: 'action', action: { type: 'message', label: '❌ 駁回全部', text: '駁回全部' } },
   ]
 };
 
-function getMenu(emp) { return (emp && emp.can_approve) ? APPROVER_BUTTONS : GPS_BUTTONS; }
+function getMenu(emp) {
+  if (!emp) return GPS_BUTTONS;
+  var role = emp.role || '';
+  if (role === '老闆' || role === 'boss') return GPS_BUTTONS;
+  if (role === '簽核人員' || role === '經理' || emp.can_approve) return APPROVER_BUTTONS;
+  return GPS_BUTTONS;
+}
 function withMenu(text, emp) { return { type: 'text', text: text, quickReply: emp ? getMenu(emp) : GPS_BUTTONS }; }
 // 文字 + 選單 + 日期時間選擇器（保留選單按鈕）
 function withDatePicker(text, data) {
-  var items = [];
-  items.push({ type: 'action', action: { type: 'datetimepicker', label: '📅 點我選日期時間', data: data, mode: 'datetime' } });
-  items = items.concat(GPS_BUTTONS.items);
-  return { type: 'text', text: text, quickReply: { items: items } };
+  return { type: 'text', text: text, quickReply: { items: [
+    { type: 'action', action: { type: 'datetimepicker', label: '📅 點我選日期時間', data: data, mode: 'datetime' } }
+  ]}};
 }
 
 async function handleEvents(events, client) {
@@ -105,9 +103,10 @@ async function handleEvents(events, client) {
       if (evt.type === 'follow') {
         const emp = await db.getEmployeeByLineId(uid);
         if (emp) {
-          await client.pushMessage(uid, [withMenu('歡迎回來，' + emp.name + '！🎉\n\n📍 傳送位置訊息 → GPS 打卡\n💬 下方選單可直接點選')]);
+          assignRichMenu(uid, emp.role).catch(function(e2) { console.error('[RichMenu] assign error:', e2.message); });
+          await client.pushMessage(uid, [withMenu('歡迎回來，' + emp.name + '！🎉\n\n📋 下方圖文選單可直接點選操作')]);
         } else {
-          await client.pushMessage(uid, [{ type: 'text', text: '👋 歡迎使用公司打卡系統！\n\n🔹 請輸入「員工編號」綁定帳號\n🔹 或輸入「我的ID」取得 LINE ID\n\n📌 請洽管理員取得員工編號', quickReply: GPS_BUTTONS }]);
+          await client.pushMessage(uid, [{ type: 'text', text: '👋 歡迎使用公司打卡系統！\n\n🔹 請輸入「員工編號」綁定帳號\n🔹 或輸入「我的ID」取得 LINE ID\n\n📌 請洽管理員取得員工編號' }]);
         }
       }
       if (evt.type === 'message' && evt.message) {
@@ -131,15 +130,20 @@ async function handleText(text, uid, client, replyToken) {
     let name = '';
     try { const p = await client.getProfile(uid); name = p.displayName; } catch (e) {}
     const ok = await db.bindLineUser(cmd, uid, name);
-    return client.replyMessage(replyToken, [withMenu(ok
-      ? '✅ 綁定成功！歡迎，' + (name || cmd) + '\n\n📍 傳送位置訊息 → GPS 打卡\n💬 下方選單可直接點選'
-      : '❌ 找不到員工編號「' + cmd + '」\n\n🆔 輸入「我的ID」取得 LINE ID 洽管理員')]);
+    if (ok) {
+      var newEmp = await db.getEmployeeByLineId(uid);
+      if (newEmp) assignRichMenu(uid, newEmp.role).catch(function(e2) {});
+      return client.replyMessage(replyToken, [withMenu('✅ 綁定成功！歡迎，' + (name || cmd) + '\n\n📋 下方圖文選單可直接點選操作')]);
+    }
+    return client.replyMessage(replyToken, [withMenu('❌ 找不到員工編號「' + cmd + '」\n\n🆔 輸入「我的ID」取得 LINE ID 洽管理員')]);
   }
 
   if (cmd === '我的ID' || cmd.toLowerCase() === 'my id') {
     return client.replyMessage(replyToken, [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
+  if (cmd === '查詢當日請假人員') return queryTodayLeaves(emp, client, replyToken);
+  if (cmd === '查詢當日遲到人員') return queryTodayLates(emp, client, replyToken);
   if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken);
   if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, 'leave');
@@ -226,6 +230,7 @@ async function handleLocation(msg, uid, client, replyToken) {
 
 // ===== Check-in Flex =====
 async function doCheckIn(emp, client, replyToken, loc, gps) {
+  if (emp.role === '老闆' || emp.role === 'boss') return client.replyMessage(replyToken, [{ type: 'text', text: '您不需要打卡。' }]);
   const today = await db.getTodayCheckins(emp.id);
   if (today.some(r => r.type === 'check_in')) {
     return client.replyMessage(replyToken, [withMenu('⚠️ 今天已上班打卡')]);
@@ -256,6 +261,7 @@ async function doCheckIn(emp, client, replyToken, loc, gps) {
 }
 
 async function doCheckOut(emp, client, replyToken, loc, gps) {
+  if (emp.role === '老闆' || emp.role === 'boss') return client.replyMessage(replyToken, [{ type: 'text', text: '您不需要打卡。' }]);
   const today = await db.getTodayCheckins(emp.id);
   if (!today.some(r => r.type === 'check_in')) return client.replyMessage(replyToken, [withMenu('⚠️ 尚未上班打卡')]);
   if (today.some(r => r.type === 'check_out')) return client.replyMessage(replyToken, [withMenu('⚠️ 今天已下班打卡')]);
@@ -744,9 +750,9 @@ async function setupRichMenu() {
 			await fetch('https://api.line.me/v2/bot/richmenu/' + rm.richMenuId, { method: 'DELETE', headers });
 		}
 
-		// Step 2: 建立新 Rich Menu
-		var menu = {
-			size: { width: 2500, height: 843 }, selected: true, name: '主選單', chatBarText: '📋 點此開啟功能選單',
+		// ===== Menu A: 6 格（一般員工預設） =====
+		var menu6 = {
+			size: { width: 2500, height: 843 }, selected: true, name: '一般員工選單', chatBarText: '📋 點此開啟功能選單',
 			areas: [
 				{ bounds: { x: 0, y: 0, width: 833, height: 421 }, action: { type: 'message', text: '上班' } },
 				{ bounds: { x: 833, y: 0, width: 834, height: 421 }, action: { type: 'message', text: '下班' } },
@@ -756,41 +762,83 @@ async function setupRichMenu() {
 				{ bounds: { x: 1667, y: 421, width: 833, height: 422 }, action: { type: 'message', text: '補打卡' } },
 			]
 		};
-		var res1 = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu) });
-		var data = await res1.json();
-		if (!data || !data.richMenuId) {
-			console.error('[RichMenu] 建立失敗:', JSON.stringify(data));
-			return { error: '建立失敗: ' + JSON.stringify(data) };
+		var res6a = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu6) });
+		var data6 = await res6a.json();
+		if (!data6 || !data6.richMenuId) {
+			console.error('[RichMenu] 6格建立失敗:', JSON.stringify(data6));
+			return { error: '6格選單建立失敗: ' + JSON.stringify(data6) };
 		}
-		console.log('[RichMenu] 建立成功:', data.richMenuId);
+		var menu6Id = data6.richMenuId;
+		console.log('[RichMenu] 6格選單建立成功:', menu6Id);
 
-		// Step 3: 上傳圖片
-		var png = makePng();
-		console.log('[RichMenu] PNG 大小:', png.length, 'bytes');
-		var res2 = await fetch('https://api-data.line.me/v2/bot/richmenu/' + data.richMenuId + '/content', {
+		// 上傳 6 格圖片
+		var png6 = makePng();
+		console.log('[RichMenu] 6格PNG大小:', png6.length, 'bytes');
+		var res6b = await fetch('https://api-data.line.me/v2/bot/richmenu/' + menu6Id + '/content', {
 			method: 'POST',
 			headers: { 'Content-Type': 'image/png', 'Authorization': 'Bearer ' + token },
-			body: png
+			body: png6
 		});
-		if (res2.status !== 200) {
-			var err2 = await res2.text();
-			console.error('[RichMenu] 圖片上傳失敗:', res2.status, err2);
-			// 刪除已建立的 Rich Menu
-			await fetch('https://api.line.me/v2/bot/richmenu/' + data.richMenuId, { method: 'DELETE', headers });
-			return { error: '圖片上傳失敗 HTTP ' + res2.status + ': ' + err2 };
+		if (res6b.status !== 200) {
+			var err6 = await res6b.text();
+			console.error('[RichMenu] 6格圖片上傳失敗:', res6b.status, err6);
+			await fetch('https://api.line.me/v2/bot/richmenu/' + menu6Id, { method: 'DELETE', headers });
+			return { error: '6格圖片上傳失敗 HTTP ' + res6b.status + ': ' + err6 };
 		}
-		console.log('[RichMenu] 圖片上傳成功');
+		console.log('[RichMenu] 6格圖片上傳成功');
 
-		// Step 4: 設為所有用戶預設
-		var res3 = await fetch('https://api.line.me/v2/bot/user/all/richmenu/' + data.richMenuId, { method: 'POST', headers });
-		if (res3.status !== 200) {
-			var err3 = await res3.text();
-			console.error('[RichMenu] 設定預設失敗:', res3.status, err3);
-			return { error: '設定預設失敗 HTTP ' + res3.status + ': ' + err3, richMenuId: data.richMenuId };
+		// 設為所有用戶預設
+		var res6c = await fetch('https://api.line.me/v2/bot/user/all/richmenu/' + menu6Id, { method: 'POST', headers });
+		if (res6c.status !== 200) {
+			var err6c = await res6c.text();
+			console.error('[RichMenu] 6格設定預設失敗:', res6c.status, err6c);
+			return { error: '6格設定預設失敗 HTTP ' + res6c.status + ': ' + err6c, richMenuId: menu6Id };
 		}
-		console.log('[RichMenu] 已設為所有用戶預設');
+		console.log('[RichMenu] 6格已設為所有用戶預設');
 
-		return { richMenuId: data.richMenuId };
+		// ===== Menu B: 8 格（經理/老闆/簽核人員） =====
+		var menu8 = {
+			size: { width: 2500, height: 843 }, selected: false, name: '主管選單', chatBarText: '📋 點此開啟功能選單',
+			areas: [
+				{ bounds: { x: 0, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '上班' } },
+				{ bounds: { x: 625, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '下班' } },
+				{ bounds: { x: 1250, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '查詢' } },
+				{ bounds: { x: 1875, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '請假' } },
+				{ bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
+				{ bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '補打卡' } },
+				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日請假人員' } },
+				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日遲到人員' } },
+			]
+		};
+		var res8a = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu8) });
+		var data8 = await res8a.json();
+		if (!data8 || !data8.richMenuId) {
+			console.error('[RichMenu] 8格建立失敗:', JSON.stringify(data8));
+			// 6格已成功，8格失敗仍可繼續
+			return { richMenuId: menu6Id, error: '8格選單建立失敗: ' + JSON.stringify(data8) };
+		}
+		var menu8Id = data8.richMenuId;
+		_richMenuId8 = menu8Id;
+		console.log('[RichMenu] 8格選單建立成功:', menu8Id);
+
+		// 上傳 8 格圖片
+		var png8 = makePng8();
+		console.log('[RichMenu] 8格PNG大小:', png8.length, 'bytes');
+		var res8b = await fetch('https://api-data.line.me/v2/bot/richmenu/' + menu8Id + '/content', {
+			method: 'POST',
+			headers: { 'Content-Type': 'image/png', 'Authorization': 'Bearer ' + token },
+			body: png8
+		});
+		if (res8b.status !== 200) {
+			var err8 = await res8b.text();
+			console.error('[RichMenu] 8格圖片上傳失敗:', res8b.status, err8);
+			await fetch('https://api.line.me/v2/bot/richmenu/' + menu8Id, { method: 'DELETE', headers });
+			_richMenuId8 = null;
+			return { richMenuId: menu6Id, error: '8格圖片上傳失敗 HTTP ' + res8b.status + ': ' + err8 };
+		}
+		console.log('[RichMenu] 8格圖片上傳成功');
+
+		return { richMenuId: menu6Id, menu8Id: menu8Id };
 	} catch (e) {
 		console.error('[RichMenu] error:', e.message);
 		return { error: e.message };
@@ -975,4 +1023,338 @@ function checkLate(now) {
   return Math.max(0, now.getHours() * 60 + now.getMinutes() - (parseInt(process.env.WORK_START_HOUR || '8') * 60 + parseInt(process.env.LATE_BUFFER_MINUTES || '30')));
 }
 
-module.exports = { handleEvents, setupRichMenu, makePng, initFont };
+// 儲存 8 格 Rich Menu ID（供 assignRichMenu 使用）
+var _richMenuId8 = null;
+
+// 角色是否可查詢全體（經理/老闆）
+function canQueryAll(emp) {
+  var role = emp.role || '';
+  return role === '經理' || role === '老闆' || role === 'boss';
+}
+
+// 角色是否為簽核人員（只能查自己簽核的員工）
+function isApproverRole(emp) {
+  var role = emp.role || '';
+  return role === '簽核人員';
+}
+
+// 查詢當日請假人員
+async function queryTodayLeaves(emp, client, replyToken) {
+  var role = emp.role || '';
+  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && !emp.can_approve) {
+    return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
+  }
+
+  // 取得今日所有已核准請假
+  var today = new Date().toISOString().split('T')[0];
+  var allLeaves = await db.getLeaveRequests('approved', 500);
+
+  // 篩選出今日請假（start_date <= today <= end_date）
+  var todayLeaves = [];
+  for (var i = 0; i < allLeaves.length; i++) {
+    var l = allLeaves[i];
+    if (l.start_date && l.end_date) {
+      var s = typeof l.start_date === 'string' ? l.start_date.split('T')[0] : '';
+      var e = typeof l.end_date === 'string' ? l.end_date.split('T')[0] : '';
+      if (s <= today && e >= today) {
+        todayLeaves.push(l);
+      }
+    }
+  }
+
+  // 簽核人員只顯示自己簽核的員工
+  if (isApproverRole(emp) && !canQueryAll(emp)) {
+    var designated = await db.getDesignatedEmployeeIds(emp.id);
+    var designatedIds = {};
+    for (var d = 0; d < designated.length; d++) {
+      designatedIds[designated[d].id] = true;
+    }
+    todayLeaves = todayLeaves.filter(function(l) { return designatedIds[l.employee_id]; });
+  }
+
+  if (todayLeaves.length === 0) {
+    return client.replyMessage(replyToken, [withMenu('📋 今日無請假人員')]);
+  }
+
+  // 取得員工姓名
+  var empMap = {};
+  var lines = [];
+  for (var j = 0; j < todayLeaves.length; j++) {
+    var lv = todayLeaves[j];
+    if (!empMap[lv.employee_id]) {
+      var e = await db.getEmployeeById(lv.employee_id);
+      empMap[lv.employee_id] = e;
+    }
+    var e2 = empMap[lv.employee_id];
+    var leaveType = lv.leave_type || '請假';
+    lines.push((e2 ? e2.name + '（' + e2.employee_no + '）' : '員工#' + lv.employee_id) + ' ' + leaveType);
+  }
+
+  return client.replyMessage(replyToken, [withMenu('📋 今日請假人員（' + todayLeaves.length + ' 人）\n\n' + lines.join('\n'))]);
+}
+
+// 查詢當日遲到人員
+async function queryTodayLates(emp, client, replyToken) {
+  var role = emp.role || '';
+  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && !emp.can_approve) {
+    return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
+  }
+
+  var today = new Date().toISOString().split('T')[0];
+  var lateMin = parseInt(await db.getSetting('late_buffer_minutes') || process.env.LATE_BUFFER_MINUTES || '30');
+  var startH = parseInt(await db.getSetting('work_start_hour') || process.env.WORK_START_HOUR || '8');
+  var startM = parseInt(await db.getSetting('work_start_minute') || '0');
+  var lateThreshold = startH * 60 + startM + lateMin;
+
+  // 取得今日所有上班打卡
+  var allCheckins = await db.queryCheckins(null, today, today, 2000, 0);
+
+  // 遲到判斷
+  var lateEmployees = [];
+  var seen = {};
+  for (var i = 0; i < allCheckins.length; i++) {
+    var c = allCheckins[i];
+    if (c.type !== 'check_in') continue;
+    if (seen[c.employee_id]) continue;
+    seen[c.employee_id] = true;
+    var ct = new Date(c.check_time);
+    var totalMin = ct.getHours() * 60 + ct.getMinutes();
+    if (totalMin > lateThreshold) {
+      lateEmployees.push({ employee_id: c.employee_id, check_time: ct, late_min: totalMin - lateThreshold });
+    }
+  }
+
+  // 簽核人員只顯示自己簽核的員工
+  if (isApproverRole(emp) && !canQueryAll(emp)) {
+    var designated = await db.getDesignatedEmployeeIds(emp.id);
+    var designatedIds = {};
+    for (var d = 0; d < designated.length; d++) {
+      designatedIds[designated[d].id] = true;
+    }
+    lateEmployees = lateEmployees.filter(function(l) { return designatedIds[l.employee_id]; });
+  }
+
+  if (lateEmployees.length === 0) {
+    return client.replyMessage(replyToken, [withMenu('✅ 今日無遲到人員')]);
+  }
+
+  var lines = [];
+  for (var k = 0; k < lateEmployees.length; k++) {
+    var le = lateEmployees[k];
+    var e3 = await db.getEmployeeById(le.employee_id);
+    var t = le.check_time;
+    var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+    lines.push((e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
+  }
+
+  return client.replyMessage(replyToken, [withMenu('⚠️ 今日遲到人員（' + lateEmployees.length + ' 人）\n\n' + lines.join('\n'))]);
+}
+
+// 為使用者連結 8 格 Rich Menu
+async function assignRichMenu(uid, role, token) {
+  if (!_richMenuId8) return false;
+  try {
+    var t = token || process.env.LINE_CHANNEL_ACCESS_TOKEN;
+    var headers = { 'Authorization': 'Bearer ' + t };
+    if (role === '經理' || role === '老闆' || role === 'boss' || role === '簽核人員') {
+      // 連結 8 格選單
+      var res = await fetch('https://api.line.me/v2/bot/user/' + uid + '/richmenu/' + _richMenuId8, { method: 'POST', headers });
+      console.log('[RichMenu] assign 8-btn to', uid, 'role:', role, 'status:', res.status);
+      return res.status === 200;
+    } else {
+      // 一般員工：取消個人選單，使用預設 6 格
+      var res2 = await fetch('https://api.line.me/v2/bot/user/' + uid + '/richmenu', { method: 'DELETE', headers });
+      console.log('[RichMenu] unlink personal menu for', uid, 'status:', res2.status);
+      return true;
+    }
+  } catch (e) {
+    console.error('[RichMenu] assign error:', e.message);
+    return false;
+  }
+}
+
+// 8 格 Rich Menu PNG（4×2）
+function makePng8() {
+  var canvasLib;
+  try {
+    canvasLib = require('canvas');
+  } catch (e) {
+    return makeSimplePng8();
+  }
+
+  var w = 2500, h = 843;
+  var cv = canvasLib.createCanvas(w, h);
+  var ctx = cv.getContext('2d');
+
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(0, 0, w, h);
+
+  var areas = [
+    { x: 0, y: 0, w: 625, h: 421, color: '#06C755', label: '上班' },
+    { x: 625, y: 0, w: 625, h: 421, color: '#F39C12', label: '下班' },
+    { x: 1250, y: 0, w: 625, h: 421, color: '#3498DB', label: '查詢' },
+    { x: 1875, y: 0, w: 625, h: 421, color: '#1ABC9C', label: '請假' },
+    { x: 0, y: 421, w: 625, h: 422, color: '#9B59B6', label: '加班' },
+    { x: 625, y: 421, w: 625, h: 422, color: '#34495E', label: '補打卡' },
+    { x: 1250, y: 421, w: 625, h: 422, color: '#E67E22', label: '查詢請假' },
+    { x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '查詢遲到' },
+  ];
+
+  var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
+
+  for (var i = 0; i < areas.length; i++) {
+    var a = areas[i];
+    var cx = a.x + a.w / 2;
+
+    ctx.fillStyle = a.color;
+    ctx.fillRect(a.x, a.y, a.w, a.h);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    var label = a.label;
+    if (label.length <= 2) {
+      ctx.font = 'bold 60px ' + fontFamily;
+    } else if (label.length === 3) {
+      ctx.font = 'bold 50px ' + fontFamily;
+    } else {
+      ctx.font = 'bold 42px ' + fontFamily;
+    }
+    ctx.fillText(label, cx, a.y + a.h * 0.42);
+
+    // 簡化圖示
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    var iy = a.y + a.h * 0.78;
+
+    switch (i) {
+      case 0: // 上班
+        ctx.moveTo(cx, iy + 22);
+        ctx.lineTo(cx, iy - 22);
+        ctx.moveTo(cx - 22, iy - 4);
+        ctx.lineTo(cx, iy - 22);
+        ctx.lineTo(cx + 22, iy - 4);
+        break;
+      case 1: // 下班
+        ctx.moveTo(cx, iy - 22);
+        ctx.lineTo(cx, iy + 22);
+        ctx.moveTo(cx - 22, iy + 4);
+        ctx.lineTo(cx, iy + 22);
+        ctx.lineTo(cx + 22, iy + 4);
+        break;
+      case 2: // 查詢
+        ctx.arc(cx - 3, iy - 3, 18, 0, Math.PI * 2);
+        ctx.moveTo(cx + 10, iy + 10);
+        ctx.lineTo(cx + 30, iy + 30);
+        break;
+      case 3: case 4: // 請假/加班
+        ctx.rect(cx - 24, iy - 28, 48, 56);
+        ctx.moveTo(cx - 12, iy - 8);
+        ctx.lineTo(cx - 12, iy + 6);
+        ctx.moveTo(cx, iy - 8);
+        ctx.lineTo(cx, iy + 6);
+        ctx.moveTo(cx + 12, iy - 8);
+        ctx.lineTo(cx + 12, iy + 6);
+        break;
+      case 5: // 補打卡
+        ctx.moveTo(cx - 14, iy - 28);
+        ctx.lineTo(cx + 6, iy - 8);
+        ctx.lineTo(cx + 20, iy + 8);
+        ctx.moveTo(cx + 6, iy - 8);
+        ctx.lineTo(cx - 6, iy + 22);
+        break;
+      case 6: // 查詢請假
+        ctx.rect(cx - 20, iy - 26, 40, 52);
+        ctx.moveTo(cx - 8, iy - 8);
+        ctx.lineTo(cx + 10, iy - 8);
+        ctx.moveTo(cx - 8, iy + 2);
+        ctx.lineTo(cx + 10, iy + 2);
+        ctx.moveTo(cx - 8, iy + 12);
+        ctx.lineTo(cx + 10, iy + 12);
+        break;
+      case 7: // 查詢遲到
+        ctx.arc(cx, iy, 24, 0, Math.PI * 2);
+        ctx.moveTo(cx, iy);
+        ctx.lineTo(cx, iy - 16);
+        ctx.moveTo(cx, iy);
+        ctx.lineTo(cx + 13, iy);
+        ctx.moveTo(cx, iy + 24);
+        ctx.lineTo(cx - 6, iy + 16);
+        ctx.lineTo(cx + 6, iy + 16);
+        break;
+    }
+    ctx.stroke();
+  }
+
+  return cv.toBuffer('image/png');
+}
+
+// 8 格備用 PNG
+function makeSimplePng8() {
+  var zlib = require('zlib');
+  var w = 2500, h = 843;
+  var d = Buffer.alloc(h * (1 + w * 4));
+  for (var y = 0; y < h; y++) {
+    var ro = y * (1 + w * 4);
+    d[ro] = 0;
+    for (var x = 0; x < w; x++) {
+      var o = ro + 1 + x * 4;
+      d[o] = 255; d[o+1] = 255; d[o+2] = 255; d[o+3] = 255;
+    }
+  }
+  function p(x, y, r, g, b) {
+    if (x < 0 || x >= w || y < 0 || y >= h) return;
+    var o = y * (1 + w * 4) + 1 + x * 4;
+    d[o] = r; d[o+1] = g; d[o+2] = b; d[o+3] = 255;
+  }
+  function fr(x, y, w2, h2, r, g, b) {
+    for (var yy = y; yy < y + h2; yy++)
+      for (var xx = x; xx < x + w2; xx++)
+        p(xx, yy, r, g, b);
+  }
+  var colors = [
+    [6, 199, 85], [243, 156, 18], [52, 152, 219], [26, 188, 156],
+    [155, 89, 182], [52, 73, 94], [230, 126, 34], [231, 76, 60]
+  ];
+  for (var i = 0; i < 8; i++) {
+    var col = i % 4, row = Math.floor(i / 4);
+    var bx = col * 625;
+    var bw = 625;
+    var by = row < 1 ? 0 : 421;
+    var bh = row < 1 ? 421 : 422;
+    fr(bx, by, bw, bh, colors[i][0], colors[i][1], colors[i][2]);
+  }
+  var deflated = zlib.deflateSync(d);
+  function crc(b) {
+    var c = 0xffffffff;
+    var t = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var cc = n;
+      for (var k = 0; k < 8; k++) cc = cc & 1 ? 0xedb88320 ^ (cc >>> 1) : cc >>> 1;
+      t[n] = cc;
+    }
+    for (var i2 = 0; i2 < b.length; i2++) c = t[(c ^ b[i2]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function ch(type, dd) {
+    var l = Buffer.alloc(4);
+    l.writeUInt32BE(dd.length);
+    var tt = Buffer.from(type), a = Buffer.concat([l, tt, dd]);
+    var cc = Buffer.alloc(4);
+    cc.writeUInt32BE(crc(Buffer.concat([tt, dd])));
+    return Buffer.concat([a, cc]);
+  }
+  var sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  var ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([sig, ch('IHDR', ihdr), ch('IDAT', deflated), ch('IEND', Buffer.alloc(0))]);
+}
+
+module.exports = { handleEvents, setupRichMenu, makePng, makePng8, assignRichMenu, initFont };

@@ -203,7 +203,7 @@ router.get('/records', auth, async (req, res) => {
     endDate = y + '-' + String(m).padStart(2,'0') + '-' + lastDay;
   }
   var records = await db.queryCheckins(eid, startDate, endDate, 2000, 0);
-  var emps = await db.listActiveEmployees();
+  var emps = await db.listAttendanceEmployees();
   var leaves = await db.getLeaveRequests('approved', 500);
   var missedPunches = await db.getMissedPunches('approved', 500);
   var empMap = {};
@@ -389,7 +389,7 @@ router.get('/employees', auth, async (_, res) => {
     + '<div><label>員工編號</label><input id="no" required></div>'
     + '<div><label>姓名</label><input id="ename" required></div>'
     + '<div><label>部門</label><input id="dept"></div>'
-    + '<div><label>角色</label><input id="role" placeholder="例：主管"></div>'
+    + '<div><label>角色</label><select id="role"><option value="員工">一般員工</option><option value="簽核人員">簽核人員</option><option value="經理">經理</option><option value="老闆">老闆</option></select></div>'
     + '<div style="align-items:center;flex-direction:row;gap:6px"><input type="checkbox" id="canApprove" style="width:16px;height:16px"><label for="canApprove" style="margin:0">簽核人</label></div>'
     + '<button type="submit" class="btn">新增</button></form></div>'
     + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>L3簽核</th><th>操作</th></tr>'+(rows||'<tr><td colspan="10">尚無員工</td></tr>')+'</table></div>'
@@ -642,7 +642,7 @@ function jsLib() {
     + 'function closeModal(){document.getElementById("modal").style.display="none";}'
     + 'async function saveLine(){var val=document.getElementById("lineIdInput").value.trim();var r=await fetch("/admin/api/employees/"+editId+"/lineid",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({line_user_id:val})});if(r.ok)location.reload();else alert("儲存失敗");}'
     + 'async function toggleApprove(id,current){await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({can_approve:!current})});location.reload();}'
-    + 'async function editField(id,field,current){var val=prompt("修改 "+field,current);if(val===null)return;var body={};body[field]=val;await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});location.reload();}'
+    + 'async function editField(id,field,current){if(field==="role"){var roles=["員工","簽核人員","經理","老闆"];var opts=roles.map(function(r){return"<option value=\\""+r+"\\""+(r===current?" selected":"")+">"+(r==="員工"?"一般員工":r)+"</option>";}).join("");var sel=prompt("修改角色\\n\\n1. 一般員工\\n2. 簽核人員\\n3. 經理\\n4. 老闆\\n\\n請輸入 1-4 或角色名稱：",current);if(sel===null)return;var val=sel;if(sel==="1")val="員工";else if(sel==="2")val="簽核人員";else if(sel==="3")val="經理";else if(sel==="4")val="老闆";var body={};body[field]=val;await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});location.reload();}else{var val=prompt("修改 "+field,current);if(val===null)return;var body={};body[field]=val;await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});location.reload();}}'
     + 'async function setApprover(id,approverId,level){await fetch("/admin/api/employees/"+id+"/approver",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver_id:approverId||null,level:level||1})});}'
     + 'async function removeEmp(id,name){if(!confirm("確定移除 "+name+"？\\n打卡和請假記錄會保留。"))return;var r=await fetch("/admin/api/employees/"+id+"/deactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'

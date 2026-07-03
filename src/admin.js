@@ -268,8 +268,10 @@ router.get('/records', auth, async (req, res) => {
     var hours = '-', workH = 0;
     if (d2.checkIn && d2.checkOut) {
       var ci = new Date(d2.checkIn.check_time), co = new Date(d2.checkOut.check_time);
-      var rawH = Math.round(Math.max(0,(co-ci)/3600000)*10)/10;
-      var lunchDed2 = (ci.getHours() < 12 && co.getHours() >= 13) ? 1 : 0;
+      var effStart = new Date(ci); effStart.setHours(8, 0, 0, 0); if (ci > effStart) effStart = ci;
+      var effEnd = new Date(ci); effEnd.setHours(17, 30, 0, 0); if (co < effEnd) effEnd = co;
+      var rawH = Math.round(Math.max(0,(effEnd-effStart)/3600000)*10)/10;
+      var lunchDed2 = (effStart.getHours() < 12 && effEnd.getHours() >= 13) ? 1 : 0;
       workH = Math.round((rawH - lunchDed2) * 10) / 10;
       hours = workH + 'h';
       if (workH < 8) hours += ' <span class="badge badge-warn">⚠️</span>';

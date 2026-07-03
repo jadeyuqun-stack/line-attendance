@@ -304,9 +304,11 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   const r = await db.recordCheckin(emp.id, 'check_out', loc, gps ? gps.inRange : true, gps ? gps.distance : 0);
   const ci = new Date(today.find(r => r.type === 'check_in').check_time);
   const co = r.check_time ? new Date(r.check_time) : new Date();
-  const rawH = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
-  // 扣除午休（12:00-13:00），淨工時需滿 8 小時
-  var lunchDeduct = (ci.getHours() < 12 && co.getHours() >= 13) ? 1 : 0;
+  // 工時計算範圍：8:00-17:30
+  var effStart = new Date(ci); effStart.setHours(8, 0, 0, 0); if (ci > effStart) effStart = ci;
+  var effEnd = new Date(ci); effEnd.setHours(17, 30, 0, 0); if (co < effEnd) effEnd = co;
+  const rawH = Math.round(Math.max(0, (effEnd - effStart) / 3600000) * 10) / 10;
+  var lunchDeduct = (effStart.getHours() < 12 && effEnd.getHours() >= 13) ? 1 : 0;
   var netH = Math.round((rawH - lunchDeduct) * 10) / 10;
   const requiredNetHours = 8;
 
@@ -356,8 +358,10 @@ async function doQuery(emp, client, replyToken) {
   if (checkOut && checkOut.address) punchText += '\n   📍' + checkOut.address;
   if (checkIn && checkOut) {
     var ciDt = new Date(checkIn.check_time), coDt = new Date(checkOut.check_time);
-    var rawWorkH = Math.round(Math.max(0, (coDt - ciDt) / 3600000) * 10) / 10;
-    var lunchDed = (ciDt.getHours() < 12 && coDt.getHours() >= 13) ? 1 : 0;
+    var effS = new Date(ciDt); effS.setHours(8, 0, 0, 0); if (ciDt > effS) effS = ciDt;
+    var effE = new Date(ciDt); effE.setHours(17, 30, 0, 0); if (coDt < effE) effE = coDt;
+    var rawWorkH = Math.round(Math.max(0, (effE - effS) / 3600000) * 10) / 10;
+    var lunchDed = (effS.getHours() < 12 && effE.getHours() >= 13) ? 1 : 0;
     var workH = Math.round((rawWorkH - lunchDed) * 10) / 10;
     punchText += '\n📊 淨工時 ' + workH + 'h' + (workH < 8 ? ' ⚠️不足8h' : '');
   }

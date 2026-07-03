@@ -153,7 +153,7 @@ async function handleText(text, uid, client, replyToken) {
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
   if (cmd === '查詢當日請假人員') return queryTodayLeaves(emp, client, replyToken);
-  if (cmd === '查詢當日遲到人員') return queryTodayLates(emp, client, replyToken);
+  if (cmd === '查詢當日遲到與曠職人員') return queryTodayLates(emp, client, replyToken);
   if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken);
   if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, 'leave');
@@ -161,7 +161,13 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '加班核准全部') return batchApproveAll(emp, client, replyToken, 'overtime');
   if (cmd === '加班駁回全部') return batchRejectAll(emp, client, replyToken, 'overtime');
   if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消操作。')]); }
-  if (states.has(uid)) return handleFlow(cmd, uid, client, replyToken, emp);
+  if (states.has(uid)) {
+    var state2 = states.get(uid);
+    if (state2.flow === 'reject_leave' || state2.flow === 'reject_ot' || state2.flow === 'reject_missed') {
+      return handleRejectReason(cmd, uid, client, replyToken, emp);
+    }
+    return handleFlow(cmd, uid, client, replyToken, emp);
+  }
   if (cmd.includes('上班')) { states.set(uid, { flow: 'gps_check', type: 'check_in' }); return client.replyMessage(replyToken, [{ type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
   if (cmd.includes('下班')) { states.set(uid, { flow: 'gps_check', type: 'check_out' }); return client.replyMessage(replyToken, [{ type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
   if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken);
@@ -283,8 +289,7 @@ async function doCheckIn(emp, client, replyToken, loc, gps) {
 
   return client.replyMessage(replyToken, [{
     type: 'flex', altText: '✅ 上班打卡成功 ' + fmt(now),
-    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } },
-    quickReply: GPS_BUTTONS
+    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } }
   }]);
 }
 
@@ -319,8 +324,7 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
 
   return client.replyMessage(replyToken, [{
     type: 'flex', altText: '🏠 下班打卡成功 ' + fmt(co),
-    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } },
-    quickReply: GPS_BUTTONS
+    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } }
   }]);
 }
 
@@ -377,8 +381,7 @@ async function doQuery(emp, client, replyToken) {
 
   return client.replyMessage(replyToken, [{
     type: 'flex', altText: '📋 今日打卡記錄',
-    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } },
-    quickReply: GPS_BUTTONS
+    contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } }
   }]);
 }
 
@@ -514,8 +517,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
         }]);
       }
       return client.replyMessage(replyToken, [{
-        type: "text", text: "✅ 加班申請已送出！\n\n時間：" + state.otStart + " ~ " + state.otEnd + "\n原因：" + state.reason + "\n\n⏳ 等待第1階簽核：" + (approvers.length > 0 ? approvers[0].name : '') + " ⏳",
-        quickReply: GPS_BUTTONS
+        type: "text", text: "✅ 加班申請已送出！\n\n時間：" + state.otStart + " ~ " + state.otEnd + "\n原因：" + state.reason + "\n\n⏳ 等待第1階簽核：" + (approvers.length > 0 ? approvers[0].name : '') + " ⏳"
       }]);
     } catch(e) { console.error('[ot] error:', e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
   }
@@ -555,12 +557,11 @@ async function handleFlow(text, uid, client, replyToken, emp) {
             body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '✅ 請假申請已送出', weight: 'bold', size: 'lg', color: '#06c755' },
               { type: 'text', text: '假別：' + state.typeLabel, margin: 'md', size: 'sm' },
-              { type: 'text', text: '時間：' + state.startDateTime + ' ~ ' + state.endDateTime, margin: 'sm', size: 'sm' },
+              { type: 'text', text: '時間：' + state.startDateTime + ' ~ ' + state.endDateTime, margin: 'sm', size: 'sm', wrap: true },
               { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', color: '#666666', wrap: true },
               { type: 'text', text: '⏳ 等待第1階簽核：' + (approvers.length > 0 ? approvers[0].name : ''), margin: 'md', size: 'sm', color: '#f39c12' }
             ]}
-	          },
-	          quickReply: GPS_BUTTONS
+	          }
 	        }
       ]);
     } catch (e) {
@@ -674,9 +675,8 @@ async function handlePostback(postback, uid, client, replyToken) {
       if (mpEmp && mpEmp.line_user_id) await client.pushMessage(mpEmp.line_user_id, [{ type: "text", text: "🎉 補打卡已核准！\n" + mp.punch_date + " " + mp.punch_time }]);
       return client.replyMessage(replyToken, [withMenu("✅ 已核准")]);
     } else {
-      await db.updateMissedPunchStatus(mpId, "rejected", mpApprover.id);
-      if (mpEmp && mpEmp.line_user_id) await client.pushMessage(mpEmp.line_user_id, [{ type: "text", text: "❌ 補打卡被駁回\n" + mp.punch_date + " " + mp.punch_time }]);
-      return client.replyMessage(replyToken, [withMenu("已駁回")]);
+      states.set(uid, { flow: 'reject_missed', id: mpId, approverId: mpApprover.id });
+      return client.replyMessage(replyToken, [withMenu('📝 請輸入駁回原因（或輸入「取消」放棄）：')]);
     }
   }
   if (data.indexOf('leave_approve_') === 0 || data.indexOf('leave_reject_') === 0) {
@@ -698,7 +698,8 @@ async function handlePostback(postback, uid, client, replyToken) {
             contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '📋 請假申請（第'+result.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
               { type: 'text', text: '員工：' + leaveEmp.name, margin: 'md', size: 'sm', color: '#666666' },
-              { type: 'text', text: '時間：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'sm', size: 'sm' },
+              { type: 'text', text: '時間：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'sm', size: 'sm', wrap: true },
+              { type: 'text', text: '原因：' + (leave.reason || ''), margin: 'sm', size: 'sm', color: '#666666', wrap: true },
             ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
               { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'leave_approve_' + leaveId }, flex: 1, height: 'sm' },
               { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'leave_reject_' + leaveId }, flex: 1, height: 'sm' },
@@ -713,11 +714,9 @@ async function handlePostback(postback, uid, client, replyToken) {
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
-      await db.updateLeaveStatus(leaveId, 'rejected', approver.id);
-      if (leaveEmp && leaveEmp.line_user_id) {
-        await client.pushMessage(leaveEmp.line_user_id, [{ type: 'text', text: '❌ 請假被駁回\n' + leave.start_date + ' ~ ' + leave.end_date }]);
-      }
-      return client.replyMessage(replyToken, [withMenu('已駁回')]);
+      // 先要求輸入駁回原因
+      states.set(uid, { flow: 'reject_leave', id: leaveId, approverId: approver.id });
+      return client.replyMessage(replyToken, [withMenu('📝 請輸入駁回原因（或輸入「取消」放棄）：')]);
     }
   }
 
@@ -741,7 +740,8 @@ async function handlePostback(postback, uid, client, replyToken) {
             contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '🕐 加班申請（第'+otResult.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
               { type: 'text', text: '員工：' + otEmp.name, margin: 'md', size: 'sm', color: '#666666' },
-              { type: 'text', text: '時間：' + ot.start_time + ' ~ ' + ot.end_time, margin: 'sm', size: 'sm' },
+              { type: 'text', text: '時間：' + ot.start_time + ' ~ ' + ot.end_time, margin: 'sm', size: 'sm', wrap: true },
+              { type: 'text', text: '原因：' + (ot.reason || ''), margin: 'sm', size: 'sm', color: '#666666', wrap: true },
             ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
               { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'ot_approve_' + otId }, flex: 1, height: 'sm' },
               { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '駁回', data: 'ot_reject_' + otId }, flex: 1, height: 'sm' },
@@ -756,12 +756,64 @@ async function handlePostback(postback, uid, client, replyToken) {
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
-      await db.updateOvertimeStatus(otId, 'rejected', otApprover.id);
-      if (otEmp && otEmp.line_user_id) {
-        await client.pushMessage(otEmp.line_user_id, [{ type: 'text', text: '❌ 加班被駁回\n' + ot.start_time + ' ~ ' + ot.end_time }]);
-      }
-      return client.replyMessage(replyToken, [withMenu('已駁回')]);
+      states.set(uid, { flow: 'reject_ot', id: otId, approverId: otApprover.id });
+      return client.replyMessage(replyToken, [withMenu('📝 請輸入駁回原因（或輸入「取消」放棄）：')]);
     }
+  }
+}
+
+// 處理駁回原因輸入
+async function handleRejectReason(text, uid, client, replyToken, approver) {
+  var state = states.get(uid);
+  if (text === '取消') {
+    states.delete(uid);
+    return client.replyMessage(replyToken, [withMenu('已取消駁回')]);
+  }
+  var reason = text;
+
+  try {
+    if (state.flow === 'reject_leave') {
+      var leave = await db.getLeaveById(state.id);
+      var leaveEmp = leave ? await db.getEmployeeById(leave.employee_id) : null;
+      await db.updateLeaveStatus(state.id, 'rejected', approver.id);
+      if (leaveEmp && leaveEmp.line_user_id && leave) {
+        await client.pushMessage(leaveEmp.line_user_id, [{
+          type: 'text', text: '❌ 請假被駁回\n時間：' + leave.start_date + ' ~ ' + leave.end_date + '\n駁回原因：' + reason
+        }]);
+      }
+      states.delete(uid);
+      return client.replyMessage(replyToken, [withMenu('已駁回請假申請（原因：' + reason + '）')]);
+    }
+
+    if (state.flow === 'reject_ot') {
+      var ot = await db.getOvertimeById(state.id);
+      var otEmp = ot ? await db.getEmployeeById(ot.employee_id) : null;
+      await db.updateOvertimeStatus(state.id, 'rejected', approver.id);
+      if (otEmp && otEmp.line_user_id && ot) {
+        await client.pushMessage(otEmp.line_user_id, [{
+          type: 'text', text: '❌ 加班被駁回\n時間：' + ot.start_time + ' ~ ' + ot.end_time + '\n駁回原因：' + reason
+        }]);
+      }
+      states.delete(uid);
+      return client.replyMessage(replyToken, [withMenu('已駁回加班申請（原因：' + reason + '）')]);
+    }
+
+    if (state.flow === 'reject_missed') {
+      var mp = await db.getMissedPunchById(state.id);
+      var mpEmp = mp ? await db.getEmployeeById(mp.employee_id) : null;
+      await db.updateMissedPunchStatus(state.id, 'rejected', approver.id);
+      if (mpEmp && mpEmp.line_user_id && mp) {
+        await client.pushMessage(mpEmp.line_user_id, [{
+          type: 'text', text: '❌ 補打卡被駁回\n' + mp.punch_date + ' ' + mp.punch_time + '\n駁回原因：' + reason
+        }]);
+      }
+      states.delete(uid);
+      return client.replyMessage(replyToken, [withMenu('已駁回補打卡申請（原因：' + reason + '）')]);
+    }
+  } catch (e) {
+    console.error('[reject] error:', e);
+    states.delete(uid);
+    return client.replyMessage(replyToken, [withMenu('❌ 駁回失敗')]);
   }
 }
 
@@ -835,7 +887,7 @@ async function setupRichMenu() {
 				{ bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
 				{ bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢' } },
 				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日請假人員' } },
-				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日遲到人員' } },
+				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日遲到與曠職人員' } },
 			]
 		};
 		var res8a = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu8) });
@@ -1153,30 +1205,75 @@ async function queryTodayLates(emp, client, replyToken) {
     }
   }
 
+  // 取得今日請假（判斷曠職用）
+  var allLeaves = await db.getLeaveRequests('approved', 500);
+  var todayLeaves = [];
+  for (var li = 0; li < allLeaves.length; li++) {
+    var al = allLeaves[li];
+    if (al.start_date && al.end_date) {
+      var als = typeof al.start_date === 'string' ? al.start_date.split('T')[0] : '';
+      var ale = typeof al.end_date === 'string' ? al.end_date.split('T')[0] : '';
+      if (als <= today && ale >= today) todayLeaves.push(al);
+    }
+  }
+
   // 簽核人員只顯示自己簽核的員工
+  var designatedIds = {};
   if (isApproverRole(emp) && !canQueryAll(emp)) {
     var designated = await db.getDesignatedEmployeeIds(emp.id);
-    var designatedIds = {};
     for (var d = 0; d < designated.length; d++) {
       designatedIds[designated[d].id] = true;
     }
     lateEmployees = lateEmployees.filter(function(l) { return designatedIds[l.employee_id]; });
   }
 
-  if (lateEmployees.length === 0) {
-    return client.replyMessage(replyToken, [withMenu('✅ 今日無遲到人員')]);
+  // 也查詢缺席人員（無打卡也無請假）
+  var allEmps = await db.listAttendanceEmployees();
+  var absentEmployees = [];
+  for (var a = 0; a < allEmps.length; a++) {
+    var ae = allEmps[a];
+    if (seen[ae.id]) continue; // 已有打卡記錄
+    // 檢查是否有請假
+    var hasLeave = false;
+    for (var li2 = 0; li2 < allLeaves.length; li2++) {
+      var l2 = allLeaves[li2];
+      if (l2.employee_id === ae.id) {
+        var ls = typeof l2.start_date === 'string' ? l2.start_date.split('T')[0] : '';
+        var le2 = typeof l2.end_date === 'string' ? l2.end_date.split('T')[0] : ls;
+        if (ls <= today && le2 >= today) { hasLeave = true; break; }
+      }
+    }
+    if (!hasLeave) {
+      // 簽核人員只顯示自己簽核的員工
+      if (isApproverRole(emp) && !canQueryAll(emp) && !designatedIds[ae.id]) continue;
+      absentEmployees.push(ae);
+    }
+  }
+
+  if (lateEmployees.length === 0 && absentEmployees.length === 0) {
+    return client.replyMessage(replyToken, [withMenu('✅ 今日無遲到或曠職人員')]);
   }
 
   var lines = [];
-  for (var k = 0; k < lateEmployees.length; k++) {
-    var le = lateEmployees[k];
-    var e3 = await db.getEmployeeById(le.employee_id);
-    var t = le.check_time;
-    var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-    lines.push((e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
+  if (lateEmployees.length > 0) {
+    lines.push('⚠️ 遲到人員（' + lateEmployees.length + ' 人）：');
+    for (var k = 0; k < lateEmployees.length; k++) {
+      var le3 = lateEmployees[k];
+      var e3 = await db.getEmployeeById(le3.employee_id);
+      var t = le3.check_time;
+      var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+      lines.push((e3 ? '  ' + e3.name + '（' + e3.employee_no + '）' : '  員工#' + le3.employee_id) + ' ' + timeStr + ' 遲到 ' + le3.late_min + ' 分');
+    }
+  }
+  if (absentEmployees.length > 0) {
+    lines.push('❌ 曠職人員（' + absentEmployees.length + ' 人）：');
+    for (var m = 0; m < absentEmployees.length; m++) {
+      var abs = absentEmployees[m];
+      lines.push('  ' + abs.name + '（' + abs.employee_no + '）');
+    }
   }
 
-  return client.replyMessage(replyToken, [withMenu('⚠️ 今日遲到人員（' + lateEmployees.length + ' 人）\n\n' + lines.join('\n'))]);
+  return client.replyMessage(replyToken, [withMenu('📋 今日遲到與曠職查詢\n\n' + lines.join('\n'))]);
 }
 
 // 為使用者連結 8 格 Rich Menu
@@ -1232,7 +1329,7 @@ function makePng8() {
     { x: 0, y: 421, w: 625, h: 422, color: '#9B59B6', label: '加班' },
     { x: 625, y: 421, w: 625, h: 422, color: '#3498DB', label: '查詢' },
     { x: 1250, y: 421, w: 625, h: 422, color: '#E67E22', label: '查詢請假' },
-    { x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '查詢遲到' },
+    { x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '查詢遲到\n與曠職' },
   ];
 
   var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
@@ -1249,14 +1346,21 @@ function makePng8() {
     ctx.textBaseline = 'middle';
 
     var label = a.label;
-    if (label.length <= 2) {
-      ctx.font = 'bold 60px ' + fontFamily;
-    } else if (label.length === 3) {
-      ctx.font = 'bold 50px ' + fontFamily;
+    if (label.indexOf('\\n') !== -1) {
+      var parts = label.split('\\n');
+      ctx.font = 'bold 40px ' + fontFamily;
+      ctx.fillText(parts[0], cx, a.y + a.h * 0.32);
+      ctx.fillText(parts[1], cx, a.y + a.h * 0.60);
     } else {
-      ctx.font = 'bold 42px ' + fontFamily;
+      if (label.length <= 2) {
+        ctx.font = 'bold 60px ' + fontFamily;
+      } else if (label.length === 3) {
+        ctx.font = 'bold 50px ' + fontFamily;
+      } else {
+        ctx.font = 'bold 42px ' + fontFamily;
+      }
+      ctx.fillText(label, cx, a.y + a.h * 0.42);
     }
-    ctx.fillText(label, cx, a.y + a.h * 0.42);
 
     // 簡化圖示
     ctx.strokeStyle = '#ffffff';
@@ -1311,7 +1415,7 @@ function makePng8() {
         ctx.moveTo(cx - 8, iy + 12);
         ctx.lineTo(cx + 10, iy + 12);
         break;
-      case 7: // 查詢遲到
+      case 7: // 查詢遲到與曠職
         ctx.arc(cx, iy, 24, 0, Math.PI * 2);
         ctx.moveTo(cx, iy);
         ctx.lineTo(cx, iy - 16);

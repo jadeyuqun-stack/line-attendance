@@ -373,6 +373,8 @@ async function doQuery(emp, client, replyToken) {
   var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var monthStart = thisMonth + '-01';
   var todayStr = now.toISOString().split('T')[0];
+  var lastDay = String(new Date(now.getFullYear(), now.getMonth()+1, 0).getDate()).padStart(2,'0');
+  var monthEnd = thisMonth + '-' + lastDay;
 
   // 打卡記錄
   var records = await db.getTodayCheckins(emp.id);
@@ -456,7 +458,7 @@ async function doQuery(emp, client, replyToken) {
     if (ml.status !== 'approved') continue;
     var mls = typeof ml.start_date === 'string' ? ml.start_date.substring(0, 10) : '';
     var mle = typeof ml.end_date === 'string' ? ml.end_date.substring(0, 10) : '';
-    if (mle < monthStart || mls > todayStr) continue;
+    if (mle < monthStart || mls > monthEnd) continue;
     var leaveLabel = ml.leave_type === 'annual' ? '特休' : ml.leave_type === 'personal' ? '事假' : ml.leave_type === 'sick' ? '病假' : ml.leave_type === 'official' ? '公假' : ml.leave_type === 'outing' ? '外出' : (ml.leave_type || '請假');
     var lh = leaveHours(ml.start_date, ml.end_date);
     leaveRecords.push({

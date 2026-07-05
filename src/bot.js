@@ -1899,11 +1899,13 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 		// 請假區間與本月重疊
 		if (leDate < monthStart || lsDate > monthEnd) continue;
 
+		var leaveType = l.leave_type || '請假';
+		var leaveLabel = leaveType === 'annual' ? '特休' : leaveType === 'personal' ? '事假' : leaveType === 'sick' ? '病假' : leaveType === 'official' ? '公假' : leaveType === 'outing' ? '外出' : leaveType;
 		var hours = leaveHours(l.start_date, l.end_date);
 		if (!empLeaveMap[l.employee_id]) {
 			empLeaveMap[l.employee_id] = { name: l.name, no: l.employee_no, records: [], totalHours: 0 };
 		}
-		empLeaveMap[l.employee_id].records.push({ start: lsFull.length > 7 ? lsFull.substring(5) : lsFull, end: leFull.length > 7 ? leFull.substring(5) : leFull, hours: hours });
+		empLeaveMap[l.employee_id].records.push({ start: lsFull.length > 7 ? lsFull.substring(5) : lsFull, end: leFull.length > 7 ? leFull.substring(5) : leFull, hours: hours, type: leaveLabel });
 		empLeaveMap[l.employee_id].totalHours += hours;
 	}
 
@@ -1923,7 +1925,7 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 		lines.push('\n👤 ' + info.name + '（' + info.no + '） 累計 ' + info.totalHours + 'h');
 		for (var r = 0; r < info.records.length; r++) {
 			var rec = info.records[r];
-			lines.push('    ' + rec.start + ' ~ ' + rec.end + '（' + rec.hours + 'h）');
+			lines.push('    ' + rec.start + ' ~ ' + rec.end + ' ' + rec.type + '（' + rec.hours + 'h）');
 		}
 	}
 	lines.push('\n📊 全公司本月請假合計：' + totalAll + ' 小時');
@@ -1958,6 +1960,9 @@ async function queryBossMonthLates(emp, client, replyToken) {
 		if (totalMin <= lateThreshold) continue;
 
 		var lateMins = totalMin - lateThreshold;
+		var fullDateStr = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
+		// 假日/國定假日不計遲到
+		if (await isHoliday(fullDateStr)) continue;
 		var dateStr = String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
 		if (!empLateMap[c.employee_id]) {
 			empLateMap[c.employee_id] = { name: c.name, no: c.employee_no, records: [], count: 0 };
@@ -2038,7 +2043,7 @@ async function queryBossMonthOvertime(emp, client, replyToken) {
 		lines.push('\n👤 ' + info.name + '（' + info.no + '） 累計 ' + info.totalHours + 'h');
 		for (var r = 0; r < info.records.length; r++) {
 			var rec = info.records[r];
-			lines.push('    ' + rec.start + ' ~ ' + rec.end + '（' + rec.hours + 'h）');
+			lines.push('    ' + rec.start + ' ~ ' + rec.end + ' ' + rec.type + '（' + rec.hours + 'h）');
 		}
 	}
 	lines.push('\n📊 全公司本月加班合計：' + Math.round(totalAll * 10) / 10 + ' 小時');

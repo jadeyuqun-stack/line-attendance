@@ -1341,7 +1341,7 @@ router.get('/export/summary', auth, async function(req, res) {
 			}
 
 			data.push({
-				'日期': r.work_date,
+				'日期': (r.work_date || '').substring(0, 10),
 				'員工編號': r.employee_no || '-',
 				'姓名': r.name || '-',
 				'部門': r.department || '',

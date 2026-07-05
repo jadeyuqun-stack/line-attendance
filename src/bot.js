@@ -1358,7 +1358,16 @@ async function queryTodayLates(emp, client, replyToken) {
       empLateMap[c.employee_id] = { name: c.name, no: c.employee_no, records: [], count: 0 };
     }
     var timeStr = String(ct.getHours()).padStart(2, '0') + ':' + String(ct.getMinutes()).padStart(2, '0');
-    empLateMap[c.employee_id].records.push({ date: dateStr, time: timeStr, lateMin: lateMins });
+    var covered3 = false;
+    var ctMs3 = ct.getTime();
+    for (var cl3 = 0; cl3 < allLeaves.length; cl3++) {
+      var clv3 = allLeaves[cl3];
+      if (clv3.employee_id !== c.employee_id || clv3.status !== 'approved') continue;
+      var cls3 = new Date(clv3.start_date).getTime();
+      var cle3 = new Date(clv3.end_date).getTime();
+      if (ctMs3 >= cls3 && ctMs3 <= cle3) { covered3 = true; break; }
+    }
+    empLateMap[c.employee_id].records.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: covered3 });
     empLateMap[c.employee_id].count++;
   }
 
@@ -1449,7 +1458,7 @@ async function queryTodayLates(emp, client, replyToken) {
       lines.push('  ' + info.name + '（' + info.no + '） 遲到 ' + info.count + ' 次');
       for (var r = 0; r < info.records.length; r++) {
         var rec = info.records[r];
-        lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）');
+        lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? ' 已請假' : ''));
       }
     }
     lines.push('  📊 遲到合計：' + totalLate + ' 次');
@@ -1953,7 +1962,7 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 			var e3 = await db.getEmployeeById(le.employee_id);
 			var t = le.check_time;
 			var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-			lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
+			lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? ' 已請假' : ''));
 		}
 	}
 	if (absentList.length > 0) {
@@ -2054,6 +2063,7 @@ async function queryBossMonthLates(emp, client, replyToken) {
 	var lateThreshold = startH * 60 + startM + lateMin;
 
 	var allCheckins = await db.queryCheckins(null, monthStart, todayStr, 5000, 0);
+	var allMonthLeaves = await db.getLeaveRequests('approved', 2000);
 	var empLateMap = {}; // employee_id -> { name, no, records: [{date, time, lateMin}], count }
 
 	for (var i = 0; i < allCheckins.length; i++) {
@@ -2072,7 +2082,17 @@ async function queryBossMonthLates(emp, client, replyToken) {
 			empLateMap[c.employee_id] = { name: c.name, no: c.employee_no, records: [], count: 0 };
 		}
 		var timeStr = String(ct.getHours()).padStart(2, '0') + ':' + String(ct.getMinutes()).padStart(2, '0');
-		empLateMap[c.employee_id].records.push({ date: dateStr, time: timeStr, lateMin: lateMins });
+		// 檢查是否已有請假覆蓋此時段
+		var coveredByLeave = false;
+		var ctMs = ct.getTime();
+		for (var cl = 0; cl < allMonthLeaves.length; cl++) {
+			var clv = allMonthLeaves[cl];
+			if (clv.employee_id !== c.employee_id || clv.status !== 'approved') continue;
+			var cls = new Date(clv.start_date).getTime();
+			var cle = new Date(clv.end_date).getTime();
+			if (ctMs >= cls && ctMs <= cle) { coveredByLeave = true; break; }
+		}
+		empLateMap[c.employee_id].records.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: coveredByLeave });
 		empLateMap[c.employee_id].count++;
 	}
 
@@ -2091,7 +2111,7 @@ async function queryBossMonthLates(emp, client, replyToken) {
 		lines.push('\n👤 ' + info.name + '（' + info.no + '） 遲到 ' + info.count + ' 次');
 		for (var r = 0; r < info.records.length; r++) {
 			var rec = info.records[r];
-			lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）');
+			lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? ' 已請假' : ''));
 		}
 	}
 	lines.push('\n📊 全公司本月遲到合計：' + totalCount + ' 次');

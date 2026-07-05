@@ -1892,16 +1892,18 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 
 	for (var i = 0; i < allLeaves.length; i++) {
 		var l = allLeaves[i];
-		var ls = typeof l.start_date === 'string' ? l.start_date.split('T')[0] : '';
-		var le2 = typeof l.end_date === 'string' ? l.end_date.split('T')[0] : ls;
+		var lsFull = fmtDt(l.start_date);
+		var leFull = fmtDt(l.end_date);
+		var lsDate = typeof l.start_date === 'string' ? l.start_date.substring(0, 10) : '';
+		var leDate = typeof l.end_date === 'string' ? l.end_date.substring(0, 10) : lsDate;
 		// 請假區間與本月重疊
-		if (le2 < monthStart || ls > monthEnd) continue;
+		if (leDate < monthStart || lsDate > monthEnd) continue;
 
 		var hours = leaveHours(l.start_date, l.end_date);
 		if (!empLeaveMap[l.employee_id]) {
 			empLeaveMap[l.employee_id] = { name: l.name, no: l.employee_no, records: [], totalHours: 0 };
 		}
-		empLeaveMap[l.employee_id].records.push({ start: ls, end: le2, hours: hours });
+		empLeaveMap[l.employee_id].records.push({ start: lsFull.length > 7 ? lsFull.substring(5) : lsFull, end: leFull.length > 7 ? leFull.substring(5) : leFull, hours: hours });
 		empLeaveMap[l.employee_id].totalHours += hours;
 	}
 
@@ -1913,7 +1915,7 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 	// 按員工編號排序
 	keys.sort(function(a, b) { return (empLeaveMap[a].no || '').localeCompare(empLeaveMap[b].no || ''); });
 
-	var lines = ['📋 本月請假累計（' + monthStart + ' ~ ' + monthEnd + '）'];
+	var lines = ['📋 本月請假累計（' + monthStart.substring(5) + ' ~ ' + monthEnd.substring(5) + '）'];
 	var totalAll = 0;
 	for (var k = 0; k < keys.length; k++) {
 		var info = empLeaveMap[keys[k]];
@@ -1956,7 +1958,7 @@ async function queryBossMonthLates(emp, client, replyToken) {
 		if (totalMin <= lateThreshold) continue;
 
 		var lateMins = totalMin - lateThreshold;
-		var dateStr = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
+		var dateStr = String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
 		if (!empLateMap[c.employee_id]) {
 			empLateMap[c.employee_id] = { name: c.name, no: c.employee_no, records: [], count: 0 };
 		}
@@ -1972,7 +1974,7 @@ async function queryBossMonthLates(emp, client, replyToken) {
 
 	keys.sort(function(a, b) { return (empLateMap[a].no || '').localeCompare(empLateMap[b].no || ''); });
 
-	var lines = ['📋 本月遲到累計（' + monthStart + ' ~ ' + todayStr + '）'];
+	var lines = ['📋 本月遲到累計（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）'];
 	var totalCount = 0;
 	for (var k = 0; k < keys.length; k++) {
 		var info = empLateMap[keys[k]];
@@ -2017,7 +2019,7 @@ async function queryBossMonthOvertime(emp, client, replyToken) {
 		if (!empOTMap[ot.employee_id]) {
 			empOTMap[ot.employee_id] = { name: ot.name, no: ot.employee_no, records: [], totalHours: 0 };
 		}
-		empOTMap[ot.employee_id].records.push({ start: fmtDt(ot.start_time), end: fmtDt(ot.end_time), hours: otHours });
+		empOTMap[ot.employee_id].records.push({ start: fmtDt(ot.start_time).substring(5), end: fmtDt(ot.end_time).substring(5), hours: otHours });
 		empOTMap[ot.employee_id].totalHours += otHours;
 	}
 
@@ -2028,7 +2030,7 @@ async function queryBossMonthOvertime(emp, client, replyToken) {
 
 	keys.sort(function(a, b) { return (empOTMap[a].no || '').localeCompare(empOTMap[b].no || ''); });
 
-	var lines = ['📋 本月加班累計（' + monthStart + ' ~ ' + todayStr + '）'];
+	var lines = ['📋 本月加班累計（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）'];
 	var totalAll = 0;
 	for (var k = 0; k < keys.length; k++) {
 		var info = empOTMap[keys[k]];

@@ -30,7 +30,7 @@ async function initFont() {
 		}
 
 		// 從 Google Fonts 下載子集（只含需要的 16 個字）
-		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢遲到曠職超出GPS人員';
+		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢遲到曠職超出GPS人員公司今日考勤本月累計遲到加班狀態';
 		var cssUrl = 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700&text=' + encodeURIComponent(text);
 
 		console.log('[Font] 下載字型...');
@@ -154,6 +154,10 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
   if (cmd === '查詢當日請假人員') return queryTodayLeaves(emp, client, replyToken);
   if (cmd === '查詢當日遲到與曠職人員' || cmd === '查詢遲到/曠職/超出GPS') return queryTodayLates(emp, client, replyToken);
+  if (cmd === '公司今日考勤') return queryBossTodayStatus(emp, client, replyToken);
+  if (cmd === '本月請假累計') return queryBossMonthLeaves(emp, client, replyToken);
+  if (cmd === '本月遲到累計') return queryBossMonthLates(emp, client, replyToken);
+  if (cmd === '本月加班累計') return queryBossMonthOvertime(emp, client, replyToken);
   if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken);
   if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, 'leave');
@@ -179,6 +183,29 @@ function fmt(d) {
   var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
   var h = d.getHours(), min = d.getMinutes();
   return y + ' ' + m + '月' + day + '日 ' + String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
+}
+
+// 格式化日期字串，去除 T00:00:00+08 等後綴
+function fmtDt(str) {
+  if (!str) return '';
+  var s = typeof str === 'string' ? str : String(str);
+  // 處理 ISO 格式 2026-07-03T00:00:00+08:00 或 2026-07-03T14:30:00
+  var tIdx = s.indexOf('T');
+  if (tIdx !== -1) {
+    var datePart = s.substring(0, tIdx);
+    var timePart = s.substring(tIdx + 1, tIdx + 6); // HH:MM
+    if (timePart === '00:00') return datePart;
+    return datePart + ' ' + timePart;
+  }
+  // 處理空格分隔格式 2026-07-03 00:00:00
+  var spIdx = s.indexOf(' ');
+  if (spIdx !== -1) {
+    var dp2 = s.substring(0, spIdx);
+    var tp2 = s.substring(spIdx + 1, spIdx + 6);
+    if (tp2 === '00:00') return dp2;
+    return dp2 + ' ' + tp2;
+  }
+  return s;
 }
 
 async function startMissedPunch(uid, client, replyToken) {
@@ -322,6 +349,9 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   ];
   if (normalH < 9) {
     contents.push({ type: 'text', text: '⚠️ 正常工時（8:00-17:30）未滿 9 小時\n請記得申請請假補足時數', margin: 'sm', color: '#f39c12', size: 'sm', wrap: true });
+  }
+  if (co.getHours() >= 19 || (co.getHours() === 18 && co.getMinutes() >= 30)) {
+    contents.push({ type: 'text', text: '⚠️ 下班時間超過 18:30，記得報加班', margin: 'sm', color: '#e67e22', size: 'sm' });
   }
   if (loc) {
     var locText = '📍 ' + (loc.address || loc.latitude.toFixed(4) + ', ' + loc.longitude.toFixed(4));
@@ -524,7 +554,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
             body: { type: "box", layout: "vertical", contents: [
               { type: "text", text: "🕐 加班申請", weight: "bold", size: "lg", color: "#f39c12" },
               { type: "text", text: "員工：" + emp.name + "（" + emp.employee_no + "）", margin: "md", size: "sm", color: "#666666" },
-              { type: "text", text: "時間：" + state.otStart + " ~ " + state.otEnd, margin: "sm", size: "sm" },
+              { type: "text", text: "時間：" + fmtDt(state.otStart) + " ~ " + fmtDt(state.otEnd), margin: "sm", size: "sm" },
               { type: "text", text: "原因：" + state.reason, margin: "sm", size: "sm", wrap: true, color: "#666666" },
             ]},
             footer: { type: "box", layout: "horizontal", spacing: "sm", contents: [
@@ -535,7 +565,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
         }]);
       }
       return client.replyMessage(replyToken, [{
-        type: "text", text: "✅ 加班申請已送出！\n\n時間：" + state.otStart + " ~ " + state.otEnd + "\n原因：" + state.reason + "\n\n⏳ 等待第1階簽核：" + (approvers.length > 0 ? approvers[0].name : '') + " ⏳"
+        type: "text", text: "✅ 加班申請已送出！\n\n時間：" + fmtDt(state.otStart) + " ~ " + fmtDt(state.otEnd) + "\n原因：" + state.reason + "\n\n⏳ 等待第1階簽核：" + (approvers.length > 0 ? approvers[0].name : '') + " ⏳"
       }]);
     } catch(e) { console.error('[ot] error:', e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
   }
@@ -575,7 +605,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
             body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '✅ 請假申請已送出', weight: 'bold', size: 'lg', color: '#06c755' },
               { type: 'text', text: '假別：' + state.typeLabel, margin: 'md', size: 'sm' },
-              { type: 'text', text: '時間：' + state.startDateTime + ' ~ ' + state.endDateTime, margin: 'sm', size: 'sm', wrap: true },
+              { type: 'text', text: '時間：' + fmtDt(state.startDateTime) + ' ~ ' + fmtDt(state.endDateTime), margin: 'sm', size: 'sm', wrap: true },
               { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', color: '#666666', wrap: true },
               { type: 'text', text: '⏳ 等待第1階簽核：' + (approvers.length > 0 ? approvers[0].name : ''), margin: 'md', size: 'sm', color: '#f39c12' }
             ]}
@@ -614,7 +644,7 @@ async function handlePostback(postback, uid, client, replyToken) {
     }
     state.endDateTime = dt; state.step = 'reason';
     var hours = leaveHours(state.startDateTime, dt);
-    return client.replyMessage(replyToken, [withMenu('📅 ' + state.startDateTime + ' ~ ' + dt + '（' + hours + ' 小時）\n\n📝 請輸入請假原因：')]);
+    return client.replyMessage(replyToken, [withMenu('📅 ' + fmtDt(state.startDateTime) + ' ~ ' + fmtDt(dt) + '（' + hours + ' 小時）\n\n📝 請輸入請假原因：')]);
   }
 
   // Overtime date pickers
@@ -632,7 +662,7 @@ async function handlePostback(postback, uid, client, replyToken) {
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
     if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
     state.otEnd = dt; state.step = 'reason';
-    return client.replyMessage(replyToken, [withMenu('🕐 ' + state.otStart + ' ~ ' + dt + '\n\n📝 請輸入加班原因：')]);
+    return client.replyMessage(replyToken, [withMenu('🕐 ' + fmtDt(state.otStart) + ' ~ ' + fmtDt(dt) + '\n\n📝 請輸入加班原因：')]);
   }
   if (data === "missed_dt") {
     var state = states.get(uid);
@@ -674,7 +704,7 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (mp.status !== "pending") return client.replyMessage(replyToken, [withMenu("已處理過")]);
     if (data.indexOf("mp_approve_") === 0) {
       await db.updateMissedPunchStatus(mpId, "approved", mpApprover.id);
-      if (mpEmp && mpEmp.line_user_id) await client.pushMessage(mpEmp.line_user_id, [{ type: "text", text: "🎉 補打卡已核准！\n" + mp.punch_date + " " + mp.punch_time }]);
+      if (mpEmp && mpEmp.line_user_id) await client.pushMessage(mpEmp.line_user_id, [{ type: "text", text: "🎉 補打卡已核准！\n" + fmtDt(mp.punch_date) + " " + mp.punch_time }]);
       return client.replyMessage(replyToken, [withMenu("✅ 已核准")]);
     } else {
       states.set(uid, { flow: 'reject_missed', id: mpId, approverId: mpApprover.id });
@@ -700,7 +730,7 @@ async function handlePostback(postback, uid, client, replyToken) {
             contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '📋 請假申請（第'+result.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
               { type: 'text', text: '員工：' + leaveEmp.name, margin: 'md', size: 'sm', color: '#666666' },
-              { type: 'text', text: '時間：' + leave.start_date + ' ~ ' + leave.end_date, margin: 'sm', size: 'sm', wrap: true },
+              { type: 'text', text: '時間：' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date), margin: 'sm', size: 'sm', wrap: true },
               { type: 'text', text: '原因：' + (leave.reason || ''), margin: 'sm', size: 'sm', color: '#666666', wrap: true },
             ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
               { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'leave_approve_' + leaveId }, flex: 1, height: 'sm' },
@@ -708,11 +738,11 @@ async function handlePostback(postback, uid, client, replyToken) {
             ]}}
           }]);
         }
-        if (leaveEmp && leaveEmp.line_user_id) await client.pushMessage(leaveEmp.line_user_id, [{ type: "text", text: "📋 請假進度\n\n已通過第"+(result.level-1)+"階，等待第"+result.level+"階：" + result.approvers[0].name + "\n時間：" + leave.start_date + " ~ " + leave.end_date }]);
+        if (leaveEmp && leaveEmp.line_user_id) await client.pushMessage(leaveEmp.line_user_id, [{ type: "text", text: "📋 請假進度\n\n已通過第"+(result.level-1)+"階，等待第"+result.level+"階：" + result.approvers[0].name + "\n時間：" + fmtDt(leave.start_date) + " ~ " + fmtDt(leave.end_date) }]);
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+result.level+'階簽核')]);
       }
       if (leaveEmp && leaveEmp.line_user_id) {
-        await client.pushMessage(leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + leave.start_date + ' ~ ' + leave.end_date }]);
+        await client.pushMessage(leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) }]);
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
@@ -742,7 +772,7 @@ async function handlePostback(postback, uid, client, replyToken) {
             contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '🕐 加班申請（第'+otResult.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
               { type: 'text', text: '員工：' + otEmp.name, margin: 'md', size: 'sm', color: '#666666' },
-              { type: 'text', text: '時間：' + ot.start_time + ' ~ ' + ot.end_time, margin: 'sm', size: 'sm', wrap: true },
+              { type: 'text', text: '時間：' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time), margin: 'sm', size: 'sm', wrap: true },
               { type: 'text', text: '原因：' + (ot.reason || ''), margin: 'sm', size: 'sm', color: '#666666', wrap: true },
             ]}, footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
               { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '核准', data: 'ot_approve_' + otId }, flex: 1, height: 'sm' },
@@ -750,11 +780,11 @@ async function handlePostback(postback, uid, client, replyToken) {
             ]}}
           }]);
         }
-        if (otEmp && otEmp.line_user_id) await client.pushMessage(otEmp.line_user_id, [{ type: "text", text: "🕐 加班進度\n\n已通過第"+(otResult.level-1)+"階，等待第"+otResult.level+"階：" + otResult.approvers[0].name + "\n時間：" + ot.start_time + " ~ " + ot.end_time }]);
+        if (otEmp && otEmp.line_user_id) await client.pushMessage(otEmp.line_user_id, [{ type: "text", text: "🕐 加班進度\n\n已通過第"+(otResult.level-1)+"階，等待第"+otResult.level+"階：" + otResult.approvers[0].name + "\n時間：" + fmtDt(ot.start_time) + " ~ " + fmtDt(ot.end_time) }]);
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+otResult.level+'階簽核')]);
       }
       if (otEmp && otEmp.line_user_id) {
-        await client.pushMessage(otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + ot.start_time + ' ~ ' + ot.end_time }]);
+        await client.pushMessage(otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) }]);
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
@@ -780,7 +810,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       await db.updateLeaveStatus(state.id, 'rejected', approver.id, reason);
       if (leaveEmp && leaveEmp.line_user_id && leave) {
         await client.pushMessage(leaveEmp.line_user_id, [{
-          type: 'text', text: '❌ 請假被駁回\n時間：' + leave.start_date + ' ~ ' + leave.end_date + '\n駁回原因：' + reason
+          type: 'text', text: '❌ 請假被駁回\n時間：' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) + '\n駁回原因：' + reason
         }]);
       }
       states.delete(uid);
@@ -793,7 +823,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       await db.updateOvertimeStatus(state.id, 'rejected', approver.id, reason);
       if (otEmp && otEmp.line_user_id && ot) {
         await client.pushMessage(otEmp.line_user_id, [{
-          type: 'text', text: '❌ 加班被駁回\n時間：' + ot.start_time + ' ~ ' + ot.end_time + '\n駁回原因：' + reason
+          type: 'text', text: '❌ 加班被駁回\n時間：' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) + '\n駁回原因：' + reason
         }]);
       }
       states.delete(uid);
@@ -806,7 +836,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       await db.updateMissedPunchStatus(state.id, 'rejected', approver.id, reason);
       if (mpEmp && mpEmp.line_user_id && mp) {
         await client.pushMessage(mpEmp.line_user_id, [{
-          type: 'text', text: '❌ 補打卡被駁回\n' + mp.punch_date + ' ' + mp.punch_time + '\n駁回原因：' + reason
+          type: 'text', text: '❌ 補打卡被駁回\n' + fmtDt(mp.punch_date) + ' ' + mp.punch_time + '\n駁回原因：' + reason
         }]);
       }
       states.delete(uid);
@@ -921,7 +951,46 @@ async function setupRichMenu() {
 		}
 		console.log('[RichMenu] 8格圖片上傳成功');
 
-		return { richMenuId: menu6Id, menu8Id: menu8Id };
+		// ===== Menu C: 4 格（老闆 2×2） =====
+		var menuBoss = {
+			size: { width: 2500, height: 843 }, selected: false, name: '老闆選單', chatBarText: '📋 點此開啟功能選單',
+			areas: [
+				{ bounds: { x: 0, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '公司今日考勤' } },
+				{ bounds: { x: 1250, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '本月請假累計' } },
+				{ bounds: { x: 0, y: 421, width: 1250, height: 422 }, action: { type: 'message', text: '本月遲到累計' } },
+				{ bounds: { x: 1250, y: 421, width: 1250, height: 422 }, action: { type: 'message', text: '本月加班累計' } },
+			]
+		};
+		var resBa = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menuBoss) });
+		var dataB = await resBa.json();
+		var menuBossId = null;
+		if (dataB && dataB.richMenuId) {
+			menuBossId = dataB.richMenuId;
+			_richMenuIdBoss = menuBossId;
+			console.log('[RichMenu] 老闆4格選單建立成功:', menuBossId);
+			await db.setSetting('richmenu_boss_id', menuBossId);
+
+			// 上傳老闆圖片
+			var pngBoss = makePngBoss();
+			console.log('[RichMenu] 老闆PNG大小:', pngBoss.length, 'bytes');
+			var resBb = await fetch('https://api-data.line.me/v2/bot/richmenu/' + menuBossId + '/content', {
+				method: 'POST',
+				headers: { 'Content-Type': 'image/png', 'Authorization': 'Bearer ' + token },
+				body: pngBoss
+			});
+			if (resBb.status !== 200) {
+				var errB = await resBb.text();
+				console.error('[RichMenu] 老闆圖片上傳失敗:', resBb.status, errB);
+				await fetch('https://api.line.me/v2/bot/richmenu/' + menuBossId, { method: 'DELETE', headers });
+				_richMenuIdBoss = null;
+			} else {
+				console.log('[RichMenu] 老闆圖片上傳成功');
+			}
+		} else {
+			console.error('[RichMenu] 老闆4格建立失敗:', JSON.stringify(dataB));
+		}
+
+		return { richMenuId: menu6Id, menu8Id: menu8Id, menuBossId: menuBossId };
 	} catch (e) {
 		console.error('[RichMenu] error:', e.message);
 		return { error: e.message };
@@ -1320,17 +1389,28 @@ async function queryTodayLates(emp, client, replyToken) {
 
 // 為使用者連結 8 格 Rich Menu
 async function assignRichMenu(uid, role, token) {
-  if (!_richMenuId8) {
-    _richMenuId8 = await db.getSetting('richmenu_8_id');
-  }
-  if (!_richMenuId8) {
-    console.log('[RichMenu] 8格選單尚未建立，請先至 /admin/setup-richmenu');
-    return false;
-  }
   try {
     var t = token || process.env.LINE_CHANNEL_ACCESS_TOKEN;
     var headers = { 'Authorization': 'Bearer ' + t };
-    if (role === '經理' || role === '老闆' || role === 'boss' || role === '簽核人員') {
+    if (role === '老闆' || role === 'boss') {
+      // 老闆使用 4 格選單
+      if (!_richMenuIdBoss) _richMenuIdBoss = await db.getSetting('richmenu_boss_id');
+      if (!_richMenuIdBoss) {
+        console.log('[RichMenu] 老闆選單尚未建立');
+        return false;
+      }
+      var res = await fetch('https://api.line.me/v2/bot/user/' + uid + '/richmenu/' + _richMenuIdBoss, { method: 'POST', headers });
+      console.log('[RichMenu] assign boss 4-btn to', uid, 'status:', res.status);
+      return res.status === 200;
+    }
+    if (!_richMenuId8) {
+      _richMenuId8 = await db.getSetting('richmenu_8_id');
+    }
+    if (!_richMenuId8) {
+      console.log('[RichMenu] 8格選單尚未建立，請先至 /admin/setup-richmenu');
+      return false;
+    }
+    if (role === '經理' || role === '簽核人員') {
       // 連結 8 格選單
       var res = await fetch('https://api.line.me/v2/bot/user/' + uid + '/richmenu/' + _richMenuId8, { method: 'POST', headers });
       console.log('[RichMenu] assign 8-btn to', uid, 'role:', role, 'status:', res.status);
@@ -1538,4 +1618,429 @@ function makeSimplePng8() {
   return Buffer.concat([sig, ch('IHDR', ihdr), ch('IDAT', deflated), ch('IEND', Buffer.alloc(0))]);
 }
 
-module.exports = { handleEvents, setupRichMenu, makePng, makePng8, assignRichMenu, initFont };
+// ===== 老闆 Rich Menu 2×2 PNG =====
+function makePngBoss() {
+	var canvasLib;
+	try {
+		canvasLib = require('canvas');
+	} catch (e) {
+		return makeSimplePngBoss();
+	}
+
+	var w = 2500, h = 843;
+	var cv = canvasLib.createCanvas(w, h);
+	var ctx = cv.getContext('2d');
+
+	ctx.fillStyle = '#f0f0f0';
+	ctx.fillRect(0, 0, w, h);
+
+	var areas = [
+		{ x: 0, y: 0, w: 1250, h: 421, color: '#06C755', label: '公司今日考勤' },
+		{ x: 1250, y: 0, w: 1250, h: 421, color: '#3498DB', label: '本月請假累計' },
+		{ x: 0, y: 421, w: 1250, h: 422, color: '#E67E22', label: '本月遲到累計' },
+		{ x: 1250, y: 421, w: 1250, h: 422, color: '#9B59B6', label: '本月加班累計' },
+	];
+
+	var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
+
+	for (var i = 0; i < areas.length; i++) {
+		var a = areas[i];
+		var cx = a.x + a.w / 2;
+
+		ctx.fillStyle = a.color;
+		ctx.fillRect(a.x, a.y, a.w, a.h);
+
+		ctx.fillStyle = '#ffffff';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+
+		var label = a.label;
+		if (label.length <= 4) {
+			ctx.font = 'bold 52px ' + fontFamily;
+		} else if (label.length <= 6) {
+			ctx.font = 'bold 44px ' + fontFamily;
+		} else {
+			ctx.font = 'bold 38px ' + fontFamily;
+		}
+		ctx.fillText(label, cx, a.y + a.h * 0.38);
+
+		// 簡化圖示
+		ctx.strokeStyle = '#ffffff';
+		ctx.lineWidth = 8;
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+		ctx.beginPath();
+		var iy = a.y + a.h * 0.72;
+
+		switch (i) {
+			case 0: // 今日考勤 - 儀表板圖案
+				ctx.arc(cx, iy, 28, 0, Math.PI * 2);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx, iy - 20);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx + 15, iy);
+				break;
+			case 1: // 請假累計 - 文件圖案
+				ctx.rect(cx - 22, iy - 30, 44, 60);
+				ctx.moveTo(cx - 10, iy - 10);
+				ctx.lineTo(cx + 10, iy - 10);
+				ctx.moveTo(cx - 10, iy);
+				ctx.lineTo(cx + 10, iy);
+				ctx.moveTo(cx - 10, iy + 10);
+				ctx.lineTo(cx + 6, iy + 10);
+				break;
+			case 2: // 遲到累計 - 時鐘圖案
+				ctx.arc(cx, iy, 28, 0, Math.PI * 2);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx, iy - 18);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx + 12, iy);
+				ctx.moveTo(cx, iy + 28);
+				ctx.lineTo(cx - 10, iy + 18);
+				ctx.lineTo(cx + 10, iy + 18);
+				break;
+			case 3: // 加班累計 - 圖表圖案
+				ctx.moveTo(cx - 24, iy + 28);
+				ctx.lineTo(cx - 14, iy);
+				ctx.lineTo(cx, iy + 18);
+				ctx.lineTo(cx + 14, iy - 12);
+				ctx.lineTo(cx + 24, iy + 8);
+				break;
+		}
+		ctx.stroke();
+	}
+
+	return cv.toBuffer('image/png');
+}
+
+function makeSimplePngBoss() {
+	var zlib = require('zlib');
+	var w = 2500, h = 843;
+	var d = Buffer.alloc(h * (1 + w * 4));
+	for (var y = 0; y < h; y++) {
+		var ro = y * (1 + w * 4);
+		d[ro] = 0;
+		for (var x = 0; x < w; x++) {
+			var o = ro + 1 + x * 4;
+			d[o] = 255; d[o+1] = 255; d[o+2] = 255; d[o+3] = 255;
+		}
+	}
+	function p(x, y, r, g, b) {
+		if (x < 0 || x >= w || y < 0 || y >= h) return;
+		var o = y * (1 + w * 4) + 1 + x * 4;
+		d[o] = r; d[o+1] = g; d[o+2] = b; d[o+3] = 255;
+	}
+	function fr(x, y, w2, h2, r, g, b) {
+		for (var yy = y; yy < y + h2; yy++)
+			for (var xx = x; xx < x + w2; xx++)
+				p(xx, yy, r, g, b);
+	}
+	var colors = [
+		[6, 199, 85], [52, 152, 219],
+		[230, 126, 34], [155, 89, 182]
+	];
+	for (var i = 0; i < 4; i++) {
+		var col = i % 2, row = Math.floor(i / 2);
+		var bx = col * 1250;
+		var by = row === 0 ? 0 : 421;
+		var bh = row === 0 ? 421 : 422;
+		fr(bx, by, 1250, bh, colors[i][0], colors[i][1], colors[i][2]);
+	}
+	var deflated = zlib.deflateSync(d);
+	function crc(b) {
+		var c = 0xffffffff;
+		var t = new Uint32Array(256);
+		for (var n = 0; n < 256; n++) {
+			var cc = n;
+			for (var k = 0; k < 8; k++) cc = cc & 1 ? 0xedb88320 ^ (cc >>> 1) : cc >>> 1;
+			t[n] = cc;
+		}
+		for (var i2 = 0; i2 < b.length; i2++) c = t[(c ^ b[i2]) & 0xff] ^ (c >>> 8);
+		return (c ^ 0xffffffff) >>> 0;
+	}
+	function ch(type, dd) {
+		var l = Buffer.alloc(4);
+		l.writeUInt32BE(dd.length);
+		var tt = Buffer.from(type), a = Buffer.concat([l, tt, dd]);
+		var cc = Buffer.alloc(4);
+		cc.writeUInt32BE(crc(Buffer.concat([tt, dd])));
+		return Buffer.concat([a, cc]);
+	}
+	var sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+	var ihdr = Buffer.alloc(13);
+	ihdr.writeUInt32BE(w, 0);
+	ihdr.writeUInt32BE(h, 4);
+	ihdr[8] = 8;
+	ihdr[9] = 6;
+	return Buffer.concat([sig, ch('IHDR', ihdr), ch('IDAT', deflated), ch('IEND', Buffer.alloc(0))]);
+}
+
+// ===== 老闆查詢功能 =====
+var _richMenuIdBoss = null;
+
+// 查詢公司今日考勤狀態（遲到/曠職/GPS超出/請假）
+async function queryBossTodayStatus(emp, client, replyToken) {
+	var role = emp.role || '';
+	if (role !== '老闆' && role !== 'boss') {
+		return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
+	}
+
+	var today = new Date().toISOString().split('T')[0];
+	var lateMin = parseInt(await db.getSetting('late_buffer_minutes') || process.env.LATE_BUFFER_MINUTES || '30');
+	var startH = parseInt(await db.getSetting('work_start_hour') || process.env.WORK_START_HOUR || '8');
+	var startM = parseInt(await db.getSetting('work_start_minute') || '0');
+	var lateThreshold = startH * 60 + startM + lateMin;
+
+	var allCheckins = await db.queryCheckins(null, today, today, 2000, 0);
+	var allLeaves = await db.getLeaveRequests('approved', 500);
+	var allEmps = await db.listAttendanceEmployees();
+
+	var seen = {};
+	var lateList = [];
+	var orList = [];
+	var orSeen = {};
+	for (var i = 0; i < allCheckins.length; i++) {
+		var c = allCheckins[i];
+		if (c.type === 'check_in' && !seen[c.employee_id]) {
+			seen[c.employee_id] = true;
+			var ct = new Date(c.check_time);
+			var totalMin = ct.getHours() * 60 + ct.getMinutes();
+			if (totalMin > lateThreshold) {
+				lateList.push({ employee_id: c.employee_id, check_time: ct, late_min: totalMin - lateThreshold });
+			}
+		}
+		if (c.in_range === false && !orSeen[c.employee_id]) {
+			orSeen[c.employee_id] = true;
+			var gEmp = await db.getEmployeeById(c.employee_id);
+			if (gEmp) orList.push(gEmp);
+		}
+	}
+
+	// 請假
+	var leaveEmpMap = {};
+	for (var li = 0; li < allLeaves.length; li++) {
+		var al = allLeaves[li];
+		var als = typeof al.start_date === 'string' ? al.start_date.split('T')[0] : '';
+		var ale = typeof al.end_date === 'string' ? al.end_date.split('T')[0] : '';
+		if (als <= today && ale >= today) {
+			var lEmp = await db.getEmployeeById(al.employee_id);
+			if (lEmp) leaveEmpMap[al.employee_id] = lEmp.name + '（' + lEmp.employee_no + '）' + ' ' + (al.leave_type || '請假');
+		}
+	}
+
+	// 曠職
+	var absentList = [];
+	for (var a = 0; a < allEmps.length; a++) {
+		var ae = allEmps[a];
+		if (seen[ae.id]) continue;
+		if (leaveEmpMap[ae.id]) continue;
+		absentList.push(ae);
+	}
+
+	if (lateList.length === 0 && absentList.length === 0 && orList.length === 0 && Object.keys(leaveEmpMap).length === 0) {
+		return client.replyMessage(replyToken, [withMenu('✅ 今日公司考勤正常，無異常人員')]);
+	}
+
+	var lines = ['📋 今日公司考勤狀態'];
+	if (lateList.length > 0) {
+		lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
+		for (var k = 0; k < lateList.length; k++) {
+			var le = lateList[k];
+			var e3 = await db.getEmployeeById(le.employee_id);
+			var t = le.check_time;
+			var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+			lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
+		}
+	}
+	if (absentList.length > 0) {
+		lines.push('\n❌ 曠職（' + absentList.length + ' 人）：');
+		for (var m = 0; m < absentList.length; m++) {
+			lines.push('  ' + absentList[m].name + '（' + absentList[m].employee_no + '）');
+		}
+	}
+	if (orList.length > 0) {
+		lines.push('\n📍 GPS 超出範圍（' + orList.length + ' 人）：');
+		for (var n = 0; n < orList.length; n++) {
+			lines.push('  ' + orList[n].name + '（' + orList[n].employee_no + '）');
+		}
+	}
+	var leaveKeys = Object.keys(leaveEmpMap);
+	if (leaveKeys.length > 0) {
+		lines.push('\n🏖 請假中（' + leaveKeys.length + ' 人）：');
+		for (var li2 = 0; li2 < leaveKeys.length; li2++) {
+			lines.push('  ' + leaveEmpMap[leaveKeys[li2]]);
+		}
+	}
+
+	return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+}
+
+// 當月公司人員請假累計
+async function queryBossMonthLeaves(emp, client, replyToken) {
+	var role = emp.role || '';
+	if (role !== '老闆' && role !== 'boss') {
+		return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
+	}
+
+	var now = new Date();
+	var monthStart = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
+	var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+
+	var allLeaves = await db.getLeaveRequests('approved', 2000);
+	var empLeaveMap = {}; // employee_id -> { name, no, records: [{start, end, hours}], totalHours }
+
+	for (var i = 0; i < allLeaves.length; i++) {
+		var l = allLeaves[i];
+		var ls = typeof l.start_date === 'string' ? l.start_date.split('T')[0] : '';
+		var le2 = typeof l.end_date === 'string' ? l.end_date.split('T')[0] : ls;
+		// 請假區間與本月重疊
+		if (le2 < monthStart || ls > todayStr) continue;
+
+		var hours = leaveHours(l.start_date, l.end_date);
+		if (!empLeaveMap[l.employee_id]) {
+			empLeaveMap[l.employee_id] = { name: l.name, no: l.employee_no, records: [], totalHours: 0 };
+		}
+		empLeaveMap[l.employee_id].records.push({ start: ls, end: le2, hours: hours });
+		empLeaveMap[l.employee_id].totalHours += hours;
+	}
+
+	var keys = Object.keys(empLeaveMap);
+	if (keys.length === 0) {
+		return client.replyMessage(replyToken, [withMenu('📋 本月無請假記錄')]);
+	}
+
+	// 按員工編號排序
+	keys.sort(function(a, b) { return (empLeaveMap[a].no || '').localeCompare(empLeaveMap[b].no || ''); });
+
+	var lines = ['📋 本月請假累計（' + monthStart + ' ~ ' + todayStr + '）'];
+	var totalAll = 0;
+	for (var k = 0; k < keys.length; k++) {
+		var info = empLeaveMap[keys[k]];
+		totalAll += info.totalHours;
+		lines.push('\n👤 ' + info.name + '（' + info.no + '） 累計 ' + info.totalHours + 'h');
+		for (var r = 0; r < info.records.length; r++) {
+			var rec = info.records[r];
+			lines.push('    ' + rec.start + ' ~ ' + rec.end + '（' + rec.hours + 'h）');
+		}
+	}
+	lines.push('\n📊 全公司本月請假合計：' + totalAll + ' 小時');
+
+	return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+}
+
+// 當月公司人員遲到累計
+async function queryBossMonthLates(emp, client, replyToken) {
+	var role = emp.role || '';
+	if (role !== '老闆' && role !== 'boss') {
+		return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
+	}
+
+	var now = new Date();
+	var monthStart = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
+	var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+
+	var lateMin = parseInt(await db.getSetting('late_buffer_minutes') || process.env.LATE_BUFFER_MINUTES || '30');
+	var startH = parseInt(await db.getSetting('work_start_hour') || process.env.WORK_START_HOUR || '8');
+	var startM = parseInt(await db.getSetting('work_start_minute') || '0');
+	var lateThreshold = startH * 60 + startM + lateMin;
+
+	var allCheckins = await db.queryCheckins(null, monthStart, todayStr, 5000, 0);
+	var empLateMap = {}; // employee_id -> { name, no, records: [{date, time, lateMin}], count }
+
+	for (var i = 0; i < allCheckins.length; i++) {
+		var c = allCheckins[i];
+		if (c.type !== 'check_in') continue;
+		var ct = new Date(c.check_time);
+		var totalMin = ct.getHours() * 60 + ct.getMinutes();
+		if (totalMin <= lateThreshold) continue;
+
+		var lateMins = totalMin - lateThreshold;
+		var dateStr = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
+		if (!empLateMap[c.employee_id]) {
+			empLateMap[c.employee_id] = { name: c.name, no: c.employee_no, records: [], count: 0 };
+		}
+		var timeStr = String(ct.getHours()).padStart(2, '0') + ':' + String(ct.getMinutes()).padStart(2, '0');
+		empLateMap[c.employee_id].records.push({ date: dateStr, time: timeStr, lateMin: lateMins });
+		empLateMap[c.employee_id].count++;
+	}
+
+	var keys = Object.keys(empLateMap);
+	if (keys.length === 0) {
+		return client.replyMessage(replyToken, [withMenu('✅ 本月無遲到記錄')]);
+	}
+
+	keys.sort(function(a, b) { return (empLateMap[a].no || '').localeCompare(empLateMap[b].no || ''); });
+
+	var lines = ['📋 本月遲到累計（' + monthStart + ' ~ ' + todayStr + '）'];
+	var totalCount = 0;
+	for (var k = 0; k < keys.length; k++) {
+		var info = empLateMap[keys[k]];
+		totalCount += info.count;
+		lines.push('\n👤 ' + info.name + '（' + info.no + '） 遲到 ' + info.count + ' 次');
+		for (var r = 0; r < info.records.length; r++) {
+			var rec = info.records[r];
+			lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）');
+		}
+	}
+	lines.push('\n📊 全公司本月遲到合計：' + totalCount + ' 次');
+
+	return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+}
+
+// 當月公司人員加班累計
+async function queryBossMonthOvertime(emp, client, replyToken) {
+	var role = emp.role || '';
+	if (role !== '老闆' && role !== 'boss') {
+		return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
+	}
+
+	var now = new Date();
+	var monthStart = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
+	var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+
+	var allOTs = await db.getOvertimeRequests('approved', 2000);
+	var empOTMap = {}; // employee_id -> { name, no, records: [{start, end, hours}], totalHours }
+
+	for (var i = 0; i < allOTs.length; i++) {
+		var ot = allOTs[i];
+		var os = typeof ot.start_time === 'string' ? (ot.start_time.indexOf(' ')!==-1 ? ot.start_time.split(' ')[0] : ot.start_time.split('T')[0]) : '';
+		// 加班日期在本月範圍內
+		if (os < monthStart || os > todayStr) continue;
+
+		var otHours = 0;
+		if (ot.start_time && ot.end_time) {
+			var s2 = new Date(ot.start_time), e2 = new Date(ot.end_time);
+			var diffMs = e2 - s2;
+			if (diffMs > 0) otHours = Math.round(diffMs / 3600000 * 10) / 10;
+		}
+		if (!empOTMap[ot.employee_id]) {
+			empOTMap[ot.employee_id] = { name: ot.name, no: ot.employee_no, records: [], totalHours: 0 };
+		}
+		empOTMap[ot.employee_id].records.push({ start: fmtDt(ot.start_time), end: fmtDt(ot.end_time), hours: otHours });
+		empOTMap[ot.employee_id].totalHours += otHours;
+	}
+
+	var keys = Object.keys(empOTMap);
+	if (keys.length === 0) {
+		return client.replyMessage(replyToken, [withMenu('📋 本月無加班記錄')]);
+	}
+
+	keys.sort(function(a, b) { return (empOTMap[a].no || '').localeCompare(empOTMap[b].no || ''); });
+
+	var lines = ['📋 本月加班累計（' + monthStart + ' ~ ' + todayStr + '）'];
+	var totalAll = 0;
+	for (var k = 0; k < keys.length; k++) {
+		var info = empOTMap[keys[k]];
+		totalAll += info.totalHours;
+		lines.push('\n👤 ' + info.name + '（' + info.no + '） 累計 ' + info.totalHours + 'h');
+		for (var r = 0; r < info.records.length; r++) {
+			var rec = info.records[r];
+			lines.push('    ' + rec.start + ' ~ ' + rec.end + '（' + rec.hours + 'h）');
+		}
+	}
+	lines.push('\n📊 全公司本月加班合計：' + Math.round(totalAll * 10) / 10 + ' 小時');
+
+	return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+}
+
+module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont };

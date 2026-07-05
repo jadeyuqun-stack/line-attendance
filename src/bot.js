@@ -30,7 +30,7 @@ async function initFont() {
 		}
 
 		// 從 Google Fonts 下載子集（只含需要的 16 個字）
-		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢遲到曠職超出GPS人員公司今日考勤本月累計遲到加班狀態';
+		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢遲到曠職超出GPS人員公司今日考勤本月累計遲到加班狀態查詢當天考勤查詢當月考勤';
 		var cssUrl = 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700&text=' + encodeURIComponent(text);
 
 		console.log('[Font] 下載字型...');
@@ -152,8 +152,8 @@ async function handleText(text, uid, client, replyToken) {
     return client.replyMessage(replyToken, [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
-  if (cmd === '查詢當日請假人員') return queryTodayLeaves(emp, client, replyToken);
-  if (cmd === '查詢當日遲到與曠職人員' || cmd === '查詢遲到/曠職/超出GPS') return queryTodayLates(emp, client, replyToken);
+  if (cmd === '查詢當天考勤') return queryTodayAttendance(emp, client, replyToken);
+  if (cmd === '查詢當月考勤') return queryMonthAttendance(emp, client, replyToken);
   if (cmd === '公司今日考勤') return queryBossTodayStatus(emp, client, replyToken);
   if (cmd === '本月請假累計') return queryBossMonthLeaves(emp, client, replyToken);
   if (cmd === '本月遲到累計') return queryBossMonthLates(emp, client, replyToken);
@@ -952,8 +952,8 @@ async function setupRichMenu() {
 				{ bounds: { x: 1875, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '下班' } },
 				{ bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
 				{ bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢' } },
-				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當日請假人員' } },
-				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢遲到/曠職/超出GPS' } },
+				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當天考勤' } },
+				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當月考勤' } },
 			]
 		};
 		var res8a = await fetch('https://api.line.me/v2/bot/richmenu', { method: 'POST', headers, body: JSON.stringify(menu8) });
@@ -1242,8 +1242,135 @@ function isApproverRole(emp) {
   return role === '簽核人員';
 }
 
-// 查詢當月請假人員（1號～月底）
-async function queryTodayLeaves(emp, client, replyToken) {
+// 查詢被簽核人員當天考勤（遲到/曠職/請假/GPS超出範圍）
+async function queryTodayAttendance(emp, client, replyToken) {
+  var role = emp.role || '';
+  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && !emp.can_approve) {
+    return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
+  }
+
+  var today = new Date().toISOString().split('T')[0];
+  var lateMin = parseInt(await db.getSetting('late_buffer_minutes') || process.env.LATE_BUFFER_MINUTES || '30');
+  var startH = parseInt(await db.getSetting('work_start_hour') || process.env.WORK_START_HOUR || '8');
+  var startM = parseInt(await db.getSetting('work_start_minute') || '0');
+  var lateThreshold = startH * 60 + startM + lateMin;
+
+  var designatedIds = {};
+  if (isApproverRole(emp) && !canQueryAll(emp)) {
+    var designated = await db.getDesignatedEmployeeIds(emp.id);
+    for (var d = 0; d < designated.length; d++) {
+      designatedIds[designated[d].id] = true;
+    }
+  }
+
+  var allCheckins = await db.queryCheckins(null, today, today, 2000, 0);
+  var allLeaves = await db.getLeaveRequests('approved', 500);
+  var allEmps = await db.listAttendanceEmployees();
+
+  // 過濾指定員工
+  if (Object.keys(designatedIds).length > 0) {
+    allCheckins = allCheckins.filter(function(c) { return designatedIds[c.employee_id]; });
+  }
+
+  var seen = {};
+  var lateList = [];
+  var orList = [];
+  var orSeen = {};
+  for (var i = 0; i < allCheckins.length; i++) {
+    var c = allCheckins[i];
+    if (c.type === 'check_in' && !seen[c.employee_id]) {
+      seen[c.employee_id] = true;
+      var ct = new Date(c.check_time);
+      var totalMin = ct.getHours() * 60 + ct.getMinutes();
+      if (totalMin > lateThreshold) {
+        var checkDateStr = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
+        if (!(await isHoliday(checkDateStr))) {
+          // 檢查是否被請假覆蓋
+          var covered = false;
+          var ctMs = ct.getTime();
+          for (var cl = 0; cl < allLeaves.length; cl++) {
+            var clv = allLeaves[cl];
+            if (clv.employee_id !== c.employee_id || clv.status !== 'approved') continue;
+            if (ctMs >= new Date(clv.start_date).getTime() && ctMs <= new Date(clv.end_date).getTime()) {
+              covered = true; break;
+            }
+          }
+          lateList.push({ employee_id: c.employee_id, check_time: ct, late_min: totalMin - lateThreshold, covered: covered });
+        }
+      }
+    }
+    if (c.in_range === false && !orSeen[c.employee_id]) {
+      orSeen[c.employee_id] = true;
+      if (Object.keys(designatedIds).length > 0 && !designatedIds[c.employee_id]) continue;
+      var gEmp = await db.getEmployeeById(c.employee_id);
+      if (gEmp) orList.push(gEmp);
+    }
+  }
+
+  // 今日請假
+  var leaveEmpMap = {};
+  for (var li = 0; li < allLeaves.length; li++) {
+    var al = allLeaves[li];
+    if (Object.keys(designatedIds).length > 0 && !designatedIds[al.employee_id]) continue;
+    var als = typeof al.start_date === 'string' ? al.start_date.split('T')[0] : '';
+    var ale = typeof al.end_date === 'string' ? al.end_date.split('T')[0] : '';
+    if (als <= today && ale >= today) {
+      var leaveLabel = al.leave_type === 'annual' ? '特休' : al.leave_type === 'personal' ? '事假' : al.leave_type === 'sick' ? '病假' : al.leave_type === 'official' ? '公假' : al.leave_type === 'outing' ? '外出' : (al.leave_type || '請假');
+      var lEmp = await db.getEmployeeById(al.employee_id);
+      if (lEmp) leaveEmpMap[al.employee_id] = lEmp.name + '（' + lEmp.employee_no + '） ' + leaveLabel;
+    }
+  }
+
+  // 今日曠職（沒打卡且沒請假）
+  var absentList = [];
+  for (var a = 0; a < allEmps.length; a++) {
+    var ae = allEmps[a];
+    if (Object.keys(designatedIds).length > 0 && !designatedIds[ae.id]) continue;
+    if (seen[ae.id]) continue;
+    if (leaveEmpMap[ae.id]) continue;
+    absentList.push(ae);
+  }
+
+  if (lateList.length === 0 && absentList.length === 0 && orList.length === 0 && Object.keys(leaveEmpMap).length === 0) {
+    return client.replyMessage(replyToken, [withMenu('✅ 今日考勤正常，無異常人員')]);
+  }
+
+  var lines = ['📋 今日考勤狀態（' + today.substring(5) + '）'];
+  if (lateList.length > 0) {
+    lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
+    for (var k = 0; k < lateList.length; k++) {
+      var le = lateList[k];
+      var e3 = await db.getEmployeeById(le.employee_id);
+      var t = le.check_time;
+      var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? ' 已請假' : ''));
+    }
+  }
+  if (absentList.length > 0) {
+    lines.push('\n❌ 曠職（' + absentList.length + ' 人）：');
+    for (var m = 0; m < absentList.length; m++) {
+      lines.push('  ' + absentList[m].name + '（' + absentList[m].employee_no + '）');
+    }
+  }
+  if (orList.length > 0) {
+    lines.push('\n📍 GPS 超出範圍（' + orList.length + ' 人）：');
+    for (var n = 0; n < orList.length; n++) {
+      lines.push('  ' + orList[n].name + '（' + orList[n].employee_no + '）');
+    }
+  }
+  var leaveKeys = Object.keys(leaveEmpMap);
+  if (leaveKeys.length > 0) {
+    lines.push('\n🏖 請假中（' + leaveKeys.length + ' 人）：');
+    for (var li2 = 0; li2 < leaveKeys.length; li2++) {
+      lines.push('  ' + leaveEmpMap[leaveKeys[li2]]);
+    }
+  }
+
+  return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+}
+
+// 查詢被簽核人員當月考勤（遲到+請假備註/請假/加班細項與累加，1號～當天）
+async function queryMonthAttendance(emp, client, replyToken) {
   var role = emp.role || '';
   if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && !emp.can_approve) {
     return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
@@ -1253,72 +1380,6 @@ async function queryTodayLeaves(emp, client, replyToken) {
   var monthStart = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
   var lastDay = String(new Date(now.getFullYear(), now.getMonth()+1, 0).getDate()).padStart(2,'0');
   var monthEnd = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + lastDay;
-  var allLeaves = await db.getLeaveRequests('approved', 2000);
-
-  // 建立 designatedIds（簽核人員限定）
-  var designatedIds = {};
-  if (isApproverRole(emp) && !canQueryAll(emp)) {
-    var designated = await db.getDesignatedEmployeeIds(emp.id);
-    for (var d = 0; d < designated.length; d++) {
-      designatedIds[designated[d].id] = true;
-    }
-  }
-
-  // 彙整本月請假：employee_id → { name, no, records: [{start,end,type,hours}], totalHours }
-  var empLeaveMap = {};
-  for (var i = 0; i < allLeaves.length; i++) {
-    var l = allLeaves[i];
-    // 簽核人員限定
-    if (Object.keys(designatedIds).length > 0 && !designatedIds[l.employee_id]) continue;
-    var ls = typeof l.start_date === 'string' ? l.start_date.substring(0, 10) : '';
-    var le2 = typeof l.end_date === 'string' ? l.end_date.substring(0, 10) : ls;
-    if (le2 < monthStart || ls > monthEnd) continue;
-
-    var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : (l.leave_type || '請假');
-    var hours = leaveHours(l.start_date, l.end_date);
-    if (!empLeaveMap[l.employee_id]) {
-      empLeaveMap[l.employee_id] = { name: l.name, no: l.employee_no, records: [], totalHours: 0 };
-    }
-    empLeaveMap[l.employee_id].records.push({
-      start: fmtDt(l.start_date).length > 7 ? fmtDt(l.start_date).substring(5) : fmtDt(l.start_date),
-      end: fmtDt(l.end_date).length > 7 ? fmtDt(l.end_date).substring(5) : fmtDt(l.end_date),
-      type: leaveLabel, hours: hours
-    });
-    empLeaveMap[l.employee_id].totalHours += hours;
-  }
-
-  var keys = Object.keys(empLeaveMap);
-  if (keys.length === 0) {
-    return client.replyMessage(replyToken, [withMenu('📋 本月無請假人員')]);
-  }
-
-  keys.sort(function(a, b) { return (empLeaveMap[a].no || '').localeCompare(empLeaveMap[b].no || ''); });
-
-  var lines = ['📋 本月請假人員（' + monthStart.substring(5) + ' ~ ' + monthEnd.substring(5) + '）'];
-  var totalAll = 0;
-  for (var k = 0; k < keys.length; k++) {
-    var info = empLeaveMap[keys[k]];
-    totalAll += info.totalHours;
-    lines.push('\n👤 ' + info.name + '（' + info.no + '） 累計 ' + info.totalHours + 'h');
-    for (var r = 0; r < info.records.length; r++) {
-      var rec = info.records[r];
-      lines.push('    ' + rec.start + ' ~ ' + rec.end + ' ' + rec.type + '（' + rec.hours + 'h）');
-    }
-  }
-  lines.push('\n📊 合計：' + totalAll + ' 小時');
-
-  return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
-}
-
-// 查詢當月遲到/曠職/GPS/加班人員（1號～今天）
-async function queryTodayLates(emp, client, replyToken) {
-  var role = emp.role || '';
-  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && !emp.can_approve) {
-    return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
-  }
-
-  var now = new Date();
-  var monthStart = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
   var today = now.toISOString().split('T')[0];
   var lateMin = parseInt(await db.getSetting('late_buffer_minutes') || process.env.LATE_BUFFER_MINUTES || '30');
   var startH = parseInt(await db.getSetting('work_start_hour') || process.env.WORK_START_HOUR || '8');
@@ -1341,7 +1402,7 @@ async function queryTodayLates(emp, client, replyToken) {
     allCheckins = allCheckins.filter(function(c) { return designatedIds[c.employee_id]; });
   }
 
-  // 遲到彙整
+  // 遲到彙整（1號～當天）
   var empLateMap = {};
   for (var i = 0; i < allCheckins.length; i++) {
     var c = allCheckins[i];
@@ -1371,48 +1432,26 @@ async function queryTodayLates(emp, client, replyToken) {
     empLateMap[c.employee_id].count++;
   }
 
-  // 今日曠職判斷
-  var todayCheckins = allCheckins.filter(function(c) {
-    var ct2 = new Date(c.check_time);
-    var d2 = ct2.getFullYear() + '-' + String(ct2.getMonth()+1).padStart(2,'0') + '-' + String(ct2.getDate()).padStart(2,'0');
-    return d2 === today;
-  });
-  var todaySeen = {};
-  for (var ti = 0; ti < todayCheckins.length; ti++) {
-    todaySeen[todayCheckins[ti].employee_id] = true;
-  }
-
-  var todayLeaveIds = {};
+  // 本月請假彙整（1號～月底）
+  var empLeaveMap = {};
   for (var li = 0; li < allLeaves.length; li++) {
-    var al = allLeaves[li];
-    if (Object.keys(designatedIds).length > 0 && !designatedIds[al.employee_id]) continue;
-    var als = typeof al.start_date === 'string' ? al.start_date.substring(0, 10) : '';
-    var ale = typeof al.end_date === 'string' ? al.end_date.substring(0, 10) : als;
-    if (als <= today && ale >= today) {
-      todayLeaveIds[al.employee_id] = true;
-    }
-  }
+    var l = allLeaves[li];
+    if (Object.keys(designatedIds).length > 0 && !designatedIds[l.employee_id]) continue;
+    var ls = typeof l.start_date === 'string' ? l.start_date.substring(0, 10) : '';
+    var le2 = typeof l.end_date === 'string' ? l.end_date.substring(0, 10) : ls;
+    if (le2 < monthStart || ls > monthEnd) continue;
 
-  var allEmps = await db.listAttendanceEmployees();
-  var absentList = [];
-  for (var a = 0; a < allEmps.length; a++) {
-    var ae = allEmps[a];
-    if (Object.keys(designatedIds).length > 0 && !designatedIds[ae.id]) continue;
-    if (todaySeen[ae.id]) continue;
-    if (todayLeaveIds[ae.id]) continue;
-    absentList.push(ae);
-  }
-
-  // GPS 超出範圍
-  var orList = [];
-  var orSeen = {};
-  for (var g = 0; g < allCheckins.length; g++) {
-    var gc = allCheckins[g];
-    if (gc.in_range === false && !orSeen[gc.employee_id]) {
-      orSeen[gc.employee_id] = true;
-      var gEmp = await db.getEmployeeById(gc.employee_id);
-      if (gEmp) orList.push(gEmp);
+    var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : (l.leave_type || '請假');
+    var hours = leaveHours(l.start_date, l.end_date);
+    if (!empLeaveMap[l.employee_id]) {
+      empLeaveMap[l.employee_id] = { name: l.name, no: l.employee_no, records: [], totalHours: 0 };
     }
+    empLeaveMap[l.employee_id].records.push({
+      start: fmtDt(l.start_date).length > 7 ? fmtDt(l.start_date).substring(5) : fmtDt(l.start_date),
+      end: fmtDt(l.end_date).length > 7 ? fmtDt(l.end_date).substring(5) : fmtDt(l.end_date),
+      type: leaveLabel, hours: hours
+    });
+    empLeaveMap[l.employee_id].totalHours += hours;
   }
 
   // 本月加班
@@ -1441,12 +1480,13 @@ async function queryTodayLates(emp, client, replyToken) {
 
   // 輸出
   var lateKeys = Object.keys(empLateMap);
+  var leaveKeys = Object.keys(empLeaveMap);
   var otKeys = Object.keys(empOTMap);
-  if (lateKeys.length === 0 && absentList.length === 0 && orList.length === 0 && otKeys.length === 0) {
+  if (lateKeys.length === 0 && leaveKeys.length === 0 && otKeys.length === 0) {
     return client.replyMessage(replyToken, [withMenu('✅ 本月無異常人員')]);
   }
 
-  var lines = ['📋 本月考勤（' + monthStart.substring(5) + ' ~ ' + today.substring(5) + '）'];
+  var lines = ['📋 當月考勤（' + monthStart.substring(5) + ' ~ ' + today.substring(5) + '）'];
 
   if (lateKeys.length > 0) {
     lateKeys.sort(function(a, b) { return (empLateMap[a].no || '').localeCompare(empLateMap[b].no || ''); });
@@ -1464,31 +1504,33 @@ async function queryTodayLates(emp, client, replyToken) {
     lines.push('  📊 遲到合計：' + totalLate + ' 次');
   }
 
-  if (absentList.length > 0) {
-    lines.push('\n❌ 今日曠職（' + absentList.length + ' 人）：');
-    for (var m = 0; m < absentList.length; m++) {
-      lines.push('  ' + absentList[m].name + '（' + absentList[m].employee_no + '）');
+  if (leaveKeys.length > 0) {
+    leaveKeys.sort(function(a, b) { return (empLeaveMap[a].no || '').localeCompare(empLeaveMap[b].no || ''); });
+    lines.push('\n🏖 請假累計（當月）：');
+    var totalLeave = 0;
+    for (var k2 = 0; k2 < leaveKeys.length; k2++) {
+      var info2 = empLeaveMap[leaveKeys[k2]];
+      totalLeave += info2.totalHours;
+      lines.push('  ' + info2.name + '（' + info2.no + '） 累計 ' + info2.totalHours + 'h');
+      for (var r2 = 0; r2 < info2.records.length; r2++) {
+        var rec2 = info2.records[r2];
+        lines.push('      ' + rec2.start + ' ~ ' + rec2.end + ' ' + rec2.type + '（' + rec2.hours + 'h）');
+      }
     }
-  }
-
-  if (orList.length > 0) {
-    lines.push('\n📍 GPS 超出範圍（' + orList.length + ' 人）：');
-    for (var n = 0; n < orList.length; n++) {
-      lines.push('  ' + orList[n].name + '（' + orList[n].employee_no + '）');
-    }
+    lines.push('  📊 請假合計：' + totalLeave + ' 小時');
   }
 
   if (otKeys.length > 0) {
     otKeys.sort(function(a, b) { return (empOTMap[a].no || '').localeCompare(empOTMap[b].no || ''); });
     lines.push('\n🕐 加班累計：');
     var totalOT = 0;
-    for (var k2 = 0; k2 < otKeys.length; k2++) {
-      var info2 = empOTMap[otKeys[k2]];
-      totalOT += info2.totalHours;
-      lines.push('  ' + info2.name + '（' + info2.no + '） 累計 ' + info2.totalHours + 'h');
-      for (var r2 = 0; r2 < info2.records.length; r2++) {
-        var rec2 = info2.records[r2];
-        lines.push('      ' + rec2.start + ' ~ ' + rec2.end + '（' + rec2.hours + 'h）');
+    for (var k3 = 0; k3 < otKeys.length; k3++) {
+      var info3 = empOTMap[otKeys[k3]];
+      totalOT += info3.totalHours;
+      lines.push('  ' + info3.name + '（' + info3.no + '） 累計 ' + info3.totalHours + 'h');
+      for (var r3 = 0; r3 < info3.records.length; r3++) {
+        var rec3 = info3.records[r3];
+        lines.push('      ' + rec3.start + ' ~ ' + rec3.end + '（' + rec3.hours + 'h）');
       }
     }
     lines.push('  📊 加班合計：' + Math.round(totalOT * 10) / 10 + ' 小時');
@@ -1560,8 +1602,8 @@ function makePng8() {
     { x: 1875, y: 0, w: 625, h: 421, color: '#F39C12', label: '下班' },
     { x: 0, y: 421, w: 625, h: 422, color: '#9B59B6', label: '加班' },
     { x: 625, y: 421, w: 625, h: 422, color: '#3498DB', label: '查詢' },
-    { x: 1250, y: 421, w: 625, h: 422, color: '#E67E22', label: '查詢請假' },
-    { x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '查詢遲到/曠職\n超出GPS人員' },
+    { x: 1250, y: 421, w: 625, h: 422, color: '#E67E22', label: '查詢當天考勤' },
+    { x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '查詢當月考勤' },
   ];
 
   var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';

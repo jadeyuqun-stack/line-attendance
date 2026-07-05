@@ -2304,21 +2304,34 @@ function textToImage(title, bodyText) {
     return null;
   }
 
-  // 替換 emoji 為純文字（中文字型不含 emoji 圖示）
+  // 替換 emoji 為標記（後續用彩色圓點繪製）
   var emojiMap = {
-    '⚠️': '[!]', '⚠': '[!]',
-    '❌': '[X]',
-    '✅': '[O]',
-    '📍': '[@]',
-    '🏖': '[假]',
-    '🕐': '[OT]',
-    '📊': '[計]',
-    '👤': '[*]',
-    '🔵': '[上]',
-    '🔴': '[下]',
+    '⚠️': '! ', '⚠': '! ',
+    '❌': 'X ',
+    '✅': 'V ',
+    '📍': '@ ',
+    '🏖': '~ ',
+    '🕐': 'O ',
+    '📊': '= ',
+    '👤': '* ',
+    '🔵': '+ ',
+    '🔴': '- ',
     '📋': '',
     '📅': '',
     '📦': ''
+  };
+  // 標記對應的顏色
+  var iconColors = {
+    '!': '#f59e0b', // ⚠️ 橘色
+    'X': '#ef4444', // ❌ 紅色
+    'V': '#22c55e', // ✅ 綠色
+    '@': '#3b82f6', // 📍 藍色
+    '~': '#eab308', // 🏖 黃色
+    'O': '#a855f7', // 🕐 紫色
+    '=': '#10b981', // 📊 翠綠
+    '*': '#6b7280', // 👤 灰色
+    '+': '#3b82f6', // 🔵 藍
+    '-': '#ef4444', // 🔴 紅
   };
   var emojiKeys = Object.keys(emojiMap);
   for (var ei = 0; ei < emojiKeys.length; ei++) {
@@ -2368,43 +2381,56 @@ function textToImage(title, bodyText) {
   // 資料行
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
+  var iconR = 11; // 彩色圓點半徑
   for (var i = 0; i < lines.length; i++) {
     var y = paddingY + titleHeight + i * lineHeight + lineHeight / 2;
     var line = lines[i];
 
+    // 偵測行首標記（略過前導空白，找單字元 + 空格）
+    var trimmed = line.replace(/^ +/, '');
+    var marker = trimmed.length >= 2 ? trimmed.charAt(0) : '';
+    var hasMarker = marker && trimmed.charAt(1) === ' ' && iconColors[marker];
+    var indent = line.length - trimmed.length; // 前導空白數
+    var displayText = hasMarker ? trimmed.substring(2) : line;
+
     // 判斷行類型
-    var isSection = false;
     if (line.indexOf('---') === 0 || line.length === 0) {
-      // 分隔線／空行，畫淺灰底
       ctx.fillStyle = '#f0f0f0';
       ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
-      isSection = true;
-    } else if (line.indexOf('[!]') !== -1 || line.indexOf('[X]') !== -1 || line.indexOf('[假]') !== -1 || line.indexOf('[OT]') !== -1 || line.indexOf('[@]') !== -1) {
-      // 區段標題，淺色底
-      ctx.fillStyle = '#f8fcf9';
-      ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
-      ctx.fillStyle = '#333333';
-      ctx.font = 'bold ' + fontSize + 'px ' + fontFamily;
-    } else if (line.indexOf('[計]') !== -1) {
-      // 合計行
-      ctx.fillStyle = '#e6f9ee';
-      ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
-      ctx.fillStyle = '#06c755';
-      ctx.font = 'bold ' + fontSize + 'px ' + fontFamily;
+    } else if (hasMarker) {
+      // 有標記 → 繪製彩色圓點 + 文字
+      var isSection = (marker === '!' || marker === 'X' || marker === '@' || marker === '~' || marker === 'O');
+      var isTotal = (marker === '=');
+      var textX = paddingX + indent * 10;
+
+      // 區段標題 / 合計行才加背景
+      if (isSection || isTotal) {
+        ctx.fillStyle = isTotal ? '#e6f9ee' : '#f8fcf9';
+        ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
+      }
+
+      // 繪製彩色圓點
+      var dotColor = iconColors[marker];
+      ctx.fillStyle = dotColor;
+      ctx.beginPath();
+      ctx.arc(textX + iconR + 2, y, iconR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 文字
+      ctx.fillStyle = isTotal ? '#06c755' : (isSection ? '#333333' : '#555555');
+      ctx.font = (isSection || isTotal ? 'bold ' : '') + fontSize + 'px ' + fontFamily;
+      ctx.fillText(displayText, textX + iconR * 2 + 10, y);
     } else if (line.indexOf('  ') === 0) {
       // 縮排明細
       ctx.fillStyle = '#666666';
       ctx.font = (fontSize - 2) + 'px ' + fontFamily;
-    } else if (line.indexOf('[*]') !== -1 || line.indexOf('  ') !== 0 && line.length > 0) {
+      ctx.fillText(line, paddingX, y);
+    } else {
       // 一般資料行
       ctx.fillStyle = '#333333';
       ctx.font = fontSize + 'px ' + fontFamily;
-    } else {
-      ctx.fillStyle = '#333333';
-      ctx.font = fontSize + 'px ' + fontFamily;
+      ctx.fillText(line, paddingX, y);
     }
-
-    ctx.fillText(line, paddingX, y);
   }
 
   // 底部邊框

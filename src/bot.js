@@ -29,9 +29,8 @@ async function initFont() {
 			}
 		}
 
-		// 從 Google Fonts 下載子集（只含需要的 16 個字）
-		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢遲到曠職超出GPS人員公司今日考勤本月累計遲到加班狀態查詢當天考勤查詢當月考勤0123456789日期時間員工編號姓名部門時數小時次分鐘分晚無合常範圍已特休事病公外其紀錄原確認取消儲存概況異常:~-.()/h!⚠❌✅📍🏖🕐📊👤🔵🔴未滿蓋';
-		var cssUrl = 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700&text=' + encodeURIComponent(text);
+		// 從 Google Fonts 下載完整字型（Bold 700，涵蓋所有中文字元，不加 subset 限制）
+		var cssUrl = 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700';
 
 		console.log('[Font] 下載字型...');
 		var css = await new Promise(function(resolve, reject) {

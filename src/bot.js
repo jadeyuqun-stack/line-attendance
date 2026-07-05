@@ -1884,7 +1884,8 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 
 	var now = new Date();
 	var monthStart = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
-	var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+	var lastDay = String(new Date(now.getFullYear(), now.getMonth()+1, 0).getDate()).padStart(2,'0');
+	var monthEnd = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + lastDay;
 
 	var allLeaves = await db.getLeaveRequests('approved', 2000);
 	var empLeaveMap = {}; // employee_id -> { name, no, records: [{start, end, hours}], totalHours }
@@ -1894,7 +1895,7 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 		var ls = typeof l.start_date === 'string' ? l.start_date.split('T')[0] : '';
 		var le2 = typeof l.end_date === 'string' ? l.end_date.split('T')[0] : ls;
 		// 請假區間與本月重疊
-		if (le2 < monthStart || ls > todayStr) continue;
+		if (le2 < monthStart || ls > monthEnd) continue;
 
 		var hours = leaveHours(l.start_date, l.end_date);
 		if (!empLeaveMap[l.employee_id]) {
@@ -1912,7 +1913,7 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 	// 按員工編號排序
 	keys.sort(function(a, b) { return (empLeaveMap[a].no || '').localeCompare(empLeaveMap[b].no || ''); });
 
-	var lines = ['📋 本月請假累計（' + monthStart + ' ~ ' + todayStr + '）'];
+	var lines = ['📋 本月請假累計（' + monthStart + ' ~ ' + monthEnd + '）'];
 	var totalAll = 0;
 	for (var k = 0; k < keys.length; k++) {
 		var info = empLeaveMap[keys[k]];

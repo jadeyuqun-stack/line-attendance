@@ -2320,6 +2320,29 @@ function textToImage(title, bodyText) {
     return null;
   }
 
+  // 替換 emoji 為純文字（中文字型不含 emoji 圖示）
+  var emojiMap = {
+    '⚠️': '[!]', '⚠': '[!]',
+    '❌': '[X]',
+    '✅': '[O]',
+    '📍': '[@]',
+    '🏖': '[假]',
+    '🕐': '[OT]',
+    '📊': '[計]',
+    '👤': '[*]',
+    '🔵': '[上]',
+    '🔴': '[下]',
+    '📋': '',
+    '📅': '',
+    '📦': ''
+  };
+  var emojiKeys = Object.keys(emojiMap);
+  for (var ei = 0; ei < emojiKeys.length; ei++) {
+    var ek = emojiKeys[ei];
+    while (title.indexOf(ek) !== -1) title = title.replace(ek, emojiMap[ek]);
+    while (bodyText.indexOf(ek) !== -1) bodyText = bodyText.replace(ek, emojiMap[ek]);
+  }
+
   var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
 
   var lines = bodyText.split('\n');
@@ -2372,13 +2395,13 @@ function textToImage(title, bodyText) {
       ctx.fillStyle = '#f0f0f0';
       ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
       isSection = true;
-    } else if (line.indexOf('⚠️') !== -1 || line.indexOf('❌') !== -1 || line.indexOf('🏖') !== -1 || line.indexOf('🕐') !== -1 || line.indexOf('📍') !== -1) {
+    } else if (line.indexOf('[!]') !== -1 || line.indexOf('[X]') !== -1 || line.indexOf('[假]') !== -1 || line.indexOf('[OT]') !== -1 || line.indexOf('[@]') !== -1) {
       // 區段標題，淺色底
       ctx.fillStyle = '#f8fcf9';
       ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
       ctx.fillStyle = '#333333';
       ctx.font = 'bold ' + fontSize + 'px ' + fontFamily;
-    } else if (line.indexOf('📊') !== -1) {
+    } else if (line.indexOf('[計]') !== -1) {
       // 合計行
       ctx.fillStyle = '#e6f9ee';
       ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
@@ -2388,7 +2411,7 @@ function textToImage(title, bodyText) {
       // 縮排明細
       ctx.fillStyle = '#666666';
       ctx.font = (fontSize - 2) + 'px ' + fontFamily;
-    } else if (line.indexOf('👤') !== -1 || line.indexOf('  ') !== 0 && line.length > 0) {
+    } else if (line.indexOf('[*]') !== -1 || line.indexOf('  ') !== 0 && line.length > 0) {
       // 一般資料行
       ctx.fillStyle = '#333333';
       ctx.font = fontSize + 'px ' + fontFamily;

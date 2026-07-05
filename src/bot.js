@@ -1806,7 +1806,10 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 			var ct = new Date(c.check_time);
 			var totalMin = ct.getHours() * 60 + ct.getMinutes();
 			if (totalMin > lateThreshold) {
-				lateList.push({ employee_id: c.employee_id, check_time: ct, late_min: totalMin - lateThreshold });
+				var checkDateStr = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
+				if (!(await isHoliday(checkDateStr))) {
+					lateList.push({ employee_id: c.employee_id, check_time: ct, late_min: totalMin - lateThreshold });
+				}
 			}
 		}
 		if (c.in_range === false && !orSeen[c.employee_id]) {
@@ -2043,7 +2046,7 @@ async function queryBossMonthOvertime(emp, client, replyToken) {
 		lines.push('\n👤 ' + info.name + '（' + info.no + '） 累計 ' + info.totalHours + 'h');
 		for (var r = 0; r < info.records.length; r++) {
 			var rec = info.records[r];
-			lines.push('    ' + rec.start + ' ~ ' + rec.end + ' ' + rec.type + '（' + rec.hours + 'h）');
+			lines.push('    ' + rec.start + ' ~ ' + rec.end + '（' + rec.hours + 'h）');
 		}
 	}
 	lines.push('\n📊 全公司本月加班合計：' + Math.round(totalAll * 10) / 10 + ' 小時');

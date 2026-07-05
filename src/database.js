@@ -275,6 +275,13 @@ async function recordCheckin(empId, type, loc, inRange, dist) {
 async function deleteCheckin(id) {
   await pool.query('DELETE FROM checkins WHERE id=$1', [id]);
 }
+async function updateCheckinTime(id, newTime) {
+  // newTime 格式：'HH:MM'，保留原有日期，只改時間
+  await pool.query(
+    "UPDATE checkins SET check_time = (check_time::date || ' ' || $2 || ':00')::timestamp AT TIME ZONE 'Asia/Taipei' WHERE id=$1",
+    [id, newTime]
+  );
+}
 async function getTodayCheckins(empId) {
   const { rows } = await pool.query(
     "SELECT * FROM checkins WHERE employee_id=$1 AND check_time::date=CURRENT_DATE ORDER BY check_time",
@@ -550,7 +557,7 @@ module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
   listActiveEmployees, listAttendanceEmployees, getDesignatedEmployeeIds, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, hardDeleteEmployee, updateEmployee,
-  recordCheckin, deleteCheckin, getTodayCheckins, queryCheckins, getCheckinSummary, getTodaySummary,
+  recordCheckin, deleteCheckin, updateCheckinTime, getTodayCheckins, queryCheckins, getCheckinSummary, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, deleteLeaveRequest, getEmployeeById, findApprovers, setApprover, listApprovers,
   saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll,

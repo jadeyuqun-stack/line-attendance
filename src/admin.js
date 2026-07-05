@@ -264,8 +264,8 @@ router.get('/records', auth, async (req, res) => {
     // 篩選員工
     if (req.query.eid && parseInt(req.query.eid) !== parseInt(e.id)) continue;
 
-    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 '+fmt(d2.checkIn.check_time)+'</span>'+(d2.checkIn.address?'<br><small style="color:#999">📍 '+h(d2.checkIn.address)+'</small>':'')+(d2.checkIn.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
-    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 '+fmt(d2.checkOut.check_time)+'</span>'+(d2.checkOut.address?'<br><small style="color:#999">📍 '+h(d2.checkOut.address)+'</small>':'')+(d2.checkOut.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
+    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 <span id="ci_'+d2.checkIn.id+'">'+fmt(d2.checkIn.check_time)+'</span></span> <button onclick="editTime('+d2.checkIn.id+',\'ci\')" class="btn-sm" style="font-size:10px;padding:1px 4px;background:#f0f0f0;border:1px solid #ddd;border-radius:3px;cursor:pointer" title="修改時間">✎</button>'+(d2.checkIn.address?'<br><small style="color:#999">📍 '+h(d2.checkIn.address)+'</small>':'')+(d2.checkIn.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
+    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 <span id="co_'+d2.checkOut.id+'">'+fmt(d2.checkOut.check_time)+'</span></span> <button onclick="editTime('+d2.checkOut.id+',\'co\')" class="btn-sm" style="font-size:10px;padding:1px 4px;background:#f0f0f0;border:1px solid #ddd;border-radius:3px;cursor:pointer" title="修改時間">✎</button>'+(d2.checkOut.address?'<br><small style="color:#999">📍 '+h(d2.checkOut.address)+'</small>':'')+(d2.checkOut.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
     var hours = '-', workH = 0;
     if (d2.checkIn && d2.checkOut) {
       var ci = new Date(d2.checkIn.check_time), co = new Date(d2.checkOut.check_time);
@@ -322,7 +322,7 @@ router.get('/records', auth, async (req, res) => {
     + '<div class="card"><h3>'+(month ? startDate+' ~ '+endDate : d)+' 打卡記錄' + (absentCount > 0 ? '（曠職 '+absentCount+' 人）' : '') + '</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th><th>操作</th></tr>'+rows+'</table></div>'
     + '<button onclick="clearCheckins()" class="btn-sm btn-red">🗑 清除所有打卡記錄</button> '
     + '<input type="date" id="expStart" value="'+d+'" style="width:auto;margin-left:8px" title="開始日期"> ~ <input type="date" id="expEnd" value="'+d+'" style="width:auto" title="結束日期"> <button onclick="exportCheckins()" class="btn-sm btn" style="margin-left:4px">📥 匯出 Excel</button> <button onclick="exportSummary()" class="btn-sm btn" style="margin-left:4px;background:#3498db">📊 匯出彙總</button>'
-    + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}async function deleteCheckin(id){if(!confirm("確定刪除此筆打卡記錄？"))return;var r=await fetch("/admin/api/checkins/"+id,{method:"DELETE"});if(r.ok)location.reload();else alert("刪除失敗");}function exportCheckins(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/checkins?start="+s+"&end="+e;}function exportSummary(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/summary?start="+s+"&end="+e;}</script>';
+    + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}async function deleteCheckin(id){if(!confirm("確定刪除此筆打卡記錄？"))return;var r=await fetch("/admin/api/checkins/"+id,{method:"DELETE"});if(r.ok)location.reload();else alert("刪除失敗");}function exportCheckins(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/checkins?start="+s+"&end="+e;}function exportSummary(){var s=document.getElementById("expStart").value;var e=document.getElementById("expEnd").value;if(!s||!e){alert("請選擇日期範圍");return;}location.href="/admin/export/summary?start="+s+"&end="+e;}var editingId=null;var editingPrefix="";function editTime(id,prefix){if(editingId&&editingId!==id)cancelEdit();var el=document.getElementById(prefix+"_"+id);if(!el)return;var current=el.textContent.trim();var match=current.match(/(\\d{2}:\\d{2})/);var oldTime=match?match[1]:"";editingId=id;editingPrefix=prefix;el.innerHTML="<input type=\'time\' id=\'edit_time_input\' value=\'"+oldTime+"\' style=\'width:90px;font-size:12px;padding:2px 4px\'> <button onclick=\'saveTime()\' class=\'btn-sm\' style=\'font-size:10px;padding:1px 5px;background:#06c755;color:#fff;border:none;border-radius:3px;cursor:pointer\'>✓</button> <button onclick=\'cancelEdit()\' class=\'btn-sm\' style=\'font-size:10px;padding:1px 5px;background:#e74c3c;color:#fff;border:none;border-radius:3px;cursor:pointer\'>✕</button>";}function cancelEdit(){if(!editingId)return;location.reload();}async function saveTime(){if(!editingId)return;var input=document.getElementById("edit_time_input");if(!input)return;var newTime=input.value;if(!newTime){alert("請選擇時間");return;}var r=await fetch("/admin/api/checkins/"+editingId,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({time:newTime})});if(r.ok){location.reload();}else{var err=await r.json();alert("修改失敗："+err.error);}}</script>';
   res.send(layout('打卡記錄', '打卡記錄', body));
 });
 
@@ -548,6 +548,19 @@ router.delete('/api/checkins/clear', auth, async (_, res) => {
 router.delete('/api/checkins/:id', auth, async (req, res) => {
   try {
     await db.deleteCheckin(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+// 修改打卡時間
+router.put('/api/checkins/:id', auth, express.json(), async (req, res) => {
+  try {
+    var newTime = req.body.time; // HH:MM
+    if (!newTime || !/^\d{2}:\d{2}$/.test(newTime)) {
+      return res.status(400).json({ error: '時間格式錯誤，需為 HH:MM' });
+    }
+    await db.updateCheckinTime(parseInt(req.params.id), newTime);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

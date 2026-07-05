@@ -1105,97 +1105,86 @@ function makePng() {
 	var cv = canvasLib.createCanvas(w, h);
 	var ctx = cv.getContext('2d');
 
-	// 背景
-	ctx.fillStyle = '#f0f0f0';
+	// 深色背景
+	ctx.fillStyle = '#0f172a';
 	ctx.fillRect(0, 0, w, h);
 
-	// 區塊定義
+	var gap = 4;
 	var areas = [
-		{ x: 0, y: 0, w: 833, h: 421, color: '#06C755', label: '上班' },
-		{ x: 833, y: 0, w: 834, h: 421, color: '#1ABC9C', label: '請假' },
-		{ x: 1667, y: 0, w: 833, h: 421, color: '#F39C12', label: '下班' },
-		{ x: 0, y: 421, w: 833, h: 422, color: '#9B59B6', label: '加班' },
-		{ x: 833, y: 421, w: 834, h: 422, color: '#34495E', label: '補打卡' },
-		{ x: 1667, y: 421, w: 833, h: 422, color: '#3498DB', label: '查詢' },
+		{ x: 0, y: 0, w: 833, h: 421, color: '#059669', label: '上班' },
+		{ x: 833 + gap, y: 0, w: 833 - gap, h: 421, color: '#0d9488', label: '請假' },
+		{ x: 1667 + gap, y: 0, w: 833 - gap, h: 421, color: '#d97706', label: '下班' },
+		{ x: 0, y: 421 + gap, w: 833, h: 422 - gap, color: '#7c3aed', label: '加班' },
+		{ x: 833 + gap, y: 421 + gap, w: 833 - gap, h: 422 - gap, color: '#4f46e5', label: '補打卡' },
+		{ x: 1667 + gap, y: 421 + gap, w: 833 - gap, h: 422 - gap, color: '#2563eb', label: '查詢' },
 	];
 
-	// 中文字型 fallback
 	var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
 
 	for (var i = 0; i < areas.length; i++) {
 		var a = areas[i];
-		var isTop = i < 3;
 		var cx = a.x + a.w / 2;
 
-		// 填滿背景
+		// 主色背景
 		ctx.fillStyle = a.color;
 		ctx.fillRect(a.x, a.y, a.w, a.h);
 
-		// 繪製文字
+		// 頂部亮邊
+		ctx.fillStyle = 'rgba(255,255,255,0.12)';
+		ctx.fillRect(a.x, a.y, a.w, 6);
+
+		// 大型 label 文字（置中偏上）
 		ctx.fillStyle = '#ffffff';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
+		ctx.font = 'bold 80px ' + fontFamily;
+		ctx.fillText(a.label, cx, a.y + a.h * 0.48);
 
-		var label = a.label;
-		if (label.length <= 2) {
-			ctx.font = 'bold 68px ' + fontFamily;
-		} else if (label.length === 3) {
-			ctx.font = 'bold 56px ' + fontFamily;
-		} else {
-			ctx.font = 'bold 48px ' + fontFamily;
-		}
-		ctx.fillText(label, cx, a.y + a.h * 0.38);
-
-		// 繪製圖示
-		ctx.strokeStyle = '#ffffff';
+		// 簡約底部線條圖示
+		ctx.strokeStyle = 'rgba(255,255,255,0.35)';
 		ctx.lineWidth = 7;
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
 		ctx.beginPath();
-		var iy = a.y + a.h * 0.72;
+		var iy = a.y + a.h * 0.80;
 
 		switch (i) {
 			case 0: // 上班 ▲
-				ctx.moveTo(cx, iy + 30);
-				ctx.lineTo(cx, iy - 30);
-				ctx.moveTo(cx - 28, iy - 8);
-				ctx.lineTo(cx, iy - 30);
-				ctx.lineTo(cx + 28, iy - 8);
+				ctx.moveTo(cx - 32, iy + 16);
+				ctx.lineTo(cx, iy - 16);
+				ctx.lineTo(cx + 32, iy + 16);
 				break;
-			case 1: // 請假 📄
-				ctx.rect(cx - 30, iy - 35, 60, 70);
-				ctx.moveTo(cx - 16, iy - 12);
-				ctx.lineTo(cx - 16, iy + 5);
-				ctx.moveTo(cx, iy - 12);
-				ctx.lineTo(cx, iy + 5);
-				ctx.moveTo(cx + 16, iy - 12);
-				ctx.lineTo(cx + 16, iy + 5);
+			case 1: // 請假 三條線
+				ctx.moveTo(cx - 24, iy - 16);
+				ctx.lineTo(cx - 24, iy + 16);
+				ctx.moveTo(cx, iy - 16);
+				ctx.lineTo(cx, iy + 16);
+				ctx.moveTo(cx + 24, iy - 16);
+				ctx.lineTo(cx + 24, iy + 16);
 				break;
 			case 2: // 下班 ▼
-				ctx.moveTo(cx, iy - 30);
-				ctx.lineTo(cx, iy + 30);
-				ctx.moveTo(cx - 28, iy + 8);
-				ctx.lineTo(cx, iy + 30);
-				ctx.lineTo(cx + 28, iy + 8);
+				ctx.moveTo(cx - 32, iy - 16);
+				ctx.lineTo(cx, iy + 16);
+				ctx.lineTo(cx + 32, iy - 16);
 				break;
-			case 3: // 加班 🕐
-				ctx.arc(cx, iy, 30, 0, Math.PI * 2);
+			case 3: // 加班 ◉
+				ctx.arc(cx, iy, 24, 0, Math.PI * 2);
 				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx, iy - 20);
+				ctx.lineTo(cx, iy - 16);
 				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx + 16, iy);
+				ctx.lineTo(cx + 14, iy);
 				break;
-			case 4: // 補打卡 ✏️
-				ctx.moveTo(cx - 18, iy - 35);
-				ctx.lineTo(cx + 6, iy - 11);
-				ctx.lineTo(cx + 24, iy + 7);
-				ctx.moveTo(cx + 6, iy - 11);
-				ctx.lineTo(cx - 8, iy + 28);
+			case 4: // 補打卡
+				ctx.moveTo(cx - 18, iy - 20);
+				ctx.lineTo(cx + 10, iy - 4);
+				ctx.lineTo(cx + 22, iy + 12);
+				ctx.moveTo(cx + 10, iy - 4);
+				ctx.lineTo(cx - 6, iy + 20);
 				break;
-			case 5: // 查詢 🔍
-				ctx.arc(cx - 5, iy - 5, 22, 0, Math.PI * 2);
-				ctx.moveTo(cx + 12, iy + 12);
-				ctx.lineTo(cx + 38, iy + 38);
+			case 5: // 查詢
+				ctx.arc(cx - 2, iy, 22, 0, Math.PI * 2);
+				ctx.moveTo(cx + 16, iy + 16);
+				ctx.lineTo(cx + 34, iy + 34);
 				break;
 		}
 		ctx.stroke();
@@ -1657,18 +1646,19 @@ function makePng8() {
   var cv = canvasLib.createCanvas(w, h);
   var ctx = cv.getContext('2d');
 
-  ctx.fillStyle = '#f0f0f0';
+  ctx.fillStyle = '#0f172a';
   ctx.fillRect(0, 0, w, h);
 
+  var gap = 3;
   var areas = [
-    { x: 0, y: 0, w: 625, h: 421, color: '#06C755', label: '上班' },
-    { x: 625, y: 0, w: 625, h: 421, color: '#1ABC9C', label: '請假' },
-    { x: 1250, y: 0, w: 625, h: 421, color: '#34495E', label: '補打卡' },
-    { x: 1875, y: 0, w: 625, h: 421, color: '#F39C12', label: '下班' },
-    { x: 0, y: 421, w: 625, h: 422, color: '#9B59B6', label: '加班' },
-    { x: 625, y: 421, w: 625, h: 422, color: '#3498DB', label: '查詢' },
-    { x: 1250, y: 421, w: 625, h: 422, color: '#E67E22', label: '查詢當天考勤' },
-    { x: 1875, y: 421, w: 625, h: 422, color: '#E74C3C', label: '查詢當月考勤' },
+    { x: 0, y: 0, w: 625, h: 421, color: '#059669', label: '上班' },
+    { x: 625 + gap, y: 0, w: 625 - gap, h: 421, color: '#0d9488', label: '請假' },
+    { x: 1250 + gap, y: 0, w: 625 - gap, h: 421, color: '#4f46e5', label: '補打卡' },
+    { x: 1875 + gap, y: 0, w: 625 - gap, h: 421, color: '#d97706', label: '下班' },
+    { x: 0, y: 421 + gap, w: 625, h: 422 - gap, color: '#7c3aed', label: '加班' },
+    { x: 625 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#2563eb', label: '查詢' },
+    { x: 1250 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#ea580c', label: '查詢當天考勤' },
+    { x: 1875 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#b91c1c', label: '查詢當月考勤' },
   ];
 
   var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
@@ -1680,89 +1670,84 @@ function makePng8() {
     ctx.fillStyle = a.color;
     ctx.fillRect(a.x, a.y, a.w, a.h);
 
+    // 頂部亮邊
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(a.x, a.y, a.w, 5);
+
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     var label = a.label;
-    if (label.indexOf('\\n') !== -1) {
-      var parts = label.split('\\n');
-      ctx.font = 'bold 40px ' + fontFamily;
-      ctx.fillText(parts[0], cx, a.y + a.h * 0.32);
-      ctx.fillText(parts[1], cx, a.y + a.h * 0.60);
+    if (label.indexOf('\n') !== -1) {
+      var parts = label.split('\n');
+      ctx.font = 'bold 42px ' + fontFamily;
+      ctx.fillText(parts[0], cx, a.y + a.h * 0.42);
+      ctx.fillText(parts[1], cx, a.y + a.h * 0.62);
     } else {
       if (label.length <= 2) {
-        ctx.font = 'bold 60px ' + fontFamily;
-      } else if (label.length === 3) {
-        ctx.font = 'bold 50px ' + fontFamily;
+        ctx.font = 'bold 62px ' + fontFamily;
+      } else if (label.length <= 3) {
+        ctx.font = 'bold 52px ' + fontFamily;
+      } else if (label.length <= 4) {
+        ctx.font = 'bold 44px ' + fontFamily;
       } else {
-        ctx.font = 'bold 42px ' + fontFamily;
+        ctx.font = 'bold 38px ' + fontFamily;
       }
-      ctx.fillText(label, cx, a.y + a.h * 0.42);
+      ctx.fillText(label, cx, a.y + a.h * 0.50);
     }
 
-    // 簡化圖示
-    ctx.strokeStyle = '#ffffff';
+    // 底部簡約圖示
+    ctx.strokeStyle = 'rgba(255,255,255,0.30)';
     ctx.lineWidth = 6;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    var iy = a.y + a.h * 0.78;
+    var iy = a.y + a.h * 0.84;
 
     switch (i) {
-      case 0: // 上班
-        ctx.moveTo(cx, iy + 22);
-        ctx.lineTo(cx, iy - 22);
-        ctx.moveTo(cx - 22, iy - 4);
-        ctx.lineTo(cx, iy - 22);
-        ctx.lineTo(cx + 22, iy - 4);
+      case 0:
+        ctx.moveTo(cx - 24, iy + 12);
+        ctx.lineTo(cx, iy - 12);
+        ctx.lineTo(cx + 24, iy + 12);
         break;
-      case 1: case 4: // 請假/加班
-        ctx.rect(cx - 24, iy - 28, 48, 56);
-        ctx.moveTo(cx - 12, iy - 8);
-        ctx.lineTo(cx - 12, iy + 6);
-        ctx.moveTo(cx, iy - 8);
-        ctx.lineTo(cx, iy + 6);
-        ctx.moveTo(cx + 12, iy - 8);
-        ctx.lineTo(cx + 12, iy + 6);
+      case 1: case 4:
+        ctx.moveTo(cx - 16, iy - 12);
+        ctx.lineTo(cx - 16, iy + 12);
+        ctx.moveTo(cx, iy - 12);
+        ctx.lineTo(cx, iy + 12);
+        ctx.moveTo(cx + 16, iy - 12);
+        ctx.lineTo(cx + 16, iy + 12);
         break;
-      case 2: // 補打卡
-        ctx.moveTo(cx - 14, iy - 28);
-        ctx.lineTo(cx + 6, iy - 8);
-        ctx.lineTo(cx + 20, iy + 8);
-        ctx.moveTo(cx + 6, iy - 8);
-        ctx.lineTo(cx - 6, iy + 22);
+      case 2:
+        ctx.moveTo(cx - 12, iy - 14);
+        ctx.lineTo(cx + 8, iy - 2);
+        ctx.lineTo(cx + 16, iy + 8);
+        ctx.moveTo(cx + 8, iy - 2);
+        ctx.lineTo(cx - 4, iy + 14);
         break;
-      case 3: // 下班
-        ctx.moveTo(cx, iy - 22);
-        ctx.lineTo(cx, iy + 22);
-        ctx.moveTo(cx - 22, iy + 4);
-        ctx.lineTo(cx, iy + 22);
-        ctx.lineTo(cx + 22, iy + 4);
+      case 3:
+        ctx.moveTo(cx - 24, iy - 12);
+        ctx.lineTo(cx, iy + 12);
+        ctx.lineTo(cx + 24, iy - 12);
         break;
-      case 5: // 查詢
-        ctx.arc(cx - 3, iy - 3, 18, 0, Math.PI * 2);
-        ctx.moveTo(cx + 10, iy + 10);
-        ctx.lineTo(cx + 30, iy + 30);
+      case 5:
+        ctx.arc(cx - 2, iy, 16, 0, Math.PI * 2);
+        ctx.moveTo(cx + 12, iy + 12);
+        ctx.lineTo(cx + 24, iy + 24);
         break;
-      case 6: // 查詢請假
-        ctx.rect(cx - 20, iy - 26, 40, 52);
-        ctx.moveTo(cx - 8, iy - 8);
-        ctx.lineTo(cx + 10, iy - 8);
-        ctx.moveTo(cx - 8, iy + 2);
-        ctx.lineTo(cx + 10, iy + 2);
-        ctx.moveTo(cx - 8, iy + 12);
-        ctx.lineTo(cx + 10, iy + 12);
+      case 6:
+        ctx.moveTo(cx - 16, iy - 8);
+        ctx.lineTo(cx - 16, iy + 8);
+        ctx.moveTo(cx + 8, iy - 8);
+        ctx.lineTo(cx + 8, iy + 8);
+        ctx.moveTo(cx + 20, iy - 8);
+        ctx.lineTo(cx + 20, iy + 4);
         break;
-      case 7: // 查詢遲到/曠職/超出GPS
-        ctx.arc(cx, iy, 24, 0, Math.PI * 2);
-        ctx.moveTo(cx, iy);
-        ctx.lineTo(cx, iy - 16);
-        ctx.moveTo(cx, iy);
-        ctx.lineTo(cx + 13, iy);
-        ctx.moveTo(cx, iy + 24);
-        ctx.lineTo(cx - 6, iy + 16);
-        ctx.lineTo(cx + 6, iy + 16);
+      case 7:
+        ctx.arc(cx, iy, 12, 0, Math.PI * 2);
+        ctx.moveTo(cx + 14, iy);
+        ctx.lineTo(cx + 27, iy);
         break;
     }
     ctx.stroke();
@@ -1848,14 +1833,15 @@ function makePngBoss() {
 	var cv = canvasLib.createCanvas(w, h);
 	var ctx = cv.getContext('2d');
 
-	ctx.fillStyle = '#f0f0f0';
+	ctx.fillStyle = '#0f172a';
 	ctx.fillRect(0, 0, w, h);
 
+	var gap = 4;
 	var areas = [
-		{ x: 0, y: 0, w: 1250, h: 421, color: '#06C755', label: '公司今日考勤' },
-		{ x: 1250, y: 0, w: 1250, h: 421, color: '#3498DB', label: '本月請假累計' },
-		{ x: 0, y: 421, w: 1250, h: 422, color: '#E67E22', label: '本月遲到累計' },
-		{ x: 1250, y: 421, w: 1250, h: 422, color: '#9B59B6', label: '本月加班累計' },
+		{ x: 0, y: 0, w: 1250, h: 421, color: '#0ea5e9', label: '公司今日考勤' },
+		{ x: 1250 + gap, y: 0, w: 1250 - gap, h: 421, color: '#059669', label: '本月請假累計' },
+		{ x: 0, y: 421 + gap, w: 1250, h: 422 - gap, color: '#ea580c', label: '本月遲到累計' },
+		{ x: 1250 + gap, y: 421 + gap, w: 1250 - gap, h: 422 - gap, color: '#7c3aed', label: '本月加班累計' },
 	];
 
 	var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
@@ -1867,61 +1853,59 @@ function makePngBoss() {
 		ctx.fillStyle = a.color;
 		ctx.fillRect(a.x, a.y, a.w, a.h);
 
+		// 頂部亮邊
+		ctx.fillStyle = 'rgba(255,255,255,0.15)';
+		ctx.fillRect(a.x, a.y, a.w, 8);
+
+		// 主 label
 		ctx.fillStyle = '#ffffff';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
 
 		var label = a.label;
-		if (label.length <= 4) {
-			ctx.font = 'bold 52px ' + fontFamily;
-		} else if (label.length <= 6) {
-			ctx.font = 'bold 44px ' + fontFamily;
-		} else {
-			ctx.font = 'bold 38px ' + fontFamily;
-		}
-		ctx.fillText(label, cx, a.y + a.h * 0.38);
+		ctx.font = 'bold 68px ' + fontFamily;
+		ctx.fillText(label, cx, a.y + a.h * 0.55);
 
-		// 簡化圖示
-		ctx.strokeStyle = '#ffffff';
+		// 底部簡約圖示
+		ctx.strokeStyle = 'rgba(255,255,255,0.35)';
 		ctx.lineWidth = 8;
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
 		ctx.beginPath();
-		var iy = a.y + a.h * 0.72;
+		var iy = a.y + a.h * 0.84;
 
 		switch (i) {
-			case 0: // 今日考勤 - 儀表板圖案
-				ctx.arc(cx, iy, 28, 0, Math.PI * 2);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx, iy - 20);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx + 15, iy);
-				break;
-			case 1: // 請假累計 - 文件圖案
-				ctx.rect(cx - 22, iy - 30, 44, 60);
-				ctx.moveTo(cx - 10, iy - 10);
-				ctx.lineTo(cx + 10, iy - 10);
-				ctx.moveTo(cx - 10, iy);
-				ctx.lineTo(cx + 10, iy);
-				ctx.moveTo(cx - 10, iy + 10);
-				ctx.lineTo(cx + 6, iy + 10);
-				break;
-			case 2: // 遲到累計 - 時鐘圖案
-				ctx.arc(cx, iy, 28, 0, Math.PI * 2);
+			case 0: // 儀表板
+				ctx.arc(cx, iy, 26, 0, Math.PI * 2);
 				ctx.moveTo(cx, iy);
 				ctx.lineTo(cx, iy - 18);
 				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx + 12, iy);
-				ctx.moveTo(cx, iy + 28);
-				ctx.lineTo(cx - 10, iy + 18);
-				ctx.lineTo(cx + 10, iy + 18);
+				ctx.lineTo(cx + 15, iy);
 				break;
-			case 3: // 加班累計 - 圖表圖案
-				ctx.moveTo(cx - 24, iy + 28);
-				ctx.lineTo(cx - 14, iy);
-				ctx.lineTo(cx, iy + 18);
-				ctx.lineTo(cx + 14, iy - 12);
-				ctx.lineTo(cx + 24, iy + 8);
+			case 1: // 文件/請假
+				ctx.moveTo(cx - 24, iy - 20);
+				ctx.lineTo(cx - 24, iy + 20);
+				ctx.moveTo(cx, iy - 20);
+				ctx.lineTo(cx, iy + 20);
+				ctx.moveTo(cx + 24, iy - 20);
+				ctx.lineTo(cx + 24, iy + 20);
+				break;
+			case 2: // 時鐘/遲到
+				ctx.arc(cx, iy, 26, 0, Math.PI * 2);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx, iy - 18);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx + 14, iy);
+				ctx.moveTo(cx, iy + 28);
+				ctx.lineTo(cx - 12, iy + 18);
+				ctx.lineTo(cx + 12, iy + 18);
+				break;
+			case 3: // 兌/加班
+				ctx.arc(cx, iy, 26, 0, Math.PI * 2);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx, iy - 16);
+				ctx.moveTo(cx, iy);
+				ctx.lineTo(cx + 12, iy);
 				break;
 		}
 		ctx.stroke();

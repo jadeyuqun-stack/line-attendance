@@ -1015,6 +1015,25 @@ router.get('/data', auth, async function(_, res) {
 });
 
 // ===== Excel 匯出 =====
+// 匯出用：拆分日期時間，去除 T00:00:00+08
+function edt(str) {
+  if (!str) return { date: '', time: '' };
+  var s = typeof str === 'string' ? str : String(str);
+  var tIdx = s.indexOf('T');
+  if (tIdx !== -1) {
+    var date = s.substring(0, tIdx);
+    var time = s.substring(tIdx + 1, tIdx + 6);
+    return { date: date, time: time === '00:00' ? '' : time };
+  }
+  var spIdx = s.indexOf(' ');
+  if (spIdx !== -1) {
+    var dp = s.substring(0, spIdx);
+    var tp = s.substring(spIdx + 1, spIdx + 6);
+    return { date: dp, time: tp === '00:00' ? '' : tp };
+  }
+  return { date: s.length >= 10 ? s.substring(0, 10) : s, time: '' };
+}
+
 // 請假時數計算（跨天每日最多 8h，午休扣 1h）
 function exportLeaveHours(startStr, endStr) {
   if (!startStr) return 0;
@@ -1053,7 +1072,7 @@ router.get('/export/checkins', auth, async function(req, res) {
       var ts = r.check_time ? new Date(r.check_time) : new Date();
       data.push({
         '日期': ts.getFullYear()+'-'+String(ts.getMonth()+1).padStart(2,'0')+'-'+String(ts.getDate()).padStart(2,'0'),
-        '時間': fmt(r.check_time),
+        '時間': String(ts.getHours()).padStart(2,'0')+':'+String(ts.getMinutes()).padStart(2,'0'),
         '員工編號': r.employee_no || '-',
         '姓名': r.name || '-',
         '部門': r.department || '',
@@ -1068,7 +1087,7 @@ router.get('/export/checkins', auth, async function(req, res) {
       if (mp.punch_date < startDate || mp.punch_date > endDate) continue;
       data.push({
         '日期': mp.punch_date,
-        '時間': mp.punch_date + ' ' + mp.punch_time,
+        '時間': mp.punch_time || '',
         '員工編號': mp.employee_no || '-',
         '姓名': mp.name || '-',
         '部門': mp.department || '',
@@ -1119,20 +1138,25 @@ router.get('/export/leaves', auth, async function(req, res) {
       // 檢查日期區間是否重疊
       if (lEnd < startDate || lStart > endDate) continue;
       var hours = exportLeaveHours(l.start_date, l.end_date);
+      var lsDt = l.start_date ? edt(l.start_date) : { date: '', time: '' };
+      var leDt = l.end_date ? edt(l.end_date) : { date: '', time: '' };
       data.push({
         '員工編號': l.employee_no || '-',
         '姓名': l.name || '-',
         '部門': l.department || '',
         '假別': typeLabels[l.leave_type] || l.leave_type,
-        '開始時間': l.start_date || '',
-        '結束時間': l.end_date || '',
+        '開始日期': lsDt.date,
+        '開始時間': lsDt.time,
+        '結束日期': leDt.date,
+        '結束時間': leDt.time,
         '時數(h)': hours,
         '原因': l.reason || '',
-        '狀態': statusLabels[l.status] || l.status
+        '狀態': statusLabels[l.status] || l.status,
+        '駁回原因': l.reject_reason || ''
       });
     }
     var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','假別','開始時間','結束時間','時數(h)','原因','狀態'] });
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','假別','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'] });
     XLSX.utils.book_append_sheet(wb, ws, '請假記錄');
     var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     var label2 = startDate === endDate ? startDate : startDate + '_' + endDate;
@@ -1173,19 +1197,24 @@ router.get('/export/overtime', auth, async function(req, res) {
         var diffMs = e2 - s2;
         if (diffMs > 0) otHours = Math.round(diffMs / 3600000 * 10) / 10;
       }
+      var osDt = ot.start_time ? edt(ot.start_time) : { date: '', time: '' };
+      var oeDt = ot.end_time ? edt(ot.end_time) : { date: '', time: '' };
       data.push({
         '員工編號': ot.employee_no || '-',
         '姓名': ot.name || '-',
         '部門': ot.department || '',
-        '開始時間': ot.start_time || '',
-        '結束時間': ot.end_time || '',
+        '開始日期': osDt.date,
+        '開始時間': osDt.time,
+        '結束日期': oeDt.date,
+        '結束時間': oeDt.time,
         '時數(h)': otHours,
         '原因': ot.reason || '',
-        '狀態': statusLabels2[ot.status] || ot.status
+        '狀態': statusLabels2[ot.status] || ot.status,
+        '駁回原因': ot.reject_reason || ''
       });
     }
     var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','開始時間','結束時間','時數(h)','原因','狀態'] });
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'] });
     XLSX.utils.book_append_sheet(wb, ws, '加班記錄');
     var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     var label3 = startDate === endDate ? startDate : startDate + '_' + endDate;

@@ -30,7 +30,7 @@ async function initFont() {
 		}
 
 		// 從 Google Fonts 下載子集（只含需要的 16 個字）
-		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢遲到曠職超出GPS人員公司今日考勤本月累計遲到加班狀態查詢當天考勤查詢當月考勤';
+		var text = '上班下班查詢請假加班補打卡核准全部駁回查詢當日請假人員查詢遲到曠職超出GPS人員公司今日考勤本月累計遲到加班狀態查詢當天考勤查詢當月考勤0123456789日期時間員工編號姓名部門時數小時次分鐘分晚無合常範圍已特休事病公外其紀錄原確認取消儲存概況異常:~-.()/h!⚠❌✅📍🏖🕐📊👤🔵🔴未滿蓋';
 		var cssUrl = 'https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700&text=' + encodeURIComponent(text);
 
 		console.log('[Font] 下載字型...');
@@ -508,10 +508,23 @@ async function doQuery(emp, client, replyToken) {
     lines.push('\n🕐 加班：無');
   }
 
-  return client.replyMessage(replyToken, [
-    { type: 'flex', altText: '📋 今日打卡記錄', contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } } },
-    withMenu(lines.join('\n'))
-  ]);
+  var png = textToImage(lines[0], lines.join('\n'));
+  var imgUrl = '';
+  if (png) {
+    var imgId = 'q_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    storeImage(imgId, png);
+    var baseUrl = process.env.APP_URL || ('https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || 'localhost'));
+    imgUrl = baseUrl + '/img/' + imgId;
+  }
+  var messages = [
+    { type: 'flex', altText: '📋 今日打卡記錄', contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: contents } } }
+  ];
+  if (imgUrl) {
+    messages.push({ type: 'image', originalContentUrl: imgUrl, previewImageUrl: imgUrl });
+  } else {
+    messages.push({ type: 'text', text: lines.join('\n') });
+  }
+  return client.replyMessage(replyToken, messages);
 }
 
 // ===== Leave flow (unchanged) =====
@@ -1417,7 +1430,8 @@ async function queryTodayAttendance(emp, client, replyToken) {
     }
   }
 
-  return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+	var title1 = lines[0];
+  return sendTableImage(client, replyToken, title1, lines.join('\n'));
 }
 
 // 查詢被簽核人員當月考勤（遲到+請假備註/請假/加班細項與累加，1號～當天）
@@ -1587,7 +1601,8 @@ async function queryMonthAttendance(emp, client, replyToken) {
     lines.push('  📊 加班合計：' + Math.round(totalOT * 10) / 10 + ' 小時');
   }
 
-  return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+  var title2 = lines[0];
+  return sendTableImage(client, replyToken, title2, lines.join('\n'));
 }
 
 // 為使用者連結 8 格 Rich Menu
@@ -2078,7 +2093,8 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 		}
 	}
 
-	return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+	var titleB1 = lines[0];
+	return sendTableImage(client, replyToken, titleB1, lines.join('\n'));
 }
 
 // 當月公司人員請假累計
@@ -2136,7 +2152,8 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 	}
 	lines.push('\n📊 全公司本月請假合計：' + totalAll + ' 小時');
 
-	return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+	var titleB2 = lines[0];
+	return sendTableImage(client, replyToken, titleB2, lines.join('\n'));
 }
 
 // 當月公司人員遲到累計
@@ -2209,7 +2226,8 @@ async function queryBossMonthLates(emp, client, replyToken) {
 	}
 	lines.push('\n📊 全公司本月遲到合計：' + totalCount + ' 次');
 
-	return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+	var titleB3 = lines[0];
+	return sendTableImage(client, replyToken, titleB3, lines.join('\n'));
 }
 
 // 當月公司人員加班累計
@@ -2265,7 +2283,8 @@ async function queryBossMonthOvertime(emp, client, replyToken) {
 	}
 	lines.push('\n📊 全公司本月加班合計：' + Math.round(totalAll * 10) / 10 + ' 小時');
 
-	return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+	var titleB4 = lines[0];
+	return sendTableImage(client, replyToken, titleB4, lines.join('\n'));
 }
 
 // 提取時間部分（HH:MM），用於加班結束時間顯示
@@ -2276,4 +2295,134 @@ function edtTime(str) {
   return sp !== -1 ? s.substring(sp + 1) : s;
 }
 
-module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont };
+// ===== 表格圖片產生器 =====
+var _imageStore = {};
+var _imageStoreCleanup = {};
+
+// 清理過期圖片（5 分鐘後自動清除）
+function storeImage(id, buf) {
+  _imageStore[id] = buf;
+  if (_imageStoreCleanup[id]) clearTimeout(_imageStoreCleanup[id]);
+  _imageStoreCleanup[id] = setTimeout(function() {
+    delete _imageStore[id];
+    delete _imageStoreCleanup[id];
+  }, 300000);
+}
+function getStoredImage(id) {
+  return _imageStore[id] || null;
+}
+
+// 將文字轉為 PNG 表格圖片
+function textToImage(title, bodyText) {
+  var canvasLib;
+  try {
+    canvasLib = require('canvas');
+  } catch (e) {
+    return null;
+  }
+
+  var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
+
+  var lines = bodyText.split('\n');
+  var fontSize = 26;
+  var lineHeight = 38;
+  var paddingX = 24;
+  var paddingY = 20;
+  var titleHeight = 56;
+  var titleFontSize = 30;
+
+  // 計算所需寬度
+  var cvTemp = canvasLib.createCanvas(2000, 100);
+  var ctxTemp = cvTemp.getContext('2d');
+  ctxTemp.font = fontSize + 'px ' + fontFamily;
+  var maxW = ctxTemp.measureText(title).width;
+  for (var i = 0; i < lines.length; i++) {
+    var lw = ctxTemp.measureText(lines[i]).width;
+    if (lw > maxW) maxW = lw;
+  }
+  var width = Math.max(800, Math.ceil(maxW + paddingX * 2));
+  var height = Math.ceil(paddingY * 2 + titleHeight + lines.length * lineHeight);
+
+  var cv = canvasLib.createCanvas(width, height);
+  var ctx = cv.getContext('2d');
+
+  // 白色背景
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+
+  // 標題列
+  ctx.fillStyle = '#06c755';
+  ctx.fillRect(0, 0, width, titleHeight + paddingY);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold ' + titleFontSize + 'px ' + fontFamily;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, paddingX, paddingY + titleHeight / 2);
+
+  // 資料行
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  for (var i = 0; i < lines.length; i++) {
+    var y = paddingY + titleHeight + i * lineHeight + lineHeight / 2;
+    var line = lines[i];
+
+    // 判斷行類型
+    var isSection = false;
+    if (line.indexOf('---') === 0 || line.length === 0) {
+      // 分隔線／空行，畫淺灰底
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
+      isSection = true;
+    } else if (line.indexOf('⚠️') !== -1 || line.indexOf('❌') !== -1 || line.indexOf('🏖') !== -1 || line.indexOf('🕐') !== -1 || line.indexOf('📍') !== -1) {
+      // 區段標題，淺色底
+      ctx.fillStyle = '#f8fcf9';
+      ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
+      ctx.fillStyle = '#333333';
+      ctx.font = 'bold ' + fontSize + 'px ' + fontFamily;
+    } else if (line.indexOf('📊') !== -1) {
+      // 合計行
+      ctx.fillStyle = '#e6f9ee';
+      ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
+      ctx.fillStyle = '#06c755';
+      ctx.font = 'bold ' + fontSize + 'px ' + fontFamily;
+    } else if (line.indexOf('  ') === 0) {
+      // 縮排明細
+      ctx.fillStyle = '#666666';
+      ctx.font = (fontSize - 2) + 'px ' + fontFamily;
+    } else if (line.indexOf('👤') !== -1 || line.indexOf('  ') !== 0 && line.length > 0) {
+      // 一般資料行
+      ctx.fillStyle = '#333333';
+      ctx.font = fontSize + 'px ' + fontFamily;
+    } else {
+      ctx.fillStyle = '#333333';
+      ctx.font = fontSize + 'px ' + fontFamily;
+    }
+
+    ctx.fillText(line, paddingX, y);
+  }
+
+  // 底部邊框
+  ctx.strokeStyle = '#e0e0e0';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, width, height);
+
+  return cv.toBuffer('image/png');
+}
+
+// 傳送表格圖片（取代文字）
+async function sendTableImage(client, replyToken, title, bodyText) {
+  var png = textToImage(title, bodyText);
+  if (!png) {
+    // 降級：無法產生圖片時用文字
+    return client.replyMessage(replyToken, [{ type: 'text', text: bodyText }]);
+  }
+  var imgId = 'q_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+  storeImage(imgId, png);
+  var baseUrl = process.env.APP_URL || ('https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || 'localhost'));
+  var imgUrl = baseUrl + '/img/' + imgId;
+  return client.replyMessage(replyToken, [
+    { type: 'image', originalContentUrl: imgUrl, previewImageUrl: imgUrl }
+  ]);
+}
+
+module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont, getStoredImage };

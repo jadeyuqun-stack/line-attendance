@@ -135,6 +135,15 @@ async function main() {
     }
   });
 
+  // 表格圖片服務
+  app.get('/img/:id', function(req, res) {
+    var buf = bot.getStoredImage(req.params.id);
+    if (!buf) return res.status(404).send('Not found');
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.end(buf);
+  });
+
   // Rich Menu PNG 預覽
   app.get('/admin/richmenu-preview', async (req, res) => {
     try {

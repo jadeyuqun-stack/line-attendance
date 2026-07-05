@@ -1433,7 +1433,7 @@ async function queryTodayLates(emp, client, replyToken) {
     }
     empOTMap[ot.employee_id].records.push({
       start: fmtDt(ot.start_time).substring(5),
-      end: fmtDt(ot.end_time).substring(5),
+      end: edtTime(ot.end_time),
       hours: otHours
     });
     empOTMap[ot.employee_id].totalHours += otHours;
@@ -2148,7 +2148,7 @@ async function queryBossMonthOvertime(emp, client, replyToken) {
 		if (!empOTMap[ot.employee_id]) {
 			empOTMap[ot.employee_id] = { name: ot.name, no: ot.employee_no, records: [], totalHours: 0 };
 		}
-		empOTMap[ot.employee_id].records.push({ start: fmtDt(ot.start_time).substring(5), end: fmtDt(ot.end_time).substring(5), hours: otHours });
+		empOTMap[ot.employee_id].records.push({ start: fmtDt(ot.start_time).substring(5), end: edtTime(ot.end_time), hours: otHours });
 		empOTMap[ot.employee_id].totalHours += otHours;
 	}
 
@@ -2173,6 +2173,14 @@ async function queryBossMonthOvertime(emp, client, replyToken) {
 	lines.push('\n📊 全公司本月加班合計：' + Math.round(totalAll * 10) / 10 + ' 小時');
 
 	return client.replyMessage(replyToken, [withMenu(lines.join('\n'))]);
+}
+
+// 提取時間部分（HH:MM），用於加班結束時間顯示
+function edtTime(str) {
+  if (!str) return '';
+  var s = fmtDt(str);
+  var sp = s.indexOf(' ');
+  return sp !== -1 ? s.substring(sp + 1) : s;
 }
 
 module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont };

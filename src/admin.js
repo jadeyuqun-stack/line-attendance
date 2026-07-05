@@ -1214,7 +1214,7 @@ router.get('/export/overtime', auth, async function(req, res) {
       });
     }
     var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'] });
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','日期','開始時間','結束時間','時數(h)','原因','狀態','駁回原因'] });
     XLSX.utils.book_append_sheet(wb, ws, '加班記錄');
     var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     var label3 = startDate === endDate ? startDate : startDate + '_' + endDate;

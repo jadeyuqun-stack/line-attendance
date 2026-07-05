@@ -2279,6 +2279,35 @@ function edtTime(str) {
 }
 
 // ===== 表格圖片產生器 =====
+var _emojiImages = {};
+var _emojiLoaded = false;
+
+// 預載 Emoji 圖片（從 Twemoji CDN）
+async function loadEmojiImages() {
+  try {
+    var canvasLib = require('canvas');
+    var https = require('https');
+    var baseUrl = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/';
+    var codes = {
+      '⚠': '26a0', '❌': '274c', '✅': '2705', '📍': '1f4cd',
+      '🏖': '1f3d6', '🕐': '1f550', '📊': '1f4ca', '👤': '1f464',
+      '🔵': '1f535', '🔴': '1f534', '📋': '1f4cb', '📅': '1f4c5',
+    };
+    var keys = Object.keys(codes);
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      try {
+        var img = await canvasLib.loadImage(baseUrl + codes[key] + '.png');
+        _emojiImages[key] = img;
+      } catch(e2) {}
+    }
+    _emojiLoaded = true;
+    console.log('[Emoji] loaded', Object.keys(_emojiImages).length, 'images');
+  } catch(e) {
+    console.log('[Emoji] load failed:', e.message);
+  }
+}
+
 var _imageStore = {};
 var _imageStoreCleanup = {};
 
@@ -2304,7 +2333,7 @@ function textToImage(title, bodyText) {
     return null;
   }
 
-  // 替換 emoji 為標記（後續用彩色圓點繪製）
+  // 替換 emoji 為標記字元（後續用 emoji 圖片取代）
   var emojiMap = {
     '⚠️': '! ', '⚠': '! ',
     '❌': 'X ',
@@ -2320,23 +2349,22 @@ function textToImage(title, bodyText) {
     '📅': '',
     '📦': ''
   };
-  // 標記對應的顏色
+  // 標記 → 原始 emoji（用於查找 emoji 圖片）
+  var markerToEmoji = {
+    '!': '⚠', 'X': '❌', 'V': '✅', '@': '📍',
+    '~': '🏖', 'O': '🕐', '=': '📊', '*': '👤',
+    '+': '🔵', '-': '🔴'
+  };
+  // 標記對應的顏色（emoji 圖片載入失敗時降級用）
   var iconColors = {
-    '!': '#f59e0b', // ⚠️ 橘色
-    'X': '#ef4444', // ❌ 紅色
-    'V': '#22c55e', // ✅ 綠色
-    '@': '#3b82f6', // 📍 藍色
-    '~': '#eab308', // 🏖 黃色
-    'O': '#a855f7', // 🕐 紫色
-    '=': '#10b981', // 📊 翠綠
-    '*': '#6b7280', // 👤 灰色
-    '+': '#3b82f6', // 🔵 藍
-    '-': '#ef4444', // 🔴 紅
+    '!': '#f59e0b', 'X': '#ef4444', 'V': '#22c55e', '@': '#3b82f6',
+    '~': '#eab308', 'O': '#a855f7', '=': '#10b981', '*': '#6b7280',
+    '+': '#3b82f6', '-': '#ef4444'
   };
   var emojiKeys = Object.keys(emojiMap);
   for (var ei = 0; ei < emojiKeys.length; ei++) {
     var ek = emojiKeys[ei];
-    while (title.indexOf(ek) !== -1) title = title.replace(ek, emojiMap[ek]);
+    while (title.indexOf(ek) !== -1) title = title.replace(ek, '');
     while (bodyText.indexOf(ek) !== -1) bodyText = bodyText.replace(ek, emojiMap[ek]);
   }
 
@@ -2398,10 +2426,11 @@ function textToImage(title, bodyText) {
       ctx.fillStyle = '#f0f0f0';
       ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
     } else if (hasMarker) {
-      // 有標記 → 繪製彩色圓點 + 文字
+      // 有標記 → 繪製 emoji 圖片 + 文字
       var isSection = (marker === '!' || marker === 'X' || marker === '@' || marker === '~' || marker === 'O');
       var isTotal = (marker === '=');
       var textX = paddingX + indent * 10;
+      var emojiSize = 30; // emoji 圖片大小
 
       // 區段標題 / 合計行才加背景
       if (isSection || isTotal) {
@@ -2409,17 +2438,26 @@ function textToImage(title, bodyText) {
         ctx.fillRect(0, y - lineHeight / 2, width, lineHeight);
       }
 
-      // 繪製彩色圓點
-      var dotColor = iconColors[marker];
-      ctx.fillStyle = dotColor;
-      ctx.beginPath();
-      ctx.arc(textX + iconR + 2, y, iconR, 0, Math.PI * 2);
-      ctx.fill();
+      // 嘗試繪製 emoji 圖片
+      var origEmoji = markerToEmoji[marker];
+      var emojiImg = origEmoji ? _emojiImages[origEmoji] : null;
+      if (emojiImg) {
+        // 繪製真實 emoji PNG
+        ctx.drawImage(emojiImg, textX, y - emojiSize / 2, emojiSize, emojiSize);
+      } else {
+        // 降級：繪製彩色圓點
+        var dotColor = iconColors[marker] || '#999';
+        ctx.fillStyle = dotColor;
+        ctx.beginPath();
+        ctx.arc(textX + iconR + 2, y, iconR, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-      // 文字
+      // 文字（emoji 後留空間）
+      var textOffsetX = emojiImg ? (emojiSize + 6) : (iconR * 2 + 10);
       ctx.fillStyle = isTotal ? '#06c755' : (isSection ? '#333333' : '#555555');
       ctx.font = (isSection || isTotal ? 'bold ' : '') + fontSize + 'px ' + fontFamily;
-      ctx.fillText(displayText, textX + iconR * 2 + 10, y);
+      ctx.fillText(displayText, textX + textOffsetX, y);
     } else if (line.indexOf('  ') === 0) {
       // 縮排明細
       ctx.fillStyle = '#666666';
@@ -2457,4 +2495,4 @@ async function sendTableImage(client, replyToken, title, bodyText) {
   ]);
 }
 
-module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont, getStoredImage };
+module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont, loadEmojiImages, getStoredImage };

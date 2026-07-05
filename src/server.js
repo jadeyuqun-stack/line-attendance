@@ -15,6 +15,8 @@ async function main() {
 
   // 初始化中文字型（Rich Menu 用）
   bot.initFont().catch(function(e) { console.error('[Server] font init error:', e.message); });
+  // 預載 emoji 圖片（表格查詢用）
+  bot.loadEmojiImages().catch(function(e) { console.error('[Server] emoji init error:', e.message); });
 
   const client = new Client({
     channelSecret: process.env.LINE_CHANNEL_SECRET,

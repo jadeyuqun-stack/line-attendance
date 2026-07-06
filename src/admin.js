@@ -1055,13 +1055,20 @@ function edt(str) {
 }
 
 // 請假時數計算（跨天每日最多 8h，午休扣 1h）
-function exportLeaveHours(startStr, endStr) {
+async function exportLeaveHours(startStr, endStr) {
   if (!startStr) return 0;
   var s = new Date(startStr), e = new Date(endStr||startStr);
   var diff = e - s;
   if (diff <= 0) return 1;
 
-  // 逐日計算，跳過週六(6)週日(0)
+  // 讀取國定假日
+  var holidays = [];
+  try {
+    var raw = await db.getSetting('tw_holidays') || '[]';
+    holidays = JSON.parse(raw);
+  } catch(ex) { holidays = []; }
+
+  // 逐日計算，跳過週六(6)週日(0)及國定假日
   var sDay = new Date(s.getFullYear(), s.getMonth(), s.getDate());
   var eDay = new Date(e.getFullYear(), e.getMonth(), e.getDate());
 
@@ -1069,7 +1076,8 @@ function exportLeaveHours(startStr, endStr) {
   var current = new Date(sDay);
   while (current <= eDay) {
     var dow = current.getDay();
-    if (dow !== 0 && dow !== 6) {
+    var ds = current.getFullYear() + '-' + String(current.getMonth()+1).padStart(2,'0') + '-' + String(current.getDate()).padStart(2,'0');
+    if (dow !== 0 && dow !== 6 && holidays.indexOf(ds) === -1) {
       var dayStart = current.getTime() === sDay.getTime() ? s : new Date(current);
       var dayEnd;
       if (current.getTime() === eDay.getTime()) {
@@ -1180,7 +1188,7 @@ router.get('/export/leaves', auth, async function(req, res) {
       var lEnd = typeof l.end_date === 'string' ? (l.end_date.indexOf(' ')!==-1 ? l.end_date.split(' ')[0] : l.end_date.split('T')[0]) : lStart;
       // 檢查日期區間是否重疊
       if (lEnd < startDate || lStart > endDate) continue;
-      var hours = exportLeaveHours(l.start_date, l.end_date);
+      var hours = await exportLeaveHours(l.start_date, l.end_date);
       var lsDt = l.start_date ? edt(l.start_date) : { date: '', time: '' };
       var leDt = l.end_date ? edt(l.end_date) : { date: '', time: '' };
       data.push({
@@ -1570,7 +1578,7 @@ router.get('/export/all', auth, async function(req, res) {
 			var lStart = typeof lr.start_date === 'string' ? (lr.start_date.indexOf(' ')!==-1 ? lr.start_date.split(' ')[0] : lr.start_date.split('T')[0]) : '';
 			var lEnd = typeof lr.end_date === 'string' ? (lr.end_date.indexOf(' ')!==-1 ? lr.end_date.split(' ')[0] : lr.end_date.split('T')[0]) : lStart;
 			if (lEnd < startDate || lStart > endDate) continue;
-			var hours = exportLeaveHours(lr.start_date, lr.end_date);
+			var hours = await exportLeaveHours(lr.start_date, lr.end_date);
 			var lsDt = lr.start_date ? edt(lr.start_date) : { date: '', time: '' };
 			var leDt = lr.end_date ? edt(lr.end_date) : { date: '', time: '' };
 			leaveData.push({

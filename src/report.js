@@ -87,6 +87,9 @@ async function trySendReport(client) {
  */
 async function doSendReport(client) {
   try {
+    // 更新國定假日快取（確保請假時數正確）
+    await bot.refreshHolidays();
+
     var groupId = await db.getSetting('report_group_id');
     if (!groupId) { console.log('[Report] 未設定群組 ID，跳過'); return; }
 

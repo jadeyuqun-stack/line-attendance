@@ -1,6 +1,17 @@
 const db = require('./database');
 const states = new Map();
 
+// 國定假日快取（請假時數需扣除）
+var _holidays = [];
+
+async function refreshHolidays() {
+  try {
+    var raw = await db.getSetting('tw_holidays') || '[]';
+    _holidays = JSON.parse(raw);
+    console.log('[Bot] 國定假日快取已更新：' + _holidays.length + ' 天');
+  } catch(e) { _holidays = []; }
+}
+
 // 中文字型初始化（從 Google Fonts 下載子集）
 var _cnFontFamily = null;
 var _fontReady = false;
@@ -552,7 +563,7 @@ function leaveHours(startStr, endStr) {
   var diff = e - s;
   if (diff <= 0) return 1;
 
-  // 逐日計算，跳過週六(6)週日(0)
+  // 逐日計算，跳過週六(6)週日(0)及國定假日
   var sDay = new Date(s.getFullYear(), s.getMonth(), s.getDate());
   var eDay = new Date(e.getFullYear(), e.getMonth(), e.getDate());
 
@@ -560,8 +571,9 @@ function leaveHours(startStr, endStr) {
   var current = new Date(sDay);
   while (current <= eDay) {
     var dow = current.getDay();
-    if (dow !== 0 && dow !== 6) {
-      // 工作日：決定當天的起訖時間
+    var ds = current.getFullYear() + '-' + String(current.getMonth()+1).padStart(2,'0') + '-' + String(current.getDate()).padStart(2,'0');
+    if (dow !== 0 && dow !== 6 && _holidays.indexOf(ds) === -1) {
+      // 工作日（非週末、非國定假日）：決定當天的起訖時間
       var dayStart = current.getTime() === sDay.getTime() ? s : new Date(current);
       var dayEnd;
       if (current.getTime() === eDay.getTime()) {
@@ -2519,4 +2531,4 @@ async function sendTableImage(client, replyToken, title, bodyText) {
   ]);
 }
 
-module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont, loadEmojiImages, getStoredImage, leaveHours };
+module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont, loadEmojiImages, getStoredImage, leaveHours, refreshHolidays };

@@ -17,6 +17,8 @@ async function main() {
   bot.initFont().catch(function(e) { console.error('[Server] font init error:', e.message); });
   // 預載 emoji 圖片（表格查詢用）
   bot.loadEmojiImages().catch(function(e) { console.error('[Server] emoji init error:', e.message); });
+  // 預載國定假日（請假時數計算用）
+  bot.refreshHolidays().catch(function(e) { console.error('[Server] holiday init error:', e.message); });
 
   const client = new Client({
     channelSecret: process.env.LINE_CHANNEL_SECRET,

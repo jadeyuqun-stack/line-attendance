@@ -551,15 +551,39 @@ function leaveHours(startStr, endStr) {
   var s = new Date(startStr), e = new Date(endStr||startStr);
   var diff = e - s;
   if (diff <= 0) return 1;
-  var raw = Math.ceil(diff / 3600000);
-  var days = Math.ceil(diff / 86400000);
-  // 午休扣除：單日且跨越 12:00-13:00 扣 1 小時
-  var lunch = 0;
-  if (days <= 1 && s.getHours() < 12 && e.getHours() >= 13) lunch = 1;
-  var workHours = raw - lunch;
-  if (workHours < 1) workHours = 1;
-  var cap = days * 8;
-  return Math.min(workHours, cap);
+
+  // 逐日計算，跳過週六(6)週日(0)
+  var sDay = new Date(s.getFullYear(), s.getMonth(), s.getDate());
+  var eDay = new Date(e.getFullYear(), e.getMonth(), e.getDate());
+
+  var total = 0;
+  var current = new Date(sDay);
+  while (current <= eDay) {
+    var dow = current.getDay();
+    if (dow !== 0 && dow !== 6) {
+      // 工作日：決定當天的起訖時間
+      var dayStart = current.getTime() === sDay.getTime() ? s : new Date(current);
+      var dayEnd;
+      if (current.getTime() === eDay.getTime()) {
+        dayEnd = e;
+      } else {
+        // 中間日：到當天 23:59:59
+        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 23, 59, 59);
+      }
+      var dayDiff = dayEnd - dayStart;
+      if (dayDiff > 0) {
+        var dayRaw = Math.ceil(dayDiff / 3600000);
+        // 午休扣除：跨越 12:00-13:00 扣 1 小時
+        var lunch = (dayStart.getHours() < 12 && dayEnd.getHours() >= 13) ? 1 : 0;
+        var dayHours = dayRaw - lunch;
+        if (dayHours > 8) dayHours = 8;
+        if (dayHours > 0) total += dayHours;
+      }
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  if (total < 1) total = 1;
+  return total;
 }
 
 async function startLeaveFlow(uid, client, replyToken) {
@@ -2495,4 +2519,4 @@ async function sendTableImage(client, replyToken, title, bodyText) {
   ]);
 }
 
-module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont, loadEmojiImages, getStoredImage };
+module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont, loadEmojiImages, getStoredImage, leaveHours };

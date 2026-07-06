@@ -10,6 +10,7 @@
  *   只要當天有人跟 Bot 互動過一次，伺服器就會保持清醒直到日報發出
  */
 const db = require('./database');
+const bot = require('./bot');
 const http = require('http');
 
 var scheduleTimeout = null;
@@ -106,8 +107,8 @@ async function doSendReport(client) {
       else checkinMap[r.employee_id].checkOut = r;
     }
 
-    // 取得今日請假
-    var leaveMap = {}; // employee_id → { name, type }
+    // 取得今日請假（含時數，已扣除週末）
+    var leaveMap = {}; // employee_id → { name, no, type, hours }
     var allLeaves = await db.getLeaveRequests('approved', 500);
     for (var li = 0; li < allLeaves.length; li++) {
       var l = allLeaves[li];
@@ -116,7 +117,8 @@ async function doSendReport(client) {
       if (lStart <= todayStr && lEnd >= todayStr) {
         if (!leaveMap[l.employee_id]) {
           var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type;
-          leaveMap[l.employee_id] = { name: l.name, no: l.employee_no, type: leaveLabel };
+          var leaveHoursTotal = bot.leaveHours(l.start_date, l.end_date);
+          leaveMap[l.employee_id] = { name: l.name, no: l.employee_no, type: leaveLabel, hours: leaveHoursTotal };
         }
       }
     }
@@ -143,7 +145,7 @@ async function doSendReport(client) {
           lateList.push(emp.employee_no + ' ' + emp.name + '（' + fmtTime(new Date(ci.checkIn.check_time)) + '，晚 ' + lateMin + ' 分）');
         }
       } else if (onLeave) {
-        leaveList.push(emp.employee_no + ' ' + onLeave.name + '（' + onLeave.type + '）');
+        leaveList.push(emp.employee_no + ' ' + onLeave.name + '（' + onLeave.type + '，' + onLeave.hours + 'h）');
       } else {
         absentList.push(emp.employee_no + ' ' + emp.name);
       }

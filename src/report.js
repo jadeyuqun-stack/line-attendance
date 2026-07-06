@@ -131,12 +131,17 @@ async function doSendReport(client) {
     var workBuf = parseInt(await db.getSetting('late_buffer_minutes') || '30');
     var checkedInList = [];    // 已打卡（含遲到標記）
     var lateList = [];         // 遲到
-    var leaveList = [];        // 請假中
+    var leaveList = [];        // 請假中（不論是否打卡都列入）
     var absentList = [];       // 未打卡（非請假）
     for (var j = 0; j < allEmps.length; j++) {
       var emp = allEmps[j];
       var ci = checkinMap[emp.id];
       var onLeave = leaveMap[emp.id];
+
+      // 請假人員一律列入（不論有無打卡）
+      if (onLeave) {
+        leaveList.push(emp.employee_no + ' ' + onLeave.name + '（' + onLeave.type + '，' + onLeave.hours + 'h）');
+      }
 
       if (ci && ci.checkIn) {
         checkedInList.push(emp.employee_no + ' ' + emp.name);
@@ -147,9 +152,8 @@ async function doSendReport(client) {
         if (lateMin > 0) {
           lateList.push(emp.employee_no + ' ' + emp.name + '（' + fmtTime(new Date(ci.checkIn.check_time)) + '，晚 ' + lateMin + ' 分）');
         }
-      } else if (onLeave) {
-        leaveList.push(emp.employee_no + ' ' + onLeave.name + '（' + onLeave.type + '，' + onLeave.hours + 'h）');
-      } else {
+      } else if (!onLeave) {
+        // 未打卡且非請假 → 曠職
         absentList.push(emp.employee_no + ' ' + emp.name);
       }
     }

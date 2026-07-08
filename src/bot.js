@@ -663,7 +663,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
           }]);
         }
         return client.replyMessage(replyToken, [withMenu("✅ 補打卡申請已送出！\n\n" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班") + "\n日期：" + state.punchDate + " " + state.punchTime + "\n⏳ 等待簽核")]);
-      } catch(e) { console.error(e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
+      } catch(e) { console.error('[mp] error:', e.message || e, e.stack || ''); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
     }
     return;
   }
@@ -700,7 +700,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
       return client.replyMessage(replyToken, [{
         type: "text", text: "✅ 加班申請已送出！\n\n時間：" + fmtDt(state.otStart) + " ~ " + fmtDt(state.otEnd) + "\n原因：" + state.reason + "\n\n⏳ 等待第1階簽核：" + (approvers.length > 0 ? approvers[0].name : '') + " ⏳"
       }]);
-    } catch(e) { console.error('[ot] error:', e); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
+    } catch(e) { console.error('[ot] error:', e.message || e, e.stack || ''); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
   }
   if (!state.flow && state.step === 'reason') {
     state.reason = text;
@@ -746,7 +746,8 @@ async function handleFlow(text, uid, client, replyToken, emp) {
 	        }
       ]);
     } catch (e) {
-      console.error('[leave] error:', e); states.delete(uid);
+      console.error('[leave] error:', e.message || e, e.stack || '');
+      states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('❌ 申請失敗，請稍後再試。')]);
     }
   }

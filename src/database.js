@@ -2,12 +2,23 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  connectionTimeoutMillis: 15000,
+  idleTimeoutMillis: 30000,
+  max: 10,
+});
+
+pool.on('error', function (err) {
+  console.error('[DB] pool error (idle client):', err.message);
 });
 
 // 強制所有連線使用台北時區，確保 CURRENT_DATE 與 check_time::date 正確
-pool.on('connect', async (client) => {
-  await client.query("SET timezone TO 'Asia/Taipei'");
+pool.on('connect', async function (client) {
+  try {
+    await client.query("SET timezone TO 'Asia/Taipei'");
+  } catch (e) {
+    console.error('[DB] SET timezone failed:', e.message);
+  }
 });
 
 async function initDatabase() {

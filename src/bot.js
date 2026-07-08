@@ -680,26 +680,29 @@ async function handleFlow(text, uid, client, replyToken, emp) {
       var otId = await db.createOvertimeRequest(emp.id, state.otStart, state.otEnd, state.reason);
       states.delete(uid);
       var approvers = await db.findApprovers(emp.id);
-      for (var j = 0; j < approvers.length; j++) {
-        await client.pushMessage(approvers[j].line_user_id, [{
-          type: "flex", altText: "🕐 " + emp.name + " 加班申請",
-          contents: { type: "bubble",
-            body: { type: "box", layout: "vertical", contents: [
-              { type: "text", text: "🕐 加班申請", weight: "bold", size: "lg", color: "#f39c12" },
-              { type: "text", text: "員工：" + emp.name + "（" + emp.employee_no + "）", margin: "md", size: "sm", color: "#666666" },
-              { type: "text", text: "時間：" + fmtDt(state.otStart) + " ~ " + fmtDt(state.otEnd), margin: "sm", size: "sm" },
-              { type: "text", text: "原因：" + state.reason, margin: "sm", size: "sm", wrap: true, color: "#666666" },
-            ]},
-            footer: { type: "box", layout: "horizontal", spacing: "sm", contents: [
-              { type: "button", style: "primary", color: "#06c755", action: { type: "postback", label: "核准", data: "ot_approve_" + otId }, flex: 1, height: "sm" },
-              { type: "button", style: "secondary", color: "#e74c3c", action: { type: "postback", label: "駁回", data: "ot_reject_" + otId }, flex: 1, height: "sm" },
-            ]}
-          }
-        }]);
-      }
-      return client.replyMessage(replyToken, [{
+      // 先回覆成功給使用者，再推播給簽核人（push 失敗不影響使用者）
+      await client.replyMessage(replyToken, [{
         type: "text", text: "✅ 加班申請已送出！\n\n時間：" + fmtDt(state.otStart) + " ~ " + fmtDt(state.otEnd) + "\n原因：" + state.reason + "\n\n⏳ 等待第1階簽核：" + (approvers.length > 0 ? approvers[0].name : '') + " ⏳"
       }]);
+      for (var j = 0; j < approvers.length; j++) {
+        try {
+          await client.pushMessage(approvers[j].line_user_id, [{
+            type: "flex", altText: "🕐 " + emp.name + " 加班申請",
+            contents: { type: "bubble",
+              body: { type: "box", layout: "vertical", contents: [
+                { type: "text", text: "🕐 加班申請", weight: "bold", size: "lg", color: "#f39c12" },
+                { type: "text", text: "員工：" + emp.name + "（" + emp.employee_no + "）", margin: "md", size: "sm", color: "#666666" },
+                { type: "text", text: "時間：" + fmtDt(state.otStart) + " ~ " + fmtDt(state.otEnd), margin: "sm", size: "sm" },
+                { type: "text", text: "原因：" + state.reason, margin: "sm", size: "sm", wrap: true, color: "#666666" },
+              ]},
+              footer: { type: "box", layout: "horizontal", spacing: "sm", contents: [
+                { type: "button", style: "primary", color: "#06c755", action: { type: "postback", label: "核准", data: "ot_approve_" + otId }, flex: 1, height: "sm" },
+                { type: "button", style: "secondary", color: "#e74c3c", action: { type: "postback", label: "駁回", data: "ot_reject_" + otId }, flex: 1, height: "sm" },
+              ]}
+            }
+          }]);
+        } catch(pe) { console.error('[ot] push to approver failed:', pe.message); }
+      }
     } catch(e) { console.error('[ot] error:', e.message || e, e.stack || ''); states.delete(uid); return client.replyMessage(replyToken, [withMenu("❌ 申請失敗")]); }
   }
   if (!state.flow && state.step === 'reason') {
@@ -708,10 +711,24 @@ async function handleFlow(text, uid, client, replyToken, emp) {
       const leaveId = await db.createLeaveRequest(emp.id, state.type, state.startDateTime, state.endDateTime, state.reason);
       states.delete(uid);
       const approvers = await db.findApprovers(emp.id);
-      if (approvers.length > 0) {
-        var hours = leaveHours(state.startDateTime, state.endDateTime);
-        var st2 = new Date(state.startDateTime), et2 = new Date(state.endDateTime);
-        for (const appr of approvers) {
+      var hours = leaveHours(state.startDateTime, state.endDateTime);
+      var st2 = new Date(state.startDateTime), et2 = new Date(state.endDateTime);
+      // 先回覆成功給使用者，再推播給簽核人（push 失敗不影響使用者）
+      await client.replyMessage(replyToken, [
+        { type: 'flex', altText: '✅ 請假已送出',
+          contents: { type: 'bubble',
+            body: { type: 'box', layout: 'vertical', contents: [
+              { type: 'text', text: '✅ 請假申請已送出', weight: 'bold', size: 'lg', color: '#06c755' },
+              { type: 'text', text: '假別：' + state.typeLabel, margin: 'md', size: 'sm' },
+              { type: 'text', text: '時間：' + fmtDt(state.startDateTime) + ' ~ ' + fmtDt(state.endDateTime), margin: 'sm', size: 'sm', wrap: true },
+              { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', color: '#666666', wrap: true },
+              { type: 'text', text: '⏳ 等待第1階簽核：' + (approvers.length > 0 ? approvers[0].name : ''), margin: 'md', size: 'sm', color: '#f39c12' }
+            ]}
+          }
+        }
+      ]);
+      for (const appr of approvers) {
+        try {
           await client.pushMessage(appr.line_user_id, [{
             type: 'flex', altText: '📋 ' + emp.name + ' 請假申請',
             contents: {
@@ -730,21 +747,8 @@ async function handleFlow(text, uid, client, replyToken, emp) {
               ]}
             }
           }]);
-        }
+        } catch(pe) { console.error('[leave] push to approver failed:', pe.message); }
       }
-      return client.replyMessage(replyToken, [
-        { type: 'flex', altText: '✅ 請假已送出',
-          contents: { type: 'bubble',
-            body: { type: 'box', layout: 'vertical', contents: [
-              { type: 'text', text: '✅ 請假申請已送出', weight: 'bold', size: 'lg', color: '#06c755' },
-              { type: 'text', text: '假別：' + state.typeLabel, margin: 'md', size: 'sm' },
-              { type: 'text', text: '時間：' + fmtDt(state.startDateTime) + ' ~ ' + fmtDt(state.endDateTime), margin: 'sm', size: 'sm', wrap: true },
-              { type: 'text', text: '原因：' + state.reason, margin: 'sm', size: 'sm', color: '#666666', wrap: true },
-              { type: 'text', text: '⏳ 等待第1階簽核：' + (approvers.length > 0 ? approvers[0].name : ''), margin: 'md', size: 'sm', color: '#f39c12' }
-            ]}
-	          }
-	        }
-      ]);
     } catch (e) {
       console.error('[leave] error:', e.message || e, e.stack || '');
       states.delete(uid);
@@ -752,7 +756,6 @@ async function handleFlow(text, uid, client, replyToken, emp) {
     }
   }
 }
-
 // ===== Postback =====
 async function handlePostback(postback, uid, client, replyToken) {
   const data = postback.data || '', params = postback.params || {};

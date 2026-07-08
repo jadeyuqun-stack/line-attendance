@@ -108,6 +108,24 @@ function withDatePicker(text, data) {
   ]}};
 }
 
+// pushMessage 含 429 重試 (LINE API rate limit)
+async function pushWithRetry(client, uid, messages, retries) {
+  retries = retries || 3;
+  for (var attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await client.pushMessage(uid, messages);
+    } catch (e) {
+      if (e.statusCode === 429 && attempt < retries - 1) {
+        var delay = Math.pow(2, attempt) * 1000;
+        console.log('[push] 429 retry ' + (attempt + 1) + '/' + retries + ' delay ' + delay + 'ms uid=' + uid);
+        await new Promise(function (resolve) { setTimeout(resolve, delay); });
+      } else {
+        throw e;
+      }
+    }
+  }
+}
+
 async function handleEvents(events, client) {
   console.log('[bot] events:', events.length, events.map(function(e){return e.type+':'+(e.message?e.message.type:'');}));
   for (const evt of events) {
@@ -118,9 +136,9 @@ async function handleEvents(events, client) {
         const emp = await db.getEmployeeByLineId(uid);
         if (emp) {
           assignRichMenu(uid, emp.role).catch(function(e2) { console.error('[RichMenu] assign error:', e2.message); });
-          await client.pushMessage(uid, [withMenu('歡迎回來，' + emp.name + '！🎉\n\n📋 下方圖文選單可直接點選操作')]);
+          await pushWithRetry(client, uid, [withMenu('歡迎回來，' + emp.name + '！🎉\n\n📋 下方圖文選單可直接點選操作')]);
         } else {
-          await client.pushMessage(uid, [{ type: 'text', text: '👋 歡迎使用公司打卡系統！\n\n🔹 請輸入「員工編號」綁定帳號\n🔹 或輸入「我的ID」取得 LINE ID\n\n📌 請洽管理員取得員工編號' }]);
+          await pushWithRetry(client, uid, [{ type: 'text', text: '👋 歡迎使用公司打卡系統！\n\n🔹 請輸入「員工編號」綁定帳號\n🔹 或輸入「我的ID」取得 LINE ID\n\n📌 請洽管理員取得員工編號' }]);
         }
       }
       if (evt.type === 'message' && evt.message) {
@@ -152,11 +170,6 @@ async function handleText(text, uid, client, replyToken) {
     return client.replyMessage(replyToken, [withMenu('❌ 找不到員工編號「' + cmd + '」\n\n🆔 輸入「我的ID」取得 LINE ID 洽管理員')]);
   }
 
-  // 每次互動檢查主管角色是否需要重新連結 8 格選單
-  var empRole = emp.role || '';
-  if (empRole === '經理' || empRole === '老闆' || empRole === 'boss' || empRole === '簽核人員') {
-    assignRichMenu(uid, empRole).catch(function(e2) {});
-  }
 
   if (cmd === '我的ID' || cmd.toLowerCase() === 'my id') {
     return client.replyMessage(replyToken, [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
@@ -648,7 +661,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
         states.delete(uid);
         var approvers = await db.findApprovers(emp.id);
         for (var j = 0; j < approvers.length; j++) {
-          await client.pushMessage(approvers[j].line_user_id, [{
+          await pushWithRetry(client, approvers[j].line_user_id, [{
             type: "flex", altText: "📝 補打卡申請",
             contents: { type: "bubble", body: { type: "box", layout: "vertical", contents: [
               { type: "text", text: "📝 補打卡申請", weight: "bold", size: "lg", color: "#f39c12" },
@@ -686,7 +699,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
       }]);
       for (var j = 0; j < approvers.length; j++) {
         try {
-          await client.pushMessage(approvers[j].line_user_id, [{
+          await pushWithRetry(client, approvers[j].line_user_id, [{
             type: "flex", altText: "🕐 " + emp.name + " 加班申請",
             contents: { type: "bubble",
               body: { type: "box", layout: "vertical", contents: [
@@ -729,7 +742,7 @@ async function handleFlow(text, uid, client, replyToken, emp) {
       ]);
       for (const appr of approvers) {
         try {
-          await client.pushMessage(appr.line_user_id, [{
+          await pushWithRetry(client, appr.line_user_id, [{
             type: 'flex', altText: '📋 ' + emp.name + ' 請假申請',
             contents: {
               type: 'bubble',
@@ -841,7 +854,7 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (mp.status !== "pending") return client.replyMessage(replyToken, [withMenu("已處理過")]);
     if (data.indexOf("mp_approve_") === 0) {
       await db.updateMissedPunchStatus(mpId, "approved", mpApprover.id);
-      if (mpEmp && mpEmp.line_user_id) await client.pushMessage(mpEmp.line_user_id, [{ type: "text", text: "🎉 補打卡已核准！\n" + fmtDt(mp.punch_date) + " " + mp.punch_time }]);
+      if (mpEmp && mpEmp.line_user_id) await pushWithRetry(client, mpEmp.line_user_id, [{ type: "text", text: "🎉 補打卡已核准！\n" + fmtDt(mp.punch_date) + " " + mp.punch_time }]);
       return client.replyMessage(replyToken, [withMenu("✅ 已核准")]);
     } else {
       states.set(uid, { flow: 'reject_missed', id: mpId, approverId: mpApprover.id });
@@ -862,7 +875,7 @@ async function handlePostback(postback, uid, client, replyToken) {
       var result = await db.updateLeaveStatus(leaveId, 'approved', approver.id);
       if (result && result.advanced) {
         for (var n = 0; n < result.approvers.length; n++) {
-          await client.pushMessage(result.approvers[n].line_user_id, [{
+          await pushWithRetry(client, result.approvers[n].line_user_id, [{
             type: 'flex', altText: '📋 請假申請（第'+result.level+'階）',
             contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '📋 請假申請（第'+result.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
@@ -875,11 +888,11 @@ async function handlePostback(postback, uid, client, replyToken) {
             ]}}
           }]);
         }
-        if (leaveEmp && leaveEmp.line_user_id) await client.pushMessage(leaveEmp.line_user_id, [{ type: "text", text: "📋 請假進度\n\n已通過第"+(result.level-1)+"階，等待第"+result.level+"階：" + result.approvers[0].name + "\n時間：" + fmtDt(leave.start_date) + " ~ " + fmtDt(leave.end_date) }]);
+        if (leaveEmp && leaveEmp.line_user_id) await pushWithRetry(client, leaveEmp.line_user_id, [{ type: "text", text: "📋 請假進度\n\n已通過第"+(result.level-1)+"階，等待第"+result.level+"階：" + result.approvers[0].name + "\n時間：" + fmtDt(leave.start_date) + " ~ " + fmtDt(leave.end_date) }]);
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+result.level+'階簽核')]);
       }
       if (leaveEmp && leaveEmp.line_user_id) {
-        await client.pushMessage(leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) }]);
+        await pushWithRetry(client, leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) }]);
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
@@ -904,7 +917,7 @@ async function handlePostback(postback, uid, client, replyToken) {
       var otResult = await db.updateOvertimeStatus(otId, 'approved', otApprover.id);
       if (otResult && otResult.advanced) {
         for (var n2 = 0; n2 < otResult.approvers.length; n2++) {
-          await client.pushMessage(otResult.approvers[n2].line_user_id, [{
+          await pushWithRetry(client, otResult.approvers[n2].line_user_id, [{
             type: 'flex', altText: '🕐 加班申請（第'+otResult.level+'階）',
             contents: { type: 'bubble', body: { type: 'box', layout: 'vertical', contents: [
               { type: 'text', text: '🕐 加班申請（第'+otResult.level+'階簽核）', weight: 'bold', size: 'lg', color: '#f39c12' },
@@ -917,11 +930,11 @@ async function handlePostback(postback, uid, client, replyToken) {
             ]}}
           }]);
         }
-        if (otEmp && otEmp.line_user_id) await client.pushMessage(otEmp.line_user_id, [{ type: "text", text: "🕐 加班進度\n\n已通過第"+(otResult.level-1)+"階，等待第"+otResult.level+"階：" + otResult.approvers[0].name + "\n時間：" + fmtDt(ot.start_time) + " ~ " + fmtDt(ot.end_time) }]);
+        if (otEmp && otEmp.line_user_id) await pushWithRetry(client, otEmp.line_user_id, [{ type: "text", text: "🕐 加班進度\n\n已通過第"+(otResult.level-1)+"階，等待第"+otResult.level+"階：" + otResult.approvers[0].name + "\n時間：" + fmtDt(ot.start_time) + " ~ " + fmtDt(ot.end_time) }]);
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+otResult.level+'階簽核')]);
       }
       if (otEmp && otEmp.line_user_id) {
-        await client.pushMessage(otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) }]);
+        await pushWithRetry(client, otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) }]);
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
@@ -946,7 +959,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       var leaveEmp = leave ? await db.getEmployeeById(leave.employee_id) : null;
       await db.updateLeaveStatus(state.id, 'rejected', approver.id, reason);
       if (leaveEmp && leaveEmp.line_user_id && leave) {
-        await client.pushMessage(leaveEmp.line_user_id, [{
+        await pushWithRetry(client, leaveEmp.line_user_id, [{
           type: 'text', text: '❌ 請假被駁回\n時間：' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) + '\n駁回原因：' + reason
         }]);
       }
@@ -959,7 +972,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       var otEmp = ot ? await db.getEmployeeById(ot.employee_id) : null;
       await db.updateOvertimeStatus(state.id, 'rejected', approver.id, reason);
       if (otEmp && otEmp.line_user_id && ot) {
-        await client.pushMessage(otEmp.line_user_id, [{
+        await pushWithRetry(client, otEmp.line_user_id, [{
           type: 'text', text: '❌ 加班被駁回\n時間：' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) + '\n駁回原因：' + reason
         }]);
       }
@@ -972,7 +985,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       var mpEmp = mp ? await db.getEmployeeById(mp.employee_id) : null;
       await db.updateMissedPunchStatus(state.id, 'rejected', approver.id, reason);
       if (mpEmp && mpEmp.line_user_id && mp) {
-        await client.pushMessage(mpEmp.line_user_id, [{
+        await pushWithRetry(client, mpEmp.line_user_id, [{
           type: 'text', text: '❌ 補打卡被駁回\n' + fmtDt(mp.punch_date) + ' ' + mp.punch_time + '\n駁回原因：' + reason
         }]);
       }

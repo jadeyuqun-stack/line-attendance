@@ -178,6 +178,23 @@ async function doSendReport(client) {
 
     msg += '📌 系統自動推播';
 
+    // 檢查是否啟用圖片版日報
+    var asImage = await db.getSetting('report_as_image');
+    if (asImage === 'true' || asImage === '1') {
+      try {
+        var png = bot.textToImage('', msg);
+        if (png) {
+          var imgId = 'report_' + todayStr.replace(/-/g, '');
+          bot.storeImage(imgId, png);
+          var baseUrl = process.env.APP_URL || ('https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || 'localhost'));
+          var imgUrl = baseUrl + '/img/' + imgId;
+          await client.pushMessage(groupId, [{ type: 'image', originalContentUrl: imgUrl, previewImageUrl: imgUrl }]);
+          console.log('[Report] 已推播圖片版日報到群組 ' + groupId);
+          return;
+        }
+      } catch(e) { console.error('[Report] 圖片產生失敗，降級為文字:', e.message); }
+    }
+
     await client.pushMessage(groupId, [{ type: 'text', text: msg }]);
     console.log('[Report] 已推播到群組 ' + groupId);
   } catch (e) {

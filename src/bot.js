@@ -2812,4 +2812,4 @@ async function sendTableImage(client, replyToken, title, bodyText) {
   ]);
 }
 
-module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont, loadEmojiImages, getStoredImage, leaveHours, refreshHolidays };
+module.exports = { handleEvents, setupRichMenu, makePng, makePng8, makePngBoss, assignRichMenu, initFont, loadEmojiImages, getStoredImage, storeImage, textToImage, sendTableImage, leaveHours, refreshHolidays };

@@ -108,6 +108,42 @@ function withDatePicker(text, data) {
   ]}};
 }
 
+
+// 查詢待簽核項目（pull 模式，不耗 push quota）
+var _pendingApprovalCache = {};
+async function checkPendingApprovals(client, uid, replyToken) {
+  try {
+    var emp = await db.getEmployeeByLineId(uid);
+    if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆')) return false;
+    var leaves = await db.getLeaveRequests('pending', 50);
+    var ots = await db.getOvertimeRequests('pending', 50);
+    var mps = await db.getMissedPunches('pending', 50);
+    var myLeaves = [], myOTs = [], myMPs = [];
+    for (var li = 0; li < leaves.length; li++) {
+      var le = await db.getEmployeeById(leaves[li].employee_id);
+      if (le && (le.approver_id === emp.id || le.approver2_id === emp.id || le.approver3_id === emp.id)) myLeaves.push(leaves[li]);
+    }
+    for (var oi = 0; oi < ots.length; oi++) {
+      var oe = await db.getEmployeeById(ots[oi].employee_id);
+      if (oe && (oe.approver_id === emp.id || oe.approver2_id === emp.id || oe.approver3_id === emp.id)) myOTs.push(ots[oi]);
+    }
+    for (var mi = 0; mi < mps.length; mi++) {
+      var me = await db.getEmployeeById(mps[mi].employee_id);
+      if (me && (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id)) myMPs.push(mps[mi]);
+    }
+    return myLeaves.length + myOTs.length + myMPs.length;
+  } catch(e) { return 0; }
+}
+
+// 推播簽核通知到 LINE 群組（備用通道）
+async function pushToGroup(client, text) {
+  try {
+    var groupId = await db.getSetting('report_group_id');
+    if (groupId) { await client.pushMessage(groupId, [{ type: 'text', text: text }]); return true; }
+  } catch(e) { /* 群組推播失敗不影響 */ }
+  return false;
+}
+
 // pushMessage 含 429 重試 (LINE API rate limit)
 // 取得 pushMessage 的 HTTP status code（相容 LINE SDK v9 / axios / raw）
 function _getStatusCode(e) {
@@ -117,6 +153,51 @@ function _getStatusCode(e) {
   return 0;
 }
 
+function _getErrorDetail(e) {
+  try {
+    if (e.originalError && e.originalError.data) return JSON.stringify(e.originalError.data);
+    if (e.response && e.response.data) return JSON.stringify(e.response.data);
+    if (e.data) return JSON.stringify(e.data);
+  } catch(_) {}
+  return e.message || String(e);
+}
+
+
+// 查詢待簽核項目（pull 模式，不耗 push quota）
+var _pendingApprovalCache = {};
+async function checkPendingApprovals(client, uid, replyToken) {
+  try {
+    var emp = await db.getEmployeeByLineId(uid);
+    if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆')) return false;
+    var leaves = await db.getLeaveRequests('pending', 50);
+    var ots = await db.getOvertimeRequests('pending', 50);
+    var mps = await db.getMissedPunches('pending', 50);
+    var myLeaves = [], myOTs = [], myMPs = [];
+    for (var li = 0; li < leaves.length; li++) {
+      var le = await db.getEmployeeById(leaves[li].employee_id);
+      if (le && (le.approver_id === emp.id || le.approver2_id === emp.id || le.approver3_id === emp.id)) myLeaves.push(leaves[li]);
+    }
+    for (var oi = 0; oi < ots.length; oi++) {
+      var oe = await db.getEmployeeById(ots[oi].employee_id);
+      if (oe && (oe.approver_id === emp.id || oe.approver2_id === emp.id || oe.approver3_id === emp.id)) myOTs.push(ots[oi]);
+    }
+    for (var mi = 0; mi < mps.length; mi++) {
+      var me = await db.getEmployeeById(mps[mi].employee_id);
+      if (me && (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id)) myMPs.push(mps[mi]);
+    }
+    return myLeaves.length + myOTs.length + myMPs.length;
+  } catch(e) { return 0; }
+}
+
+// 推播簽核通知到 LINE 群組（備用通道）
+async function pushToGroup(client, text) {
+  try {
+    var groupId = await db.getSetting('report_group_id');
+    if (groupId) { await client.pushMessage(groupId, [{ type: 'text', text: text }]); return true; }
+  } catch(e) { /* 群組推播失敗不影響 */ }
+  return false;
+}
+
 // pushMessage 含 429 重試 (LINE API rate limit)
 async function pushWithRetry(client, uid, messages, retries) {
   retries = retries || 3;
@@ -124,13 +205,16 @@ async function pushWithRetry(client, uid, messages, retries) {
     try {
       return await client.pushMessage(uid, messages);
     } catch (e) {
-      if (attempt === 0) console.error('[push] error uid=' + uid + ' status=' + _getStatusCode(e) + ' msg=' + (e.message || e));
-      if (_getStatusCode(e) === 429 && attempt < retries - 1) {
+      var st = _getStatusCode(e);
+      var detail = _getErrorDetail(e);
+      if (attempt === 0) console.error('[push] uid=' + uid + ' attempt=0 status=' + st + ' detail=' + detail);
+      if (st === 429 && attempt < retries - 1) {
         var delay = Math.pow(2, attempt) * 1000;
         console.log('[push] 429 retry ' + (attempt + 1) + '/' + retries + ' delay ' + delay + 'ms uid=' + uid);
         await new Promise(function (resolve) { setTimeout(resolve, delay); });
       } else {
-        if (attempt > 0) console.error('[push] 429 retries exhausted for uid=' + uid);
+        if (attempt > 0) console.error('[push] exhausted uid=' + uid + ' status=' + st + ' detail=' + detail);
+        pushToGroup(client, '⚠️ 推播通知失敗（uid=' + uid + ' status=' + st + '）\n\n請簽核人員輸入「待簽核」查看待審項目').catch(function(){});
         return; // 靜默失敗，不影響使用者
       }
     }
@@ -192,6 +276,7 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '本月請假累計') return queryBossMonthLeaves(emp, client, replyToken);
   if (cmd === '本月遲到累計') return queryBossMonthLates(emp, client, replyToken);
   if (cmd === '本月加班累計') return queryBossMonthOvertime(emp, client, replyToken);
+  if (cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending') return checkPendingApprovalsCmd(emp, client, replyToken);
   if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken);
   if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, 'leave');
@@ -212,6 +297,46 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
   return client.replyMessage(replyToken, [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
 }
+
+// 待簽核查詢指令
+async function checkPendingApprovalsCmd(emp, client, replyToken) {
+  try {
+    var leaves = await db.getLeaveRequests('pending', 50);
+    var ots = await db.getOvertimeRequests('pending', 50);
+    var mps = await db.getMissedPunches('pending', 50);
+    var myLeaves = [], myOTs = [], myMPs = [];
+    for (var li = 0; li < leaves.length; li++) {
+      var le = await db.getEmployeeById(leaves[li].employee_id);
+      if (le && (le.approver_id === emp.id || le.approver2_id === emp.id || le.approver3_id === emp.id)) myLeaves.push({ r: leaves[li], empName: le.name });
+    }
+    for (var oi = 0; oi < ots.length; oi++) {
+      var oe = await db.getEmployeeById(ots[oi].employee_id);
+      if (oe && (oe.approver_id === emp.id || oe.approver2_id === emp.id || oe.approver3_id === emp.id)) myOTs.push({ r: ots[oi], empName: oe.name });
+    }
+    for (var mi = 0; mi < mps.length; mi++) {
+      var me = await db.getEmployeeById(mps[mi].employee_id);
+      if (me && (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id)) myMPs.push({ r: mps[mi], empName: me.name });
+    }
+    var total = myLeaves.length + myOTs.length + myMPs.length;
+    if (total === 0) return client.replyMessage(replyToken, [withMenu('✅ 目前無待簽核項目')]);
+    var msg = '📋 待簽核項目（共 ' + total + ' 筆）';
+    if (myLeaves.length > 0) {
+      msg += '\n\n🏖 請假：';
+      for (var i = 0; i < myLeaves.length; i++) msg += '\n  ' + myLeaves[i].empName + ' ' + fmtDt(myLeaves[i].r.start_date);
+    }
+    if (myOTs.length > 0) {
+      msg += '\n\n🕐 加班：';
+      for (var i = 0; i < myOTs.length; i++) msg += '\n  ' + myOTs[i].empName + ' ' + fmtDt(myOTs[i].r.start_time);
+    }
+    if (myMPs.length > 0) {
+      msg += '\n\n📝 補打卡：';
+      for (var i = 0; i < myMPs.length; i++) msg += '\n  ' + myMPs[i].empName + ' ' + myMPs[i].r.punch_date;
+    }
+    msg += '\n\n✅ 輸入「核准全部」或「駁回全部」批次處理';
+    return client.replyMessage(replyToken, [withMenu(msg)]);
+  } catch(e) { return client.replyMessage(replyToken, [withMenu('❌ 查詢失敗')]); }
+}
+
 
 function fmt(d) {
   var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
@@ -1201,7 +1326,7 @@ function makePng() {
 		ctx.fillStyle = '#ffffff';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
-		ctx.font = 'bold 100px ' + fontFamily;
+		ctx.font = 'bold 200px ' + fontFamily;
 		ctx.fillText(a.label, cx, a.y + a.h * 0.48);
 
 		// 簡約底部線條圖示
@@ -1745,20 +1870,20 @@ function makePng8() {
     var label = a.label;
     if (label.indexOf('\n') !== -1) {
       var parts = label.split('\n');
-      ctx.font = 'bold 48px ' + fontFamily;
-      ctx.fillText(parts[0], cx, a.y + a.h * 0.42);
-      ctx.fillText(parts[1], cx, a.y + a.h * 0.62);
+      ctx.font = 'bold 96px ' + fontFamily;
+      ctx.fillText(parts[0], cx, a.y + a.h * 0.35);
+      ctx.fillText(parts[1], cx, a.y + a.h * 0.52);
     } else {
       if (label.length <= 2) {
-        ctx.font = 'bold 70px ' + fontFamily;
+        ctx.font = 'bold 140px ' + fontFamily;
       } else if (label.length <= 3) {
-        ctx.font = 'bold 60px ' + fontFamily;
+        ctx.font = 'bold 120px ' + fontFamily;
       } else if (label.length <= 4) {
-        ctx.font = 'bold 50px ' + fontFamily;
+        ctx.font = 'bold 100px ' + fontFamily;
       } else {
-        ctx.font = 'bold 44px ' + fontFamily;
+        ctx.font = 'bold 88px ' + fontFamily;
       }
-      ctx.fillText(label, cx, a.y + a.h * 0.50);
+      ctx.fillText(label, cx, a.y + a.h * 0.40);
     }
 
     // 底部簡約圖示
@@ -1927,8 +2052,8 @@ function makePngBoss() {
 		ctx.textBaseline = 'middle';
 
 		var label = a.label;
-		ctx.font = 'bold 80px ' + fontFamily;
-		ctx.fillText(label, cx, a.y + a.h * 0.54);
+		ctx.font = 'bold 160px ' + fontFamily;
+		ctx.fillText(label, cx, a.y + a.h * 0.45);
 
 		// 底部簡約圖示
 		ctx.strokeStyle = 'rgba(255,255,255,0.35)';

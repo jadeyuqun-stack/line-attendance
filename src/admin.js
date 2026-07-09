@@ -566,6 +566,61 @@ router.put('/api/checkins/:id', auth, express.json(), async (req, res) => {
   }
 });
 
+// ===== 清除指定區間紀錄 =====
+router.delete('/api/cleanup/:table', auth, express.json(), async function (req, res) {
+  var table = req.params.table;
+  var startDate = req.body.start || '';
+  var endDate = req.body.end || '';
+  var allowed = ['leave_requests', 'overtime_requests', 'checkins', 'missed_punch'];
+  if (allowed.indexOf(table) === -1) return res.status(400).json({ error: '無效的資料表' });
+  if (!startDate) return res.status(400).json({ error: '請選擇開始日期' });
+  try {
+    var count = await db.clearByDateRange(table, startDate, endDate || null);
+    res.json({ success: true, count: count });
+  } catch (e) {
+    console.error('[cleanup] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/cleanup', auth, async function (_, res) {
+  var body = '<div class="card"><h3>🗑 清除指定區間紀錄</h3>'
+    + '<p style="color:#999;font-size:13px;margin-bottom:16px">選擇資料類型和日期範圍，該區間內的紀錄將被永久刪除。</p>'
+    + '<div style="margin-bottom:16px"><label style="display:block;margin-bottom:6px;font-weight:600">資料類型</label>'
+    + '<select id="tableSelect" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;background:#fff;width:200px">'
+    + '<option value="checkins">📋 打卡記錄</option>'
+    + '<option value="leave_requests">🏖 請假記錄</option>'
+    + '<option value="overtime_requests">🕐 加班記錄</option>'
+    + '<option value="missed_punch">📝 補打卡記錄</option>'
+    + '</select></div>'
+    + '<div style="display:flex;gap:16px;margin-bottom:16px;align-items:end;flex-wrap:wrap">'
+    + '<div><label style="display:block;margin-bottom:6px;font-weight:600">開始日期</label><input type="date" id="startDate" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px"></div>'
+    + '<div><label style="display:block;margin-bottom:6px;font-weight:600">結束日期（選填）</label><input type="date" id="endDate" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px"></div>'
+    + '<div><button onclick="doCleanup()" class="btn" style="background:#e74c3c;font-size:14px;padding:10px 24px">🗑 刪除紀錄</button></div>'
+    + '</div>'
+    + '<div id="result" style="display:none;padding:12px 16px;border-radius:8px;font-size:14px"></div>'
+    + '</div>';
+
+  body += '<script>'
+    + 'async function doCleanup(){'
+    + 'var table=document.getElementById("tableSelect").value;'
+    + 'var start=document.getElementById("startDate").value;'
+    + 'var end=document.getElementById("endDate").value;'
+    + 'if(!start){alert("請選擇開始日期");return;}'
+    + 'var tableLabels={"checkins":"打卡","leave_requests":"請假","overtime_requests":"加班","missed_punch":"補打卡"};'
+    + 'var label=tableLabels[table]||table;'
+    + 'if(!confirm("⚠️ 確定刪除「'+label+'」記錄（'+start+(end?" ~ "+end:" 起")+'）？\n\n此操作不可復原！"))return;'
+    + 'var r=await fetch("/admin/api/cleanup/"+table,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({start:start,end:end||null})});'
+    + 'var data=await r.json();'
+    + 'var el=document.getElementById("result");el.style.display="block";'
+    + 'if(data.success){el.className="card";el.style.background="#e6f9ee";el.style.color="#059669";el.innerHTML="✅ 已刪除 '+label+' 記錄 <b>"+data.count+"</b> 筆";}'
+    + 'else{el.className="card";el.style.background="#fdecea";el.style.color="#e74c3c";el.innerHTML="❌ 刪除失敗："+(data.error||"請稍後再試");}'
+    + '}'
+    + '</script>';
+
+  res.send(layout('清除紀錄', '清除紀錄', body));
+});
+
 // ===== 系統設定 =====
 router.get('/settings', auth, async (_, res) => {
   var officeLat = await db.getSetting('office_lat') || '';

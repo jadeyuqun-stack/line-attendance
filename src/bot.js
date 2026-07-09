@@ -109,18 +109,29 @@ function withDatePicker(text, data) {
 }
 
 // pushMessage 含 429 重試 (LINE API rate limit)
+// 取得 pushMessage 的 HTTP status code（相容 LINE SDK v9 / axios / raw）
+function _getStatusCode(e) {
+  if (e.statusCode) return e.statusCode;
+  if (e.response && e.response.status) return e.response.status;
+  if (e.originalError && e.originalError.status) return e.originalError.status;
+  return 0;
+}
+
+// pushMessage 含 429 重試 (LINE API rate limit)
 async function pushWithRetry(client, uid, messages, retries) {
   retries = retries || 3;
   for (var attempt = 0; attempt < retries; attempt++) {
     try {
       return await client.pushMessage(uid, messages);
     } catch (e) {
-      if (e.statusCode === 429 && attempt < retries - 1) {
+      if (attempt === 0) console.error('[push] error uid=' + uid + ' status=' + _getStatusCode(e) + ' msg=' + (e.message || e));
+      if (_getStatusCode(e) === 429 && attempt < retries - 1) {
         var delay = Math.pow(2, attempt) * 1000;
         console.log('[push] 429 retry ' + (attempt + 1) + '/' + retries + ' delay ' + delay + 'ms uid=' + uid);
         await new Promise(function (resolve) { setTimeout(resolve, delay); });
       } else {
-        throw e;
+        if (attempt > 0) console.error('[push] 429 retries exhausted for uid=' + uid);
+        return; // 靜默失敗，不影響使用者
       }
     }
   }
@@ -1190,7 +1201,7 @@ function makePng() {
 		ctx.fillStyle = '#ffffff';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
-		ctx.font = 'bold 80px ' + fontFamily;
+		ctx.font = 'bold 100px ' + fontFamily;
 		ctx.fillText(a.label, cx, a.y + a.h * 0.48);
 
 		// 簡約底部線條圖示
@@ -1734,18 +1745,18 @@ function makePng8() {
     var label = a.label;
     if (label.indexOf('\n') !== -1) {
       var parts = label.split('\n');
-      ctx.font = 'bold 42px ' + fontFamily;
+      ctx.font = 'bold 48px ' + fontFamily;
       ctx.fillText(parts[0], cx, a.y + a.h * 0.42);
       ctx.fillText(parts[1], cx, a.y + a.h * 0.62);
     } else {
       if (label.length <= 2) {
-        ctx.font = 'bold 62px ' + fontFamily;
+        ctx.font = 'bold 70px ' + fontFamily;
       } else if (label.length <= 3) {
-        ctx.font = 'bold 52px ' + fontFamily;
+        ctx.font = 'bold 60px ' + fontFamily;
       } else if (label.length <= 4) {
-        ctx.font = 'bold 44px ' + fontFamily;
+        ctx.font = 'bold 50px ' + fontFamily;
       } else {
-        ctx.font = 'bold 38px ' + fontFamily;
+        ctx.font = 'bold 44px ' + fontFamily;
       }
       ctx.fillText(label, cx, a.y + a.h * 0.50);
     }
@@ -1916,8 +1927,8 @@ function makePngBoss() {
 		ctx.textBaseline = 'middle';
 
 		var label = a.label;
-		ctx.font = 'bold 68px ' + fontFamily;
-		ctx.fillText(label, cx, a.y + a.h * 0.55);
+		ctx.font = 'bold 80px ' + fontFamily;
+		ctx.fillText(label, cx, a.y + a.h * 0.54);
 
 		// 底部簡約圖示
 		ctx.strokeStyle = 'rgba(255,255,255,0.35)';

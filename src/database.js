@@ -511,6 +511,32 @@ async function clearAll(table) {
   if (allowed.indexOf(table) !== -1) await pool.query('DELETE FROM ' + table);
 }
 
+async function clearByDateRange(table, startDate, endDate) {
+  var allowed = ['leave_requests', 'overtime_requests', 'checkins', 'missed_punch'];
+  if (allowed.indexOf(table) === -1) throw new Error('Invalid table: ' + table);
+  if (!startDate) throw new Error('startDate is required');
+  var sql, params;
+  if (table === 'checkins') {
+    sql = "DELETE FROM checkins WHERE check_time::date >= $1";
+    params = [startDate];
+    if (endDate) { sql += " AND check_time::date <= $2"; params.push(endDate); }
+  } else if (table === 'missed_punch') {
+    sql = "DELETE FROM missed_punch WHERE punch_date >= $1";
+    params = [startDate];
+    if (endDate) { sql += " AND punch_date <= $2"; params.push(endDate); }
+  } else if (table === 'leave_requests') {
+    sql = "DELETE FROM leave_requests WHERE start_date >= $1";
+    params = [startDate];
+    if (endDate) { sql += " AND start_date <= $2"; params.push(endDate); }
+  } else if (table === 'overtime_requests') {
+    sql = "DELETE FROM overtime_requests WHERE start_time >= $1";
+    params = [startDate];
+    if (endDate) { sql += " AND start_time <= $2"; params.push(endDate); }
+  }
+  var result = await pool.query(sql, params);
+  return result.rowCount;
+}
+
 // Overtime
 async function createOvertimeRequest(empId, startTime, endTime, reason) {
   var { rows } = await pool.query(
@@ -571,7 +597,7 @@ module.exports = {
   recordCheckin, deleteCheckin, updateCheckinTime, getTodayCheckins, queryCheckins, getCheckinSummary, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, deleteLeaveRequest, getEmployeeById, findApprovers, setApprover, listApprovers,
-  saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll,
+  saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll, clearByDateRange,
   createOvertimeRequest, getOvertimeRequests, getOvertimeById, deleteOvertimeRequest, updateOvertimeStatus, getEmployeeOvertimeRequests,
   createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus,
 };

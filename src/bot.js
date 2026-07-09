@@ -452,18 +452,22 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
     if (text === '核准') {
       states.delete(uid);
       try {
+        var aprResult;
         if (selItem.type === 'leave') {
-          var result = await db.updateLeaveStatus(selItem.data.id, 'approved', emp.id);
+          aprResult = await db.updateLeaveStatus(selItem.data.id, 'approved', emp.id);
           var leaveEmp = await db.getEmployeeById(selItem.data.employee_id);
           if (leaveEmp && leaveEmp.line_user_id) await pushWithRetry(client, leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + fmtDt(selItem.data.start_date) + ' ~ ' + fmtDt(selItem.data.end_date) }], 3, leaveEmp.id);
         } else if (selItem.type === 'ot') {
-          await db.updateOvertimeStatus(selItem.data.id, 'approved', emp.id);
+          aprResult = await db.updateOvertimeStatus(selItem.data.id, 'approved', emp.id);
           var otEmp = await db.getEmployeeById(selItem.data.employee_id);
           if (otEmp && otEmp.line_user_id) await pushWithRetry(client, otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + fmtDt(selItem.data.start_time) + ' ~ ' + fmtDt(selItem.data.end_time) }], 3, otEmp.id);
         } else if (selItem.type === 'missed') {
-          await db.updateMissedPunchStatus(selItem.data.id, 'approved', emp.id);
+          aprResult = await db.updateMissedPunchStatus(selItem.data.id, 'approved', emp.id);
           var mpEmp = await db.getEmployeeById(selItem.data.employee_id);
           if (mpEmp && mpEmp.line_user_id) await pushWithRetry(client, mpEmp.line_user_id, [{ type: 'text', text: '🎉 補打卡已核准！\n' + fmtDt(selItem.data.punch_date) + ' ' + selItem.data.punch_time }], 3, mpEmp.id);
+        }
+        if (aprResult && aprResult.notYourTurn) {
+          return client.replyMessage(replyToken, [withMenu('⏳ 此申請尚未輪到您簽核（目前在第 ' + (selItem.data.approval_level || 1) + ' 階）\n\n輸入「待簽核」返回清單')]);
         }
         return client.replyMessage(replyToken, [withMenu('✅ 已核准！\n\n輸入「待簽核」繼續查看其他項目')]);
       } catch(e) { console.error('[approve] error:', e.message); return client.replyMessage(replyToken, [withMenu('❌ 核准失敗')]); }
@@ -546,16 +550,13 @@ async function batchApproveAll(emp, client, replyToken) {
   var leaves = await db.getLeaveRequests('pending', 200);
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
-  var lCount = 0, otCount = 0, mpCount = 0;
+  var lines = [];
   function canBatch(emp2, eid) { return emp2.approver_id === eid || emp2.approver2_id === eid || emp2.approver3_id === eid || (!emp2.approver_id && !emp2.approver2_id && !emp2.approver3_id); }
-  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) lCount++; } }
-  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) otCount++; } }
-  for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { await db.updateMissedPunchStatus(mps[i].id, 'approved', emp.id); mpCount++; } }
-  var detail = '';
-  if (lCount > 0) detail += '🏖 請假：' + lCount + ' 筆 ';
-  if (otCount > 0) detail += '🕐 加班：' + otCount + ' 筆 ';
-  if (mpCount > 0) detail += '📝 補打卡：' + mpCount + ' 筆 ';
-  return client.replyMessage(replyToken, [withMenu('✅ 已核准 ' + (lCount+otCount+mpCount) + ' 筆\n' + detail)]);
+  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); } } }
+  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); } } }
+  for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r3 = await db.updateMissedPunchStatus(mps[i].id, 'approved', emp.id); if (_r3) { lines.push('📝 ' + e.name + ' ' + (mps[i].punch_type === 'check_in' ? '補上班' : '補下班') + ' ' + mps[i].punch_date); } } }
+  if (lines.length === 0) return client.replyMessage(replyToken, [withMenu('✅ 無可核准的項目（可能非您簽核階段）')]);
+  return client.replyMessage(replyToken, [withMenu('✅ 已核准 ' + lines.length + ' 筆：\n' + lines.join('\n'))]);
 }
 
 async function batchRejectAll(emp, client, replyToken) {

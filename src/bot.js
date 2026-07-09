@@ -200,7 +200,11 @@ async function pushToGroup(client, text) {
 }
 
 // pushMessage 含 429 重試 (LINE API rate limit)
-async function pushWithRetry(client, uid, messages, retries) {
+async function pushWithRetry(client, uid, messages, retries, empIdForNotif) {
+  // 若有提供 employee ID，同時存入資料庫通知（LINE 推播可能達上限）
+  if (empIdForNotif && messages && messages.length > 0 && messages[0].text) {
+    try { await db.addPendingNotification(empIdForNotif, messages[0].text); } catch(e) { console.error('[push] db notify error:', e.message); }
+  }
   retries = retries || 3;
   for (var attempt = 0; attempt < retries; attempt++) {
     try {
@@ -272,6 +276,18 @@ async function handleText(text, uid, client, replyToken) {
     assignRichMenu(uid, emp.role).catch(function(e2) {});
   }
 
+  // 檢查待辦通知（簽核結果，LINE 推播失敗時的備援）
+  (async function() {
+    try {
+      var notifs = await db.getPendingNotifications(emp.id);
+      if (notifs && notifs.length > 0) {
+        var msgs = notifs.map(function(n) { return n.message; }).join('\n\n');
+        await db.clearPendingNotifications(emp.id);
+        await client.replyMessage(replyToken, [withMenu('📬 簽核結果通知\n\n' + msgs + '\n\n----\n請重新輸入您要執行的操作。')]);
+        return;
+      }
+    } catch(e) { console.error('[notif] check error:', e.message); }
+  })();
 
   if (cmd === '我的ID' || cmd.toLowerCase() === 'my id') {
     return client.replyMessage(replyToken, [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
@@ -1107,7 +1123,7 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (mp.status !== "pending") return client.replyMessage(replyToken, [withMenu("已處理過")]);
     if (data.indexOf("mp_approve_") === 0) {
       await db.updateMissedPunchStatus(mpId, "approved", mpApprover.id);
-      if (mpEmp && mpEmp.line_user_id) await pushWithRetry(client, mpEmp.line_user_id, [{ type: "text", text: "🎉 補打卡已核准！\n" + fmtDt(mp.punch_date) + " " + mp.punch_time }]);
+      if (mpEmp && mpEmp.line_user_id) await pushWithRetry(client, mpEmp.line_user_id, [{ type: "text", text: "🎉 補打卡已核准！\n" + fmtDt(mp.punch_date) + " " + mp.punch_time }], 3, mpEmp.id);
       return client.replyMessage(replyToken, [withMenu("✅ 已核准")]);
     } else {
       states.set(uid, { flow: 'reject_missed', id: mpId, approverId: mpApprover.id });
@@ -1141,11 +1157,11 @@ async function handlePostback(postback, uid, client, replyToken) {
             ]}}
           }]);
         }
-        if (leaveEmp && leaveEmp.line_user_id) await pushWithRetry(client, leaveEmp.line_user_id, [{ type: "text", text: "📋 請假進度\n\n已通過第"+(result.level-1)+"階，等待第"+result.level+"階：" + result.approvers[0].name + "\n時間：" + fmtDt(leave.start_date) + " ~ " + fmtDt(leave.end_date) }]);
+        if (leaveEmp && leaveEmp.line_user_id) await pushWithRetry(client, leaveEmp.line_user_id, [{ type: "text", text: "📋 請假進度\n\n已通過第"+(result.level-1)+"階，等待第"+result.level+"階：" + result.approvers[0].name + "\n時間：" + fmtDt(leave.start_date) + " ~ " + fmtDt(leave.end_date) }], 3, leaveEmp.id);
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+result.level+'階簽核')]);
       }
       if (leaveEmp && leaveEmp.line_user_id) {
-        await pushWithRetry(client, leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) }]);
+        await pushWithRetry(client, leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) }], 3, leaveEmp.id);
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
@@ -1183,11 +1199,11 @@ async function handlePostback(postback, uid, client, replyToken) {
             ]}}
           }]);
         }
-        if (otEmp && otEmp.line_user_id) await pushWithRetry(client, otEmp.line_user_id, [{ type: "text", text: "🕐 加班進度\n\n已通過第"+(otResult.level-1)+"階，等待第"+otResult.level+"階：" + otResult.approvers[0].name + "\n時間：" + fmtDt(ot.start_time) + " ~ " + fmtDt(ot.end_time) }]);
+        if (otEmp && otEmp.line_user_id) await pushWithRetry(client, otEmp.line_user_id, [{ type: "text", text: "🕐 加班進度\n\n已通過第"+(otResult.level-1)+"階，等待第"+otResult.level+"階：" + otResult.approvers[0].name + "\n時間：" + fmtDt(ot.start_time) + " ~ " + fmtDt(ot.end_time) }], 3, otEmp.id);
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+otResult.level+'階簽核')]);
       }
       if (otEmp && otEmp.line_user_id) {
-        await pushWithRetry(client, otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) }]);
+        await pushWithRetry(client, otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) }], 3, otEmp.id);
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
@@ -1214,7 +1230,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       if (leaveEmp && leaveEmp.line_user_id && leave) {
         await pushWithRetry(client, leaveEmp.line_user_id, [{
           type: 'text', text: '❌ 請假被駁回\n時間：' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) + '\n駁回原因：' + reason
-        }]);
+        }], 3, leaveEmp.id);
       }
       states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('已駁回請假申請（原因：' + reason + '）')]);
@@ -1227,7 +1243,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       if (otEmp && otEmp.line_user_id && ot) {
         await pushWithRetry(client, otEmp.line_user_id, [{
           type: 'text', text: '❌ 加班被駁回\n時間：' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) + '\n駁回原因：' + reason
-        }]);
+        }], 3, otEmp.id);
       }
       states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('已駁回加班申請（原因：' + reason + '）')]);
@@ -1240,7 +1256,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       if (mpEmp && mpEmp.line_user_id && mp) {
         await pushWithRetry(client, mpEmp.line_user_id, [{
           type: 'text', text: '❌ 補打卡被駁回\n' + fmtDt(mp.punch_date) + ' ' + mp.punch_time + '\n駁回原因：' + reason
-        }]);
+        }], 3, mpEmp.id);
       }
       states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('已駁回補打卡申請（原因：' + reason + '）')]);

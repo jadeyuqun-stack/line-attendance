@@ -142,6 +142,16 @@ async function initDatabase() {
     )
   `);
 
+
+  // 待辦通知表（簽核結果推送失敗時使用，免 LINE push 額度）
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pending_notifications (
+      id SERIAL PRIMARY KEY,
+      employee_id INTEGER REFERENCES employees(id),
+      message TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
   const defaults = [
     ['company_name', process.env.COMPANY_NAME || '公司'],
     ['work_start_hour', process.env.WORK_START_HOUR || '8'],
@@ -590,6 +600,21 @@ async function getEmployeeOvertimeRequests(employeeId, status, limit) {
   return rows;
 }
 
+
+// =========== Pending Notifications ===========
+async function addPendingNotification(employeeId, message) {
+  if (!employeeId || !message) return;
+  await pool.query('INSERT INTO pending_notifications (employee_id, message) VALUES ($1, $2)', [employeeId, message]);
+}
+async function getPendingNotifications(employeeId) {
+  if (!employeeId) return [];
+  var { rows } = await pool.query('SELECT * FROM pending_notifications WHERE employee_id=$1 ORDER BY created_at ASC', [employeeId]);
+  return rows;
+}
+async function clearPendingNotifications(employeeId) {
+  if (!employeeId) return;
+  await pool.query('DELETE FROM pending_notifications WHERE employee_id=$1', [employeeId]);
+}
 module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
@@ -600,4 +625,5 @@ module.exports = {
   saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll, clearByDateRange,
   createOvertimeRequest, getOvertimeRequests, getOvertimeById, deleteOvertimeRequest, updateOvertimeStatus, getEmployeeOvertimeRequests,
   createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus,
+  addPendingNotification, getPendingNotifications, clearPendingNotifications,
 };

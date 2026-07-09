@@ -404,34 +404,12 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
   var state = states.get(uid);
   if (!state || state.flow !== 'approval_browse') return;
   if (text === '取消') { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已離開待簽核清單')]); }
-  if (text === '核准全部') {
+    if (text === '核准全部') {
       states.delete(uid);
-      // 批次核准所有待簽核項目（請假 + 加班 + 補打卡）
-      var allLeaves = await db.getLeaveRequests('pending', 200);
-      var allOTs = await db.getOvertimeRequests('pending', 200);
-      var allMPs = await db.getMissedPunches('pending', 200);
-      var totalCount = 0, lCount = 0, otCount = 0, mpCount = 0;
-      function canApprove(reqEmp, eid) { return reqEmp.approver_id === eid || reqEmp.approver2_id === eid || reqEmp.approver3_id === eid || (!reqEmp.approver_id && !reqEmp.approver2_id && !reqEmp.approver3_id); }
-      for (var bi = 0; bi < allLeaves.length; bi++) { var be = await db.getEmployeeById(allLeaves[bi].employee_id); if (be && (canApprove(be, emp.id) || emp.can_approve)) { await db.updateLeaveStatus(allLeaves[bi].id, 'approved', emp.id); lCount++; totalCount++; } }
-      for (var bj = 0; bj < allOTs.length; bj++) { var bo = await db.getEmployeeById(allOTs[bj].employee_id); if (bo && (canApprove(bo, emp.id) || emp.can_approve)) { await db.updateOvertimeStatus(allOTs[bj].id, 'approved', emp.id); otCount++; totalCount++; } }
-      for (var bk = 0; bk < allMPs.length; bk++) { var bm = await db.getEmployeeById(allMPs[bk].employee_id); if (bm && (canApprove(bm, emp.id) || emp.can_approve)) { await db.updateMissedPunchStatus(allMPs[bk].id, 'approved', emp.id); mpCount++; totalCount++; } }
-      var detail = '';
-      if (lCount > 0) detail += '\n🏖 \u8acb\u5047\uff1a' + lCount + ' \u7b46';
-      if (otCount > 0) detail += '\n\ud83d\udd50 \u52a0\u73ed\uff1a' + otCount + ' \u7b46';
-      if (mpCount > 0) detail += '\n\ud83d\udcdd \u88dc\u6253\u5361\uff1a' + mpCount + ' \u7b46';
-      return client.replyMessage(replyToken, [withMenu('✅ 已核准 ' + totalCount + ' 筆' + detail)]);
-    }
-  if (text === '駁回全部') {
+      return batchApproveAll(emp, client, replyToken);
+    }  if (text === '駁回全部') {
       states.delete(uid);
-      var allLeaves = await db.getLeaveRequests('pending', 200);
-      var allOTs = await db.getOvertimeRequests('pending', 200);
-      var allMPs = await db.getMissedPunches('pending', 200);
-      var totalCount = 0;
-      function canApprove2(reqEmp, eid) { return reqEmp.approver_id === eid || reqEmp.approver2_id === eid || reqEmp.approver3_id === eid || (!reqEmp.approver_id && !reqEmp.approver2_id && !reqEmp.approver3_id); }
-      for (var bi = 0; bi < allLeaves.length; bi++) { var be = await db.getEmployeeById(allLeaves[bi].employee_id); if (be && (canApprove2(be, emp.id) || emp.can_approve)) { await db.updateLeaveStatus(allLeaves[bi].id, 'rejected', emp.id); totalCount++; } }
-      for (var bj = 0; bj < allOTs.length; bj++) { var bo = await db.getEmployeeById(allOTs[bj].employee_id); if (bo && (canApprove2(bo, emp.id) || emp.can_approve)) { await db.updateOvertimeStatus(allOTs[bj].id, 'rejected', emp.id); totalCount++; } }
-      for (var bk = 0; bk < allMPs.length; bk++) { var bm = await db.getEmployeeById(allMPs[bk].employee_id); if (bm && (canApprove2(bm, emp.id) || emp.can_approve)) { await db.updateMissedPunchStatus(allMPs[bk].id, 'rejected', emp.id); totalCount++; } }
-      return client.replyMessage(replyToken, [withMenu('已駁回 ' + totalCount + ' 筆申請')]);
+      return batchRejectAll(emp, client, replyToken);
     }
   if (state.step === 'list') {
     var num = parseInt(text);

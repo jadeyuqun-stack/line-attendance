@@ -304,8 +304,9 @@ async function updateCheckinTime(id, newTime) {
   );
 }
 async function getTodayCheckins(empId) {
+  // 強制使用台北時區比對日期，避免 session timezone 遺失問題
   const { rows } = await pool.query(
-    "SELECT * FROM checkins WHERE employee_id=$1 AND check_time::date=CURRENT_DATE ORDER BY check_time",
+    "SELECT * FROM checkins WHERE employee_id=$1 AND (check_time AT TIME ZONE 'Asia/Taipei')::date=(NOW() AT TIME ZONE 'Asia/Taipei')::date ORDER BY check_time",
     [empId]
   );
   return rows;
@@ -344,8 +345,8 @@ async function getCheckinSummary(start, end) {
 
 async function getTodaySummary() {
   const { rows: r1 } = await pool.query("SELECT COUNT(*)::int AS total FROM employees WHERE status='active' AND (role IS NULL OR role NOT IN ('老闆','boss'))");
-  const { rows: r2 } = await pool.query("SELECT COUNT(DISTINCT employee_id)::int AS ci FROM checkins WHERE check_time::date=CURRENT_DATE AND type='check_in'");
-  const { rows: r3 } = await pool.query("SELECT COUNT(DISTINCT employee_id)::int AS co FROM checkins WHERE check_time::date=CURRENT_DATE AND type='check_out'");
+  const { rows: r2 } = await pool.query("SELECT COUNT(DISTINCT employee_id)::int AS ci FROM checkins WHERE (check_time AT TIME ZONE 'Asia/Taipei')::date=(NOW() AT TIME ZONE 'Asia/Taipei')::date AND type='check_in'");
+  const { rows: r3 } = await pool.query("SELECT COUNT(DISTINCT employee_id)::int AS co FROM checkins WHERE (check_time AT TIME ZONE 'Asia/Taipei')::date=(NOW() AT TIME ZONE 'Asia/Taipei')::date AND type='check_out'");
   return {
     date: new Date().toLocaleDateString('zh-TW'),
     total_employees: r1[0].total,

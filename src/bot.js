@@ -255,9 +255,11 @@ async function handleText(text, uid, client, replyToken) {
   } catch(e) { console.error('[notif] check error:', e.message); }
 
   // 待簽核逾期提醒：主管互動時跳出，不需另外推播
+  // 注意：若已在簽核流程中（如輸入編號），不觸發提醒
   try {
     var _isApprovalCmd = cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending' || cmd === '核准全部' || cmd === '駁回全部' || cmd === '加班核准全部' || cmd === '加班駁回全部';
-    if (!_isApprovalCmd) {
+    var _isInApprovalFlow = states.has(uid) && (states.get(uid).flow === 'approval_browse' || states.get(uid).flow === 'reject_leave' || states.get(uid).flow === 'reject_ot' || states.get(uid).flow === 'reject_missed');
+    if (!_isApprovalCmd && !_isInApprovalFlow) {
       var _reminderText = await getOverdueApprovalReminder(emp);
       if (_reminderText) {
         return client.replyMessage(replyToken, [withMenu('⏰ 待簽核提醒\n\n' + _reminderText + '\n\n----\n您的指令「' + cmd + '」未執行，請輸入「待簽核」前往處理。')]);
@@ -374,17 +376,27 @@ async function checkPendingApprovalsCmd(emp, client, replyToken, uid) {
     if (items.length === 0) return client.replyMessage(replyToken, [withMenu('✅ 目前無待簽核項目')]);
     // 儲存到 state
     states.set(uid, { flow: 'approval_browse', step: 'list', items: items });
-    var msg = '📋 待簽核項目（共 ' + items.length + ' 筆）\n\n請輸入編號查看詳細內容：';
+    var msg = '📋 待簽核項目（共 ' + items.length + ' 筆）\n\n';
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       var icon = it.type === 'leave' ? '🏖' : it.type === 'ot' ? '🕐' : '📝';
-      var info = it.empName;
-      if (it.type === 'leave') info += ' ' + leaveTypeLabel(it.data.leave_type) + ' ' + fmtDt(it.data.start_date);
-      else if (it.type === 'ot') info += ' ' + fmtDt(it.data.start_time);
-      else info += ' ' + it.data.punch_date;
-      msg += '\n  ' + (i + 1) + '. ' + icon + ' ' + info;
+      var numTag = '[' + (i + 1) + ']';
+      msg += icon + ' ' + numTag + ' ' + it.empName + '（' + it.empNo + '）\n';
+      if (it.type === 'leave') {
+        var lh2 = leaveHours(it.data.start_date, it.data.end_date);
+        msg += '    ' + leaveTypeLabel(it.data.leave_type) + '：' + fmtDt(it.data.start_date) + ' ~ ' + fmtDt(it.data.end_date) + '（' + lh2 + 'h）\n';
+        if (it.data.reason) msg += '    原因：' + it.data.reason + '\n';
+      } else if (it.type === 'ot') {
+        var oh2 = calcHours(it.data.start_time, it.data.end_time);
+        msg += '    ' + fmtDt(it.data.start_time) + ' ~ ' + fmtDt(it.data.end_time) + '（' + oh2 + 'h）\n';
+        if (it.data.reason) msg += '    原因：' + it.data.reason + '\n';
+      } else {
+        msg += '    ' + (it.data.punch_type === 'check_in' ? '🔵補上班' : '🔴補下班') + '：' + it.data.punch_date + ' ' + (it.data.punch_time || '') + '\n';
+        if (it.data.reason) msg += '    原因：' + it.data.reason + '\n';
+      }
+      msg += '\n';
     }
-    msg += '\n\n💡 輸入編號查看詳情\n✅ 核准全部 → 一次性核准\n❌ 駁回全部 → 一次性駁回\n🔙 取消 → 離開';
+    msg += '💡 輸入編號進行核准/駁回\n✅ 核准全部 → 一次性核准\n❌ 駁回全部 → 一次性駁回\n🔙 取消 → 離開';
     return client.replyMessage(replyToken, [withMenu(msg)]);
   } catch(e) { console.error('[approve] list error:', e.message || e); return client.replyMessage(replyToken, [withMenu('❌ 查詢失敗')]); }
 }

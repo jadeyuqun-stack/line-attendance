@@ -548,8 +548,8 @@ async function batchApproveAll(emp, client, replyToken) {
   var mps = await db.getMissedPunches('pending', 200);
   var lCount = 0, otCount = 0, mpCount = 0;
   function canBatch(emp2, eid) { return emp2.approver_id === eid || emp2.approver2_id === eid || emp2.approver3_id === eid || (!emp2.approver_id && !emp2.approver2_id && !emp2.approver3_id); }
-  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); lCount++; } }
-  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); otCount++; } }
+  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) lCount++; } }
+  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) otCount++; } }
   for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { await db.updateMissedPunchStatus(mps[i].id, 'approved', emp.id); mpCount++; } }
   var detail = '';
   if (lCount > 0) detail += '🏖 請假：' + lCount + ' 筆 ';

@@ -401,7 +401,19 @@ async function updateLeaveStatus(id, status, approvedBy, rejectReason) {
   if (!leave) return;
   console.log('[DB] updateLeaveStatus id='+id+' status='+status+' currentLevel='+(leave.approval_level||1));
   if (status === 'approved') {
-    var nextLevel = (leave.approval_level || 1) + 1;
+    // 檢查該簽核人是否有權限簽核當前層級（不可跳階）
+    var empRecord = await getEmployeeById(leave.employee_id);
+    var currentLevel = leave.approval_level || 1;
+    var levelCol = currentLevel === 1 ? 'approver_id' : currentLevel === 2 ? 'approver2_id' : 'approver3_id';
+    var designatedApprover = empRecord ? empRecord[levelCol] : null;
+    var approverEmp = await getEmployeeById(approvedBy);
+    var isDesignated = designatedApprover && designatedApprover === approvedBy;
+    var isSuper = approverEmp && (approverEmp.can_approve || approverEmp.role === '老闆' || approverEmp.role === '經理');
+    if (designatedApprover && !isDesignated && !isSuper) {
+      console.log('[DB] 跳過：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人（指定為 ' + designatedApprover + '）');
+      return { advanced: false, notYourTurn: true };
+    }
+    var nextLevel = currentLevel + 1;
     console.log('[DB] nextLevel='+nextLevel+' looking for approvers...');
     if (nextLevel <= 3) {
       var nextApprovers = await findApprovers(leave.employee_id, nextLevel);
@@ -576,7 +588,19 @@ async function updateOvertimeStatus(id, status, approvedBy, rejectReason) {
   var ot = await getOvertimeById(id);
   if (!ot) return;
   if (status === 'approved') {
-    var nextLevel = (ot.approval_level || 1) + 1;
+    // 檢查該簽核人是否有權限簽核當前層級（不可跳階）
+    var empRecord = await getEmployeeById(ot.employee_id);
+    var currentLevel = ot.approval_level || 1;
+    var levelCol = currentLevel === 1 ? 'approver_id' : currentLevel === 2 ? 'approver2_id' : 'approver3_id';
+    var designatedApprover = empRecord ? empRecord[levelCol] : null;
+    var approverEmp = await getEmployeeById(approvedBy);
+    var isDesignated = designatedApprover && designatedApprover === approvedBy;
+    var isSuper = approverEmp && (approverEmp.can_approve || approverEmp.role === '老闆' || approverEmp.role === '經理');
+    if (designatedApprover && !isDesignated && !isSuper) {
+      console.log('[DB] 跳過加班：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人（指定為 ' + designatedApprover + '）');
+      return { advanced: false, notYourTurn: true };
+    }
+    var nextLevel = currentLevel + 1;
     if (nextLevel <= 3) {
       var nextApprovers = await findApprovers(ot.employee_id, nextLevel);
       if (nextApprovers.length > 0) {

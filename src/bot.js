@@ -299,43 +299,150 @@ async function handleText(text, uid, client, replyToken) {
 }
 
 // 待簽核查詢指令
+// 請假類型對照
+var _leaveTypeLabels = {
+  'annual': '特休', 'personal': '事假', 'sick': '病假',
+  'official': '公假', 'outing': '外出', 'other': '其他'
+};
+function leaveTypeLabel(t) { return _leaveTypeLabels[t] || t || '請假'; }
+
+// 計算工時（小時）
+function calcHours(s, e) {
+  if (!s || !e) return 0;
+  var d = new Date(e) - new Date(s);
+  return d > 0 ? Math.round(d / 3600000 * 10) / 10 : 0;
+}
+
 async function checkPendingApprovalsCmd(emp, client, replyToken) {
   try {
     var leaves = await db.getLeaveRequests('pending', 50);
     var ots = await db.getOvertimeRequests('pending', 50);
     var mps = await db.getMissedPunches('pending', 50);
-    var myLeaves = [], myOTs = [], myMPs = [];
+    var items = [];
     for (var li = 0; li < leaves.length; li++) {
       var le = await db.getEmployeeById(leaves[li].employee_id);
-      if (le && (le.approver_id === emp.id || le.approver2_id === emp.id || le.approver3_id === emp.id)) myLeaves.push({ r: leaves[li], empName: le.name });
+      if (le && (le.approver_id === emp.id || le.approver2_id === emp.id || le.approver3_id === emp.id))
+        items.push({ type: 'leave', data: leaves[li], empName: le.name, empNo: le.employee_no });
     }
     for (var oi = 0; oi < ots.length; oi++) {
       var oe = await db.getEmployeeById(ots[oi].employee_id);
-      if (oe && (oe.approver_id === emp.id || oe.approver2_id === emp.id || oe.approver3_id === emp.id)) myOTs.push({ r: ots[oi], empName: oe.name });
+      if (oe && (oe.approver_id === emp.id || oe.approver2_id === emp.id || oe.approver3_id === emp.id))
+        items.push({ type: 'ot', data: ots[oi], empName: oe.name, empNo: oe.employee_no });
     }
     for (var mi = 0; mi < mps.length; mi++) {
       var me = await db.getEmployeeById(mps[mi].employee_id);
-      if (me && (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id)) myMPs.push({ r: mps[mi], empName: me.name });
+      if (me && (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id))
+        items.push({ type: 'missed', data: mps[mi], empName: me.name, empNo: me.employee_no });
     }
-    var total = myLeaves.length + myOTs.length + myMPs.length;
-    if (total === 0) return client.replyMessage(replyToken, [withMenu('✅ 目前無待簽核項目')]);
-    var msg = '📋 待簽核項目（共 ' + total + ' 筆）';
-    if (myLeaves.length > 0) {
-      msg += '\n\n🏖 請假：';
-      for (var i = 0; i < myLeaves.length; i++) msg += '\n  ' + myLeaves[i].empName + ' ' + fmtDt(myLeaves[i].r.start_date);
+    if (items.length === 0) return client.replyMessage(replyToken, [withMenu('✅ 目前無待簽核項目')]);
+    // 儲存到 state
+    states.set(uid, { flow: 'approval_browse', step: 'list', items: items });
+    var msg = '📋 待簽核項目（共 ' + items.length + ' 筆）\n\n請輸入編號查看詳細內容：';
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var icon = it.type === 'leave' ? '🏖' : it.type === 'ot' ? '🕐' : '📝';
+      var info = it.empName;
+      if (it.type === 'leave') info += ' ' + leaveTypeLabel(it.data.leave_type) + ' ' + fmtDt(it.data.start_date);
+      else if (it.type === 'ot') info += ' ' + fmtDt(it.data.start_time);
+      else info += ' ' + it.data.punch_date;
+      msg += '\n  ' + (i + 1) + '. ' + icon + ' ' + info;
     }
-    if (myOTs.length > 0) {
-      msg += '\n\n🕐 加班：';
-      for (var i = 0; i < myOTs.length; i++) msg += '\n  ' + myOTs[i].empName + ' ' + fmtDt(myOTs[i].r.start_time);
-    }
-    if (myMPs.length > 0) {
-      msg += '\n\n📝 補打卡：';
-      for (var i = 0; i < myMPs.length; i++) msg += '\n  ' + myMPs[i].empName + ' ' + myMPs[i].r.punch_date;
-    }
-    msg += '\n\n✅ 輸入「核准全部」或「駁回全部」批次處理';
+    msg += '\n\n💡 輸入編號查看詳情\n✅ 核准全部 → 一次性核准\n❌ 駁回全部 → 一次性駁回\n🔙 取消 → 離開';
     return client.replyMessage(replyToken, [withMenu(msg)]);
-  } catch(e) { return client.replyMessage(replyToken, [withMenu('❌ 查詢失敗')]); }
+  } catch(e) { console.error('[approve] list error:', e.message || e); return client.replyMessage(replyToken, [withMenu('❌ 查詢失敗')]); }
 }
+
+// 處理待簽核瀏覽輸入
+async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
+  var state = states.get(uid);
+  if (!state || state.flow !== 'approval_browse') return;
+  if (text === '取消') { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已離開待簽核清單')]); }
+  if (text === '核准全部') {
+      states.delete(uid);
+      // 批次核准所有待簽核項目（請假 + 加班 + 補打卡）
+      var allLeaves = await db.getLeaveRequests('pending', 200);
+      var allOTs = await db.getOvertimeRequests('pending', 200);
+      var allMPs = await db.getMissedPunches('pending', 200);
+      var totalCount = 0, lCount = 0, otCount = 0, mpCount = 0;
+      function canApprove(reqEmp, eid) { return reqEmp.approver_id === eid || reqEmp.approver2_id === eid || reqEmp.approver3_id === eid || (!reqEmp.approver_id && !reqEmp.approver2_id && !reqEmp.approver3_id); }
+      for (var bi = 0; bi < allLeaves.length; bi++) { var be = await db.getEmployeeById(allLeaves[bi].employee_id); if (be && (canApprove(be, emp.id) || emp.can_approve)) { await db.updateLeaveStatus(allLeaves[bi].id, 'approved', emp.id); lCount++; totalCount++; } }
+      for (var bj = 0; bj < allOTs.length; bj++) { var bo = await db.getEmployeeById(allOTs[bj].employee_id); if (bo && (canApprove(bo, emp.id) || emp.can_approve)) { await db.updateOvertimeStatus(allOTs[bj].id, 'approved', emp.id); otCount++; totalCount++; } }
+      for (var bk = 0; bk < allMPs.length; bk++) { var bm = await db.getEmployeeById(allMPs[bk].employee_id); if (bm && (canApprove(bm, emp.id) || emp.can_approve)) { await db.updateMissedPunchStatus(allMPs[bk].id, 'approved', emp.id); mpCount++; totalCount++; } }
+      var detail = '';
+      if (lCount > 0) detail += '\n🏖 \u8acb\u5047\uff1a' + lCount + ' \u7b46';
+      if (otCount > 0) detail += '\n\ud83d\udd50 \u52a0\u73ed\uff1a' + otCount + ' \u7b46';
+      if (mpCount > 0) detail += '\n\ud83d\udcdd \u88dc\u6253\u5361\uff1a' + mpCount + ' \u7b46';
+      return client.replyMessage(replyToken, [withMenu('✅ 已核准 ' + totalCount + ' 筆' + detail)]);
+    }
+  if (text === '駁回全部') {
+      states.delete(uid);
+      var allLeaves = await db.getLeaveRequests('pending', 200);
+      var allOTs = await db.getOvertimeRequests('pending', 200);
+      var allMPs = await db.getMissedPunches('pending', 200);
+      var totalCount = 0;
+      function canApprove2(reqEmp, eid) { return reqEmp.approver_id === eid || reqEmp.approver2_id === eid || reqEmp.approver3_id === eid || (!reqEmp.approver_id && !reqEmp.approver2_id && !reqEmp.approver3_id); }
+      for (var bi = 0; bi < allLeaves.length; bi++) { var be = await db.getEmployeeById(allLeaves[bi].employee_id); if (be && (canApprove2(be, emp.id) || emp.can_approve)) { await db.updateLeaveStatus(allLeaves[bi].id, 'rejected', emp.id); totalCount++; } }
+      for (var bj = 0; bj < allOTs.length; bj++) { var bo = await db.getEmployeeById(allOTs[bj].employee_id); if (bo && (canApprove2(bo, emp.id) || emp.can_approve)) { await db.updateOvertimeStatus(allOTs[bj].id, 'rejected', emp.id); totalCount++; } }
+      for (var bk = 0; bk < allMPs.length; bk++) { var bm = await db.getEmployeeById(allMPs[bk].employee_id); if (bm && (canApprove2(bm, emp.id) || emp.can_approve)) { await db.updateMissedPunchStatus(allMPs[bk].id, 'rejected', emp.id); totalCount++; } }
+      return client.replyMessage(replyToken, [withMenu('已駁回 ' + totalCount + ' 筆申請')]);
+    }
+  if (state.step === 'list') {
+    var num = parseInt(text);
+    if (isNaN(num) || num < 1 || num > state.items.length) {
+      return client.replyMessage(replyToken, [withMenu('請輸入有效編號 1~' + state.items.length + '，或輸入「取消」離開')]);
+    }
+    var item = state.items[num - 1];
+    state.selectedIdx = num - 1;
+    state.step = 'detail';
+    // 顯示詳細內容（Flex Message）
+    var detailItems = [];
+    if (item.type === 'leave') {
+      var lh = leaveHours(item.data.start_date, item.data.end_date);
+      detailItems.push({ type: 'text', text: '🏖 請假申請', weight: 'bold', size: 'lg', color: '#f39c12' });
+      detailItems.push({ type: 'text', text: '員工：' + item.empName + '（' + item.empNo + '）', margin: 'md', size: 'sm', color: '#666666' });
+      detailItems.push({ type: 'text', text: '假別：' + leaveTypeLabel(item.data.leave_type), margin: 'sm', size: 'sm' });
+      detailItems.push({ type: 'text', text: '時間：' + fmtDt(item.data.start_date) + ' ~ ' + fmtDt(item.data.end_date) + '（' + lh + ' 小時）', margin: 'sm', size: 'sm', wrap: true });
+      detailItems.push({ type: 'text', text: '原因：' + (item.data.reason || '未填寫'), margin: 'sm', size: 'sm', wrap: true });
+    } else if (item.type === 'ot') {
+      var oh = calcHours(item.data.start_time, item.data.end_time);
+      detailItems.push({ type: 'text', text: '🕐 加班申請', weight: 'bold', size: 'lg', color: '#f39c12' });
+      detailItems.push({ type: 'text', text: '員工：' + item.empName + '（' + item.empNo + '）', margin: 'md', size: 'sm', color: '#666666' });
+      detailItems.push({ type: 'text', text: '時間：' + fmtDt(item.data.start_time) + ' ~ ' + fmtDt(item.data.end_time) + '（' + oh + ' 小時）', margin: 'sm', size: 'sm', wrap: true });
+      detailItems.push({ type: 'text', text: '原因：' + (item.data.reason || '未填寫'), margin: 'sm', size: 'sm', wrap: true });
+    } else if (item.type === 'missed') {
+      detailItems.push({ type: 'text', text: '📝 補打卡申請', weight: 'bold', size: 'lg', color: '#f39c12' });
+      detailItems.push({ type: 'text', text: '員工：' + item.empName + '（' + item.empNo + '）', margin: 'md', size: 'sm', color: '#666666' });
+      detailItems.push({ type: 'text', text: '類型：' + (item.data.punch_type === 'check_in' ? '🔵補上班' : '🔴補下班'), margin: 'sm', size: 'sm' });
+      detailItems.push({ type: 'text', text: '日期：' + item.data.punch_date + ' ' + item.data.punch_time, margin: 'sm', size: 'sm' });
+      detailItems.push({ type: 'text', text: '原因：' + (item.data.reason || '未填寫'), margin: 'sm', size: 'sm', wrap: true });
+    }
+        // 修正 postback prefix：missed → mp
+    var pbPrefix = item.type === 'missed' ? 'mp' : item.type;
+    var postbackApprove = pbPrefix + '_approve_' + item.data.id;
+    var postbackReject = pbPrefix + '_reject_' + item.data.id;
+    return client.replyMessage(replyToken, [{
+      type: 'flex', altText: '📋 待簽核詳情',
+      contents: {
+        type: 'bubble',
+        body: { type: 'box', layout: 'vertical', contents: detailItems },
+        footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+          { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '✅ 核准', data: postbackApprove }, flex: 1, height: 'sm' },
+          { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '❌ 駁回', data: postbackReject }, flex: 1, height: 'sm' }
+        ]}
+      }
+    }, {
+      type: 'text', text: '💡 核准後將自動通知申請人。\n輸入「返回」回到清單，或「取消」離開。'
+    }]);
+  }
+  // 從 detail 返回 list
+  if (text === '返回' && state.step === 'detail') {
+    state.step = 'list';
+    // 重新顯示清單
+    return checkPendingApprovalsCmd(emp, client, replyToken);
+  }
+}
+
+
 
 
 function fmt(d) {
@@ -1326,7 +1433,7 @@ function makePng() {
 		ctx.fillStyle = '#ffffff';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
-		ctx.font = 'bold 200px ' + fontFamily;
+		ctx.font = 'bold 100px ' + fontFamily;
 		ctx.fillText(a.label, cx, a.y + a.h * 0.48);
 
 		// 簡約底部線條圖示
@@ -1870,20 +1977,20 @@ function makePng8() {
     var label = a.label;
     if (label.indexOf('\n') !== -1) {
       var parts = label.split('\n');
-      ctx.font = 'bold 96px ' + fontFamily;
-      ctx.fillText(parts[0], cx, a.y + a.h * 0.35);
-      ctx.fillText(parts[1], cx, a.y + a.h * 0.52);
+      ctx.font = 'bold 48px ' + fontFamily;
+      ctx.fillText(parts[0], cx, a.y + a.h * 0.42);
+      ctx.fillText(parts[1], cx, a.y + a.h * 0.62);
     } else {
       if (label.length <= 2) {
-        ctx.font = 'bold 140px ' + fontFamily;
+        ctx.font = 'bold 70px ' + fontFamily;
       } else if (label.length <= 3) {
-        ctx.font = 'bold 120px ' + fontFamily;
+        ctx.font = 'bold 60px ' + fontFamily;
       } else if (label.length <= 4) {
-        ctx.font = 'bold 100px ' + fontFamily;
+        ctx.font = 'bold 50px ' + fontFamily;
       } else {
-        ctx.font = 'bold 88px ' + fontFamily;
+        ctx.font = 'bold 44px ' + fontFamily;
       }
-      ctx.fillText(label, cx, a.y + a.h * 0.40);
+      ctx.fillText(label, cx, a.y + a.h * 0.50);
     }
 
     // 底部簡約圖示
@@ -2052,8 +2159,8 @@ function makePngBoss() {
 		ctx.textBaseline = 'middle';
 
 		var label = a.label;
-		ctx.font = 'bold 160px ' + fontFamily;
-		ctx.fillText(label, cx, a.y + a.h * 0.45);
+		ctx.font = 'bold 80px ' + fontFamily;
+		ctx.fillText(label, cx, a.y + a.h * 0.54);
 
 		// 底部簡約圖示
 		ctx.strokeStyle = 'rgba(255,255,255,0.35)';

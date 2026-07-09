@@ -431,45 +431,76 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
     var item = state.items[num - 1];
     state.selectedIdx = num - 1;
     state.step = 'detail';
-    // 顯示詳細內容（Flex Message）
-    var detailItems = [];
+    // 顯示詳細內容（純文字）
     if (item.type === 'leave') {
       var lh = leaveHours(item.data.start_date, item.data.end_date);
-      detailItems.push({ type: 'text', text: '🏖 請假申請', weight: 'bold', size: 'lg', color: '#f39c12' });
-      detailItems.push({ type: 'text', text: '員工：' + item.empName + '（' + item.empNo + '）', margin: 'md', size: 'sm', color: '#666666' });
-      detailItems.push({ type: 'text', text: '假別：' + leaveTypeLabel(item.data.leave_type), margin: 'sm', size: 'sm' });
-      detailItems.push({ type: 'text', text: '時間：' + fmtDt(item.data.start_date) + ' ~ ' + fmtDt(item.data.end_date) + '（' + lh + ' 小時）', margin: 'sm', size: 'sm', wrap: true });
-      detailItems.push({ type: 'text', text: '原因：' + (item.data.reason || '未填寫'), margin: 'sm', size: 'sm', wrap: true });
+      var detailText = '🏖 請假申請\n';
+      detailText += '員工：' + item.empName + '（' + item.empNo + '）\n';
+      detailText += '假別：' + leaveTypeLabel(item.data.leave_type) + '\n';
+      detailText += '時間：' + fmtDt(item.data.start_date) + ' ~ ' + fmtDt(item.data.end_date) + '（' + lh + ' 小時）\n';
+      detailText += '原因：' + (item.data.reason || '未填寫');
+      return client.replyMessage(replyToken, [withMenu(detailText + '\n\n----\n✅ 輸入「核准」\n❌ 輸入「駁回 [原因]」\n🔙 輸入「返回」回到清單\n❌ 輸入「取消」離開')]);
     } else if (item.type === 'ot') {
       var oh = calcHours(item.data.start_time, item.data.end_time);
-      detailItems.push({ type: 'text', text: '🕐 加班申請', weight: 'bold', size: 'lg', color: '#f39c12' });
-      detailItems.push({ type: 'text', text: '員工：' + item.empName + '（' + item.empNo + '）', margin: 'md', size: 'sm', color: '#666666' });
-      detailItems.push({ type: 'text', text: '時間：' + fmtDt(item.data.start_time) + ' ~ ' + fmtDt(item.data.end_time) + '（' + oh + ' 小時）', margin: 'sm', size: 'sm', wrap: true });
-      detailItems.push({ type: 'text', text: '原因：' + (item.data.reason || '未填寫'), margin: 'sm', size: 'sm', wrap: true });
+      var detailText = '🕐 加班申請\n';
+      detailText += '員工：' + item.empName + '（' + item.empNo + '）\n';
+      detailText += '時間：' + fmtDt(item.data.start_time) + ' ~ ' + fmtDt(item.data.end_time) + '（' + oh + ' 小時）\n';
+      detailText += '原因：' + (item.data.reason || '未填寫');
+      return client.replyMessage(replyToken, [withMenu(detailText + '\n\n----\n✅ 輸入「核准」\n❌ 輸入「駁回 [原因]」\n🔙 輸入「返回」回到清單\n❌ 輸入「取消」離開')]);
     } else if (item.type === 'missed') {
-      detailItems.push({ type: 'text', text: '📝 補打卡申請', weight: 'bold', size: 'lg', color: '#f39c12' });
-      detailItems.push({ type: 'text', text: '員工：' + item.empName + '（' + item.empNo + '）', margin: 'md', size: 'sm', color: '#666666' });
-      detailItems.push({ type: 'text', text: '類型：' + (item.data.punch_type === 'check_in' ? '🔵補上班' : '🔴補下班'), margin: 'sm', size: 'sm' });
-      detailItems.push({ type: 'text', text: '日期：' + item.data.punch_date + ' ' + item.data.punch_time, margin: 'sm', size: 'sm' });
-      detailItems.push({ type: 'text', text: '原因：' + (item.data.reason || '未填寫'), margin: 'sm', size: 'sm', wrap: true });
+      var detailText = '📝 補打卡申請\n';
+      detailText += '員工：' + item.empName + '（' + item.empNo + '）\n';
+      detailText += '類型：' + (item.data.punch_type === 'check_in' ? '🔵補上班' : '🔴補下班') + '\n';
+      detailText += '日期：' + item.data.punch_date + ' ' + item.data.punch_time + '\n';
+      detailText += '原因：' + (item.data.reason || '未填寫');
+      return client.replyMessage(replyToken, [withMenu(detailText + '\n\n----\n✅ 輸入「核准」\n❌ 輸入「駁回 [原因]」\n🔙 輸入「返回」回到清單\n❌ 輸入「取消」離開')]);
     }
-        // 修正 postback prefix：missed → mp
-    var pbPrefix = item.type === 'missed' ? 'mp' : item.type;
-    var postbackApprove = pbPrefix + '_approve_' + item.data.id;
-    var postbackReject = pbPrefix + '_reject_' + item.data.id;
-    return client.replyMessage(replyToken, [{
-      type: 'flex', altText: '📋 待簽核詳情',
-      contents: {
-        type: 'bubble',
-        body: { type: 'box', layout: 'vertical', contents: detailItems },
-        footer: { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-          { type: 'button', style: 'primary', color: '#06c755', action: { type: 'postback', label: '✅ 核准', data: postbackApprove }, flex: 1, height: 'sm' },
-          { type: 'button', style: 'secondary', color: '#e74c3c', action: { type: 'postback', label: '❌ 駁回', data: postbackReject }, flex: 1, height: 'sm' }
-        ]}
-      }
-    }, {
-      type: 'text', text: '💡 核准後將自動通知申請人。\n輸入「返回」回到清單，或「取消」離開。'
-    }]);
+  }
+  // 從 detail 處理核准/駁回
+  if (state.step === 'detail') {
+    var selItem = state.items[state.selectedIdx];
+    if (!selItem) return client.replyMessage(replyToken, [withMenu('❌ 無法取得申請資料')]);
+
+    if (text === '核准') {
+      states.delete(uid);
+      try {
+        if (selItem.type === 'leave') {
+          var result = await db.updateLeaveStatus(selItem.data.id, 'approved', emp.id);
+          var leaveEmp = await db.getEmployeeById(selItem.data.employee_id);
+          if (leaveEmp && leaveEmp.line_user_id) await pushWithRetry(client, leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + fmtDt(selItem.data.start_date) + ' ~ ' + fmtDt(selItem.data.end_date) }], 3, leaveEmp.id);
+        } else if (selItem.type === 'ot') {
+          await db.updateOvertimeStatus(selItem.data.id, 'approved', emp.id);
+          var otEmp = await db.getEmployeeById(selItem.data.employee_id);
+          if (otEmp && otEmp.line_user_id) await pushWithRetry(client, otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + fmtDt(selItem.data.start_time) + ' ~ ' + fmtDt(selItem.data.end_time) }], 3, otEmp.id);
+        } else if (selItem.type === 'missed') {
+          await db.updateMissedPunchStatus(selItem.data.id, 'approved', emp.id);
+          var mpEmp = await db.getEmployeeById(selItem.data.employee_id);
+          if (mpEmp && mpEmp.line_user_id) await pushWithRetry(client, mpEmp.line_user_id, [{ type: 'text', text: '🎉 補打卡已核准！\n' + fmtDt(selItem.data.punch_date) + ' ' + selItem.data.punch_time }], 3, mpEmp.id);
+        }
+        return client.replyMessage(replyToken, [withMenu('✅ 已核准！\n\n輸入「待簽核」繼續查看其他項目')]);
+      } catch(e) { console.error('[approve] error:', e.message); return client.replyMessage(replyToken, [withMenu('❌ 核准失敗')]); }
+    }
+
+    if (text.indexOf('駁回') === 0) {
+      states.delete(uid);
+      var reason = text.substring(2).trim() || '未提供原因';
+      try {
+        if (selItem.type === 'leave') {
+          await db.updateLeaveStatus(selItem.data.id, 'rejected', emp.id, reason);
+          var leaveEmp2 = await db.getEmployeeById(selItem.data.employee_id);
+          if (leaveEmp2 && leaveEmp2.line_user_id) await pushWithRetry(client, leaveEmp2.line_user_id, [{ type: 'text', text: '❌ 請假被駁回\n時間：' + fmtDt(selItem.data.start_date) + ' ~ ' + fmtDt(selItem.data.end_date) + '\n駁回原因：' + reason }], 3, leaveEmp2.id);
+        } else if (selItem.type === 'ot') {
+          await db.updateOvertimeStatus(selItem.data.id, 'rejected', emp.id, reason);
+          var otEmp2 = await db.getEmployeeById(selItem.data.employee_id);
+          if (otEmp2 && otEmp2.line_user_id) await pushWithRetry(client, otEmp2.line_user_id, [{ type: 'text', text: '❌ 加班被駁回\n時間：' + fmtDt(selItem.data.start_time) + ' ~ ' + fmtDt(selItem.data.end_time) + '\n駁回原因：' + reason }], 3, otEmp2.id);
+        } else if (selItem.type === 'missed') {
+          await db.updateMissedPunchStatus(selItem.data.id, 'rejected', emp.id, reason);
+          var mpEmp2 = await db.getEmployeeById(selItem.data.employee_id);
+          if (mpEmp2 && mpEmp2.line_user_id) await pushWithRetry(client, mpEmp2.line_user_id, [{ type: 'text', text: '❌ 補打卡被駁回\n' + fmtDt(selItem.data.punch_date) + ' ' + selItem.data.punch_time + '\n駁回原因：' + reason }], 3, mpEmp2.id);
+        }
+        return client.replyMessage(replyToken, [withMenu('已駁回（原因：' + reason + '）\n\n輸入「待簽核」繼續查看其他項目')]);
+      } catch(e) { console.error('[reject] error:', e.message); return client.replyMessage(replyToken, [withMenu('❌ 駁回失敗')]); }
+    }
   }
   // 從 detail 返回 list
   if (text === '返回' && state.step === 'detail') {
@@ -1255,7 +1286,7 @@ async function setupRichMenu() {
 				{ bounds: { x: 1875, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '下班' } },
 				{ bounds: { x: 0, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '加班' } },
 				{ bounds: { x: 625, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢' } },
-				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當天考勤' } },
+				{ bounds: { x: 1250, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '待簽核' } },
 				{ bounds: { x: 1875, y: 421, width: 625, height: 422 }, action: { type: 'message', text: '查詢當月考勤' } },
 			]
 		};
@@ -1775,11 +1806,74 @@ async function queryMonthAttendance(emp, client, replyToken) {
   var lateKeys = Object.keys(empLateMap);
   var leaveKeys = Object.keys(empLeaveMap);
   var otKeys = Object.keys(empOTMap);
-  if (lateKeys.length === 0 && leaveKeys.length === 0 && otKeys.length === 0) {
-    return client.replyMessage(replyToken, [withMenu('✅ 本月無異常人員')]);
+  var allActive = await db.listAttendanceEmployees();
+
+  // 今日出勤概況（合併查詢當天考勤）
+  var todayCheckins = allCheckins.filter(function(c) {
+    var cd = new Date(c.check_time);
+    var ds = cd.getFullYear() + '-' + String(cd.getMonth()+1).padStart(2,'0') + '-' + String(cd.getDate()).padStart(2,'0');
+    return ds === today;
+  });
+  var todayEmpMap = {};
+  for (var ti = 0; ti < todayCheckins.length; ti++) {
+    var tc = todayCheckins[ti];
+    if (!todayEmpMap[tc.employee_id]) {
+      todayEmpMap[tc.employee_id] = { checkIn: null, checkOut: null, name: tc.name, no: tc.employee_no };
+    }
+    if (tc.type === 'check_in') todayEmpMap[tc.employee_id].checkIn = tc;
+    else todayEmpMap[tc.employee_id].checkOut = tc;
+  }
+
+  var checkedInCount = 0, lateTodayCount = 0, absentCount = 0;
+  var lateTodayNames = [], checkedInNames = [], absentNames = [], leaveTodayNames = [];
+
+  var leaveTodayMap = {};
+  for (var lti = 0; lti < allLeaves.length; lti++) {
+    var lv = allLeaves[lti];
+    var lvs = typeof lv.start_date === 'string' ? lv.start_date.substring(0, 10) : '';
+    var lve = typeof lv.end_date === 'string' ? lv.end_date.substring(0, 10) : lvs;
+    if (lvs <= today && lve >= today) {
+      leaveTodayMap[lv.employee_id] = lv;
+    }
+  }
+
+  for (var ai = 0; ai < allActive.length; ai++) {
+    var ae = allActive[ai];
+    if (Object.keys(designatedIds).length > 0 && !designatedIds[ae.id]) continue;
+    var tm = todayEmpMap[ae.id];
+    var onLeaveToday = leaveTodayMap[ae.id];
+    if (onLeaveToday) {
+      leaveTodayNames.push(ae.employee_no + ' ' + ae.name + '（' + leaveTypeLabel(onLeaveToday.leave_type) + '）');
+    }
+    if (tm && tm.checkIn) {
+      checkedInCount++;
+      checkedInNames.push(ae.employee_no + ' ' + ae.name);
+      var ciTime = new Date(tm.checkIn.check_time);
+      var ciTotalMin = ciTime.getHours() * 60 + ciTime.getMinutes();
+      if (ciTotalMin > lateThreshold) {
+        var ciDateStr = ciTime.getFullYear() + '-' + String(ciTime.getMonth()+1).padStart(2,'0') + '-' + String(ciTime.getDate()).padStart(2,'0');
+        if (!(await isHoliday(ciDateStr)) && !onLeaveToday) {
+          lateTodayCount++;
+          lateTodayNames.push(ae.employee_no + ' ' + ae.name + '（' + String(ciTime.getHours()).padStart(2,'0') + ':' + String(ciTime.getMinutes()).padStart(2,'0') + '）');
+        }
+      }
+    } else if (!onLeaveToday) {
+      absentCount++;
+      absentNames.push(ae.employee_no + ' ' + ae.name);
+    }
   }
 
   var lines = ['📋 當月考勤（' + monthStart.substring(5) + ' ~ ' + today.substring(5) + '）'];
+  lines.push('');
+  lines.push('📅 今日出勤概況：');
+  lines.push('  👥 在職：' + allActive.length + ' 人');
+  lines.push('  ✅ 已上班：' + checkedInCount + ' 人');
+  lines.push('  🏖 請假：' + leaveTodayNames.length + ' 人');
+  lines.push('  ❌ 未打卡：' + absentCount + ' 人');
+  if (lateTodayCount > 0) {
+    lines.push('  ⚠️ 遲到 ' + lateTodayCount + ' 人：' + lateTodayNames.join('、'));
+  }
+  lines.push('');
 
   if (lateKeys.length > 0) {
     lateKeys.sort(function(a, b) { return (empLateMap[a].no || '').localeCompare(empLateMap[b].no || ''); });
@@ -1897,7 +1991,7 @@ function makePng8() {
     { x: 1875 + gap, y: 0, w: 625 - gap, h: 421, color: '#d97706', label: '下班' },
     { x: 0, y: 421 + gap, w: 625, h: 422 - gap, color: '#7c3aed', label: '加班' },
     { x: 625 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#2563eb', label: '查詢' },
-    { x: 1250 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#ea580c', label: '查詢當天考勤' },
+    { x: 1250 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#0891b2', label: '簽核查詢' },
     { x: 1875 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#b91c1c', label: '查詢當月考勤' },
   ];
 
@@ -1977,12 +2071,11 @@ function makePng8() {
         ctx.lineTo(cx + 24, iy + 24);
         break;
       case 6:
-        ctx.moveTo(cx - 16, iy - 8);
-        ctx.lineTo(cx - 16, iy + 8);
-        ctx.moveTo(cx + 8, iy - 8);
-        ctx.lineTo(cx + 8, iy + 8);
-        ctx.moveTo(cx + 20, iy - 8);
-        ctx.lineTo(cx + 20, iy + 4);
+        // 簽核查詢圖示（勾選框 + 打勾）
+        ctx.rect(cx - 16, iy - 12, 32, 24);
+        ctx.moveTo(cx - 8, iy);
+        ctx.lineTo(cx - 2, iy + 6);
+        ctx.lineTo(cx + 10, iy - 6);
         break;
       case 7:
         ctx.arc(cx, iy, 12, 0, Math.PI * 2);

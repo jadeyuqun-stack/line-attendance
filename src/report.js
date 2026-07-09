@@ -189,6 +189,44 @@ function fmtTime(d) {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
+/**
+ * 排程下一次日報：計算到設定時間的毫秒數，用 setTimeout 精確觸發
+ */
+function scheduleNext() {
+  if (scheduleTimeout) clearTimeout(scheduleTimeout);
+  var now = new Date();
+  var targetH = 17, targetM = 0;
+  // 從 DB 讀取設定時間（非同步，但先設預設值）
+  db.getSetting('report_time').then(function(timeStr) {
+    if (timeStr) {
+      var parts = timeStr.split(':');
+      targetH = parseInt(parts[0]) || 17;
+      targetM = parseInt(parts[1]) || 0;
+    }
+    var next = new Date(now);
+    next.setHours(targetH, targetM, 0, 0);
+    // 若已過今日目標時間，排到明天
+    if (next <= now) next.setDate(next.getDate() + 1);
+    var ms = next.getTime() - now.getTime();
+    scheduleTimeout = setTimeout(function() {
+      if (clientRef) trySendReport(clientRef);
+      scheduleNext(); // 排下一天
+    }, ms);
+    console.log('[Report] 下一次排程：' + next.toLocaleString('zh-TW') + '（' + Math.round(ms / 60000) + ' 分鐘後）');
+  }).catch(function(e) {
+    console.error('[Report] scheduleNext 讀取設定失敗:', e.message);
+    // 預設 17:00
+    var next = new Date(now);
+    next.setHours(17, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    var ms = next.getTime() - now.getTime();
+    scheduleTimeout = setTimeout(function() {
+      if (clientRef) trySendReport(clientRef);
+      scheduleNext();
+    }, ms);
+  });
+}
+
 function startScheduler(client) {
   clientRef = client;
   startKeepAlive();   // 防休眠

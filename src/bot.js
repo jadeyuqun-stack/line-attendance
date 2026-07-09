@@ -283,7 +283,7 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '本月請假累計') return queryBossMonthLeaves(emp, client, replyToken);
   if (cmd === '本月遲到累計') return queryBossMonthLates(emp, client, replyToken);
   if (cmd === '本月加班累計') return queryBossMonthOvertime(emp, client, replyToken);
-  if (cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending') return checkPendingApprovalsCmd(emp, client, replyToken);
+  if (cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending') return checkPendingApprovalsCmd(emp, client, replyToken, uid);
   if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken);
   if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, 'leave');
@@ -323,7 +323,7 @@ function calcHours(s, e) {
   return d > 0 ? Math.round(d / 3600000 * 10) / 10 : 0;
 }
 
-async function checkPendingApprovalsCmd(emp, client, replyToken) {
+async function checkPendingApprovalsCmd(emp, client, replyToken, uid) {
   try {
     var leaves = await db.getLeaveRequests('pending', 50);
     var ots = await db.getOvertimeRequests('pending', 50);

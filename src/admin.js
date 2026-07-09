@@ -601,7 +601,6 @@ router.get('/settings', auth, async (_, res) => {
   var reportAsImage = await db.getSetting('report_as_image') || '';
   var reportDaysArr = reportDays.split(',');
   var dayNames = ['日', '一', '二', '三', '四', '五', '六'];
-  var remindHours = await db.getSetting('approval_remind_hours') || '0';
   var twHolidays = await db.getSetting('tw_holidays') || '[]';
 
   var body = '<div class="card"><h3>⏰ 上下班時間</h3>'
@@ -636,11 +635,6 @@ router.get('/settings', auth, async (_, res) => {
     body += '<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="checkbox" class="rptDay" value="'+d+'"'+checked+' style="width:auto;margin:0"> 週'+dayNames[d]+'</label>';
   }
   body += '</div></div>'
-    + '<div class="card"><h3>⏰ 簽核提醒</h3>'
-    + '<p style="color:#999;font-size:13px;margin-bottom:12px">設定 N 小時後仍未簽核的申請，系統自動提醒簽核人。</p>'
-    + '<form id="remindForm" class="inline">'
-    + '<div><label>未簽核提醒（小時）</label><input id="remindHours" value="' + h(remindHours) + '" placeholder="0 表示停用" style="width:80px"></div>'
-    + '<button class="btn">儲存</button><span id="remindMsg" style="color:#06c755"></span></form></div>'
     + '<div class="card"><h3>🇹🇼 國定假日</h3>'
     + '<p style="color:#999;font-size:13px;margin-bottom:12px">假日上班打卡不計遲到。選擇日期加入列表。</p>'
     + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">'
@@ -656,7 +650,6 @@ router.get('/settings', auth, async (_, res) => {
     + 'document.getElementById("hourForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({work_start_hour:document.getElementById("workStart").value,work_end_hour:document.getElementById("workEnd").value,late_buffer_minutes:document.getElementById("lateBuf").value})});if(r.ok)document.getElementById("hourMsg").textContent="✅已儲存";};'
     + 'document.getElementById("gpsForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({office_lat:document.getElementById("lat").value,office_lng:document.getElementById("lng").value,gps_range_meters:document.getElementById("range").value})});if(r.ok)document.getElementById("gpsMsg").textContent="✅已儲存";};'
     + 'document.getElementById("reportForm").onsubmit=async function(e){e.preventDefault();var days=[];var cbs=document.querySelectorAll(".rptDay:checked");for(var i=0;i<cbs.length;i++)days.push(cbs[i].value);var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({report_group_id:document.getElementById("groupId").value,report_time:document.getElementById("rptTime").value,report_enabled:document.getElementById("rptEnabled").checked?"true":"false",report_days:days.join(","),report_no_dup:document.getElementById("rptNoDup").checked?"true":"false",report_as_image:document.getElementById("rptAsImage").checked?"true":"false"})});if(r.ok)document.getElementById("rptMsg").textContent="✅已儲存 重新整理後生效";};'
-    + 'document.getElementById("remindForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approval_remind_hours:document.getElementById("remindHours").value})});if(r.ok)document.getElementById("remindMsg").textContent="✅已儲存";};'
     + 'var holidayDates=[];try{holidayDates=JSON.parse(document.getElementById("twHolidays").value)||[];}catch(e){holidayDates=[];}'
     + 'function renderHolidays(){var list=document.getElementById("holidayList");list.innerHTML="";for(var i=0;i<holidayDates.length;i++){var d=holidayDates[i];var tag=document.createElement("span");tag.style.cssText="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#e6f9ee;border:1px solid #06c755;border-radius:16px;font-size:13px";tag.innerHTML=d+\' <a href="#" onclick="removeHoliday(\'+i+\');return false" style="color:#e74c3c;text-decoration:none;font-weight:bold;font-size:16px;line-height:1" title="移除">&times;</a>\';list.appendChild(tag);}}'
     + 'function removeHoliday(idx){holidayDates.splice(idx,1);document.getElementById("twHolidays").value=JSON.stringify(holidayDates);renderHolidays();document.getElementById("holidayMsg").textContent="";}'

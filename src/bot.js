@@ -1,5 +1,6 @@
 const db = require('./database');
 const states = new Map();
+var _menuAssigned = {};
 
 // 國定假日快取（請假時數需扣除）
 var _holidays = [];
@@ -265,6 +266,12 @@ async function handleText(text, uid, client, replyToken) {
     return client.replyMessage(replyToken, [withMenu('❌ 找不到員工編號「' + cmd + '」\n\n🆔 輸入「我的ID」取得 LINE ID 洽管理員')]);
   }
 
+  // 確保 Rich Menu 正確分配（每位用戶每重啟一次，僅執行一次）
+  if (!_menuAssigned[uid]) {
+    _menuAssigned[uid] = true;
+    assignRichMenu(uid, emp.role).catch(function(e2) {});
+  }
+
 
   if (cmd === '我的ID' || cmd.toLowerCase() === 'my id') {
     return client.replyMessage(replyToken, [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
@@ -288,6 +295,9 @@ async function handleText(text, uid, client, replyToken) {
     var state2 = states.get(uid);
     if (state2.flow === 'reject_leave' || state2.flow === 'reject_ot' || state2.flow === 'reject_missed') {
       return handleRejectReason(cmd, uid, client, replyToken, emp);
+    }
+    if (state2.flow === 'approval_browse') {
+      return handleApprovalBrowseInput(cmd, uid, client, replyToken, emp);
     }
     return handleFlow(cmd, uid, client, replyToken, emp);
   }

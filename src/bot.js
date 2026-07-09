@@ -1342,6 +1342,22 @@ async function setupRichMenu() {
 			console.error('[RichMenu] 老闆4格建立失敗:', JSON.stringify(dataB));
 		}
 
+		// 重新分配所有已綁定員工的 Rich Menu
+		try {
+			var _allEmps = await db.listActiveEmployees();
+			var _assignCount = 0;
+			for (var _ei = 0; _ei < _allEmps.length; _ei++) {
+				var _ae = _allEmps[_ei];
+				if (_ae.line_user_id && _ae.role) {
+					await assignRichMenu(_ae.line_user_id, _ae.role);
+					_assignCount++;
+				}
+			}
+			console.log('[RichMenu] 已重新分配 ' + _assignCount + ' 位員工的選單');
+		} catch (e2) {
+			console.error('[RichMenu] 分配員工選單失敗:', e2.message);
+		}
+
 		return { richMenuId: menu6Id, menu8Id: menu8Id, menuBossId: menuBossId };
 	} catch (e) {
 		console.error('[RichMenu] error:', e.message);

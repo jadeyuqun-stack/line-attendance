@@ -250,7 +250,7 @@ async function handleText(text, uid, client, replyToken) {
     if (notifs && notifs.length > 0) {
       var msgs = notifs.map(function(n) { return n.message; }).join('\n\n');
       await db.clearPendingNotifications(emp.id);
-      return client.replyMessage(replyToken, [withMenu('📬 簽核結果通知\n\n' + msgs + '\n\n----\n請重新輸入您要執行的操作。')]);
+      return client.replyMessage(replyToken, [withMenu('📬 ' + msgs.replace(/\n/g, ' · ') + '（請重新輸入您要執行的操作）')]);
     }
   } catch(e) { console.error('[notif] check error:', e.message); }
 
@@ -499,15 +499,15 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
         if (selItem.type === 'leave') {
           aprResult = await db.updateLeaveStatus(selItem.data.id, 'approved', emp.id);
           var leaveEmp = await db.getEmployeeById(selItem.data.employee_id);
-          if (leaveEmp && leaveEmp.line_user_id) await pushWithRetry(client, leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + fmtDt(selItem.data.start_date) + ' ~ ' + fmtDt(selItem.data.end_date) }], 3, leaveEmp.id);
+          if (leaveEmp && leaveEmp.line_user_id) await db.addPendingNotification(leaveEmp.id, '🎉 請假已核准！\n' + fmtDt(selItem.data.start_date) + ' ~ ' + fmtDt(selItem.data.end_date));
         } else if (selItem.type === 'ot') {
           aprResult = await db.updateOvertimeStatus(selItem.data.id, 'approved', emp.id);
           var otEmp = await db.getEmployeeById(selItem.data.employee_id);
-          if (otEmp && otEmp.line_user_id) await pushWithRetry(client, otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + fmtDt(selItem.data.start_time) + ' ~ ' + fmtDt(selItem.data.end_time) }], 3, otEmp.id);
+          if (otEmp && otEmp.line_user_id) await db.addPendingNotification(otEmp.id, '🎉 加班已核准！\n' + fmtDt(selItem.data.start_time) + ' ~ ' + fmtDt(selItem.data.end_time));
         } else if (selItem.type === 'missed') {
           aprResult = await db.updateMissedPunchStatus(selItem.data.id, 'approved', emp.id);
           var mpEmp = await db.getEmployeeById(selItem.data.employee_id);
-          if (mpEmp && mpEmp.line_user_id) await pushWithRetry(client, mpEmp.line_user_id, [{ type: 'text', text: '🎉 補打卡已核准！\n' + fmtDt(selItem.data.punch_date) + ' ' + selItem.data.punch_time }], 3, mpEmp.id);
+          if (mpEmp && mpEmp.line_user_id) await db.addPendingNotification(mpEmp.id, '🎉 補打卡已核准！\n' + fmtDt(selItem.data.punch_date) + ' ' + selItem.data.punch_time);
         }
         if (aprResult && aprResult.notYourTurn) {
           return client.replyMessage(replyToken, [withMenu('⏳ 此申請尚未輪到您簽核（目前在第 ' + (selItem.data.approval_level || 1) + ' 階）\n\n輸入「待簽核」返回清單')]);
@@ -523,15 +523,15 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
         if (selItem.type === 'leave') {
           await db.updateLeaveStatus(selItem.data.id, 'rejected', emp.id, reason);
           var leaveEmp2 = await db.getEmployeeById(selItem.data.employee_id);
-          if (leaveEmp2 && leaveEmp2.line_user_id) await pushWithRetry(client, leaveEmp2.line_user_id, [{ type: 'text', text: '❌ 請假被駁回\n時間：' + fmtDt(selItem.data.start_date) + ' ~ ' + fmtDt(selItem.data.end_date) + '\n駁回原因：' + reason }], 3, leaveEmp2.id);
+          if (leaveEmp2 && leaveEmp2.line_user_id) await db.addPendingNotification(leaveEmp2.id, '❌ 請假被駁回\n時間：' + fmtDt(selItem.data.start_date) + ' ~ ' + fmtDt(selItem.data.end_date) + '\n駁回原因：' + reason);
         } else if (selItem.type === 'ot') {
           await db.updateOvertimeStatus(selItem.data.id, 'rejected', emp.id, reason);
           var otEmp2 = await db.getEmployeeById(selItem.data.employee_id);
-          if (otEmp2 && otEmp2.line_user_id) await pushWithRetry(client, otEmp2.line_user_id, [{ type: 'text', text: '❌ 加班被駁回\n時間：' + fmtDt(selItem.data.start_time) + ' ~ ' + fmtDt(selItem.data.end_time) + '\n駁回原因：' + reason }], 3, otEmp2.id);
+          if (otEmp2 && otEmp2.line_user_id) await db.addPendingNotification(otEmp2.id, '❌ 加班被駁回\n時間：' + fmtDt(selItem.data.start_time) + ' ~ ' + fmtDt(selItem.data.end_time) + '\n駁回原因：' + reason);
         } else if (selItem.type === 'missed') {
           await db.updateMissedPunchStatus(selItem.data.id, 'rejected', emp.id, reason);
           var mpEmp2 = await db.getEmployeeById(selItem.data.employee_id);
-          if (mpEmp2 && mpEmp2.line_user_id) await pushWithRetry(client, mpEmp2.line_user_id, [{ type: 'text', text: '❌ 補打卡被駁回\n' + fmtDt(selItem.data.punch_date) + ' ' + selItem.data.punch_time + '\n駁回原因：' + reason }], 3, mpEmp2.id);
+          if (mpEmp2 && mpEmp2.line_user_id) await db.addPendingNotification(mpEmp2.id, '❌ 補打卡被駁回\n' + fmtDt(selItem.data.punch_date) + ' ' + selItem.data.punch_time + '\n駁回原因：' + reason);
         }
         return client.replyMessage(replyToken, [withMenu('已駁回（原因：' + reason + '）\n\n輸入「待簽核」繼續查看其他項目')]);
       } catch(e) { console.error('[reject] error:', e.message); return client.replyMessage(replyToken, [withMenu('❌ 駁回失敗')]); }
@@ -1128,7 +1128,7 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (mp.status !== "pending") return client.replyMessage(replyToken, [withMenu("已處理過")]);
     if (data.indexOf("mp_approve_") === 0) {
       await db.updateMissedPunchStatus(mpId, "approved", mpApprover.id);
-      if (mpEmp && mpEmp.line_user_id) await pushWithRetry(client, mpEmp.line_user_id, [{ type: "text", text: "🎉 補打卡已核准！\n" + fmtDt(mp.punch_date) + " " + mp.punch_time }], 3, mpEmp.id);
+      if (mpEmp && mpEmp.line_user_id) await db.addPendingNotification(mpEmp.id, "🎉 補打卡已核准！\n" + fmtDt(mp.punch_date) + " " + mp.punch_time);
       return client.replyMessage(replyToken, [withMenu("✅ 已核准")]);
     } else {
       states.set(uid, { flow: 'reject_missed', id: mpId, approverId: mpApprover.id });
@@ -1148,11 +1148,11 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (data.indexOf('leave_approve_') === 0) {
       var result = await db.updateLeaveStatus(leaveId, 'approved', approver.id);
       if (result && result.advanced) {
-        if (leaveEmp && leaveEmp.line_user_id) await pushWithRetry(client, leaveEmp.line_user_id, [{ type: "text", text: "📋 請假進度\n\n已通過第"+(result.level-1)+"階，等待第"+result.level+"階：" + result.approvers[0].name + "\n時間：" + fmtDt(leave.start_date) + " ~ " + fmtDt(leave.end_date) }], 3, leaveEmp.id);
+        if (leaveEmp && leaveEmp.line_user_id) await db.addPendingNotification(leaveEmp.id, "📋 請假進度\n\n已通過第"+(result.level-1)+"階，等待第"+result.level+"階：" + result.approvers[0].name + "\n時間：" + fmtDt(leave.start_date) + " ~ " + fmtDt(leave.end_date));
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+result.level+'階簽核')]);
       }
       if (leaveEmp && leaveEmp.line_user_id) {
-        await pushWithRetry(client, leaveEmp.line_user_id, [{ type: 'text', text: '🎉 請假已核准！\n' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) }], 3, leaveEmp.id);
+        await db.addPendingNotification(leaveEmp.id, '🎉 請假已核准！\n' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date));
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
@@ -1176,11 +1176,11 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (data.indexOf('ot_approve_') === 0) {
       var otResult = await db.updateOvertimeStatus(otId, 'approved', otApprover.id);
       if (otResult && otResult.advanced) {
-        if (otEmp && otEmp.line_user_id) await pushWithRetry(client, otEmp.line_user_id, [{ type: "text", text: "🕐 加班進度\n\n已通過第"+(otResult.level-1)+"階，等待第"+otResult.level+"階：" + otResult.approvers[0].name + "\n時間：" + fmtDt(ot.start_time) + " ~ " + fmtDt(ot.end_time) }], 3, otEmp.id);
+        if (otEmp && otEmp.line_user_id) await db.addPendingNotification(otEmp.id, "🕐 加班進度\n\n已通過第"+(otResult.level-1)+"階，等待第"+otResult.level+"階：" + otResult.approvers[0].name + "\n時間：" + fmtDt(ot.start_time) + " ~ " + fmtDt(ot.end_time));
         return client.replyMessage(replyToken, [withMenu('✅ 已核准，已送第'+otResult.level+'階簽核')]);
       }
       if (otEmp && otEmp.line_user_id) {
-        await pushWithRetry(client, otEmp.line_user_id, [{ type: 'text', text: '🎉 加班已核准！\n' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) }], 3, otEmp.id);
+        await db.addPendingNotification(otEmp.id, '🎉 加班已核准！\n' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time));
       }
       return client.replyMessage(replyToken, [withMenu('✅ 已核准')]);
     } else {
@@ -1205,9 +1205,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       var leaveEmp = leave ? await db.getEmployeeById(leave.employee_id) : null;
       await db.updateLeaveStatus(state.id, 'rejected', approver.id, reason);
       if (leaveEmp && leaveEmp.line_user_id && leave) {
-        await pushWithRetry(client, leaveEmp.line_user_id, [{
-          type: 'text', text: '❌ 請假被駁回\n時間：' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) + '\n駁回原因：' + reason
-        }], 3, leaveEmp.id);
+        await db.addPendingNotification(leaveEmp.id, '❌ 請假被駁回\n時間：' + fmtDt(leave.start_date) + ' ~ ' + fmtDt(leave.end_date) + '\n駁回原因：' + reason);
       }
       states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('已駁回請假申請（原因：' + reason + '）')]);
@@ -1218,9 +1216,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       var otEmp = ot ? await db.getEmployeeById(ot.employee_id) : null;
       await db.updateOvertimeStatus(state.id, 'rejected', approver.id, reason);
       if (otEmp && otEmp.line_user_id && ot) {
-        await pushWithRetry(client, otEmp.line_user_id, [{
-          type: 'text', text: '❌ 加班被駁回\n時間：' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) + '\n駁回原因：' + reason
-        }], 3, otEmp.id);
+        await db.addPendingNotification(otEmp.id, '❌ 加班被駁回\n時間：' + fmtDt(ot.start_time) + ' ~ ' + fmtDt(ot.end_time) + '\n駁回原因：' + reason);
       }
       states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('已駁回加班申請（原因：' + reason + '）')]);
@@ -1231,9 +1227,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
       var mpEmp = mp ? await db.getEmployeeById(mp.employee_id) : null;
       await db.updateMissedPunchStatus(state.id, 'rejected', approver.id, reason);
       if (mpEmp && mpEmp.line_user_id && mp) {
-        await pushWithRetry(client, mpEmp.line_user_id, [{
-          type: 'text', text: '❌ 補打卡被駁回\n' + fmtDt(mp.punch_date) + ' ' + mp.punch_time + '\n駁回原因：' + reason
-        }], 3, mpEmp.id);
+        await db.addPendingNotification(mpEmp.id, '❌ 補打卡被駁回\n' + fmtDt(mp.punch_date) + ' ' + mp.punch_time + '\n駁回原因：' + reason);
       }
       states.delete(uid);
       return client.replyMessage(replyToken, [withMenu('已駁回補打卡申請（原因：' + reason + '）')]);

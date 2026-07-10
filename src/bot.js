@@ -255,14 +255,15 @@ async function handleText(text, uid, client, replyToken) {
   } catch(e) { console.error('[notif] check error:', e.message); }
 
   // 待簽核逾期提醒：主管互動時跳出，不需另外推播
-  // 注意：若已在簽核流程中（如輸入編號），不觸發提醒
+  // 提醒不阻擋指令，有逾期時自動顯示待簽核清單
   try {
     var _isApprovalCmd = cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending' || cmd === '核准全部' || cmd === '駁回全部';
     var _isInApprovalFlow = states.has(uid) && (states.get(uid).flow === 'approval_browse' || states.get(uid).flow === 'reject_leave' || states.get(uid).flow === 'reject_ot' || states.get(uid).flow === 'reject_missed');
     if (!_isApprovalCmd && !_isInApprovalFlow) {
       var _reminderText = await getOverdueApprovalReminder(emp);
       if (_reminderText) {
-        return client.replyMessage(replyToken, [withMenu('⏰ 待簽核提醒\n\n' + _reminderText + '\n\n----\n您的指令「' + cmd + '」未執行，請輸入「待簽核」前往處理。')]);
+        console.log('[reminder] ' + emp.name + ' 有逾期待簽核');
+        return checkPendingApprovalsCmd(emp, client, replyToken, uid);
       }
     }
   } catch(e) { console.error('[reminder] check error:', e.message); }
@@ -394,8 +395,15 @@ async function checkPendingApprovalsCmd(emp, client, replyToken, uid) {
       }
       msg += '\n';
     }
-    msg += '💡 輸入編號進行核准/駁回\n✅ 核准全部 → 一次性核准\n❌ 駁回全部 → 一次性駁回\n🔙 取消 → 離開';
-    return client.replyMessage(replyToken, [withMenu(msg)]);
+    msg += '💡 輸入編號進行核准/駁回\n🔙 取消 → 離開';
+    var qr = {
+      items: [
+        { type: 'action', action: { type: 'message', label: '✅ 核准全部', text: '核准全部' } },
+        { type: 'action', action: { type: 'message', label: '❌ 駁回全部', text: '駁回全部' } },
+        { type: 'action', action: { type: 'message', label: '🔙 取消', text: '取消' } },
+      ]
+    };
+    return client.replyMessage(replyToken, [{ type: 'text', text: msg, quickReply: qr }]);
   } catch(e) { console.error('[approve] list error:', e.message || e); return client.replyMessage(replyToken, [withMenu('❌ 查詢失敗')]); }
 }
 

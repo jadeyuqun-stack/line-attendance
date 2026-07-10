@@ -356,7 +356,7 @@ router.get('/employees', auth, async (_, res) => {
     var nameEsc = esc(e.name), deptEsc = esc(e.department||''), roleEsc = esc(e.role||'員工');
     rows += '<tr>'
       + '<td>'+h(e.employee_no)+'</td>'
-      + '<td>'+h(e.name)+'</td>'
+      + '<td><span class="editable" onclick="editField('+e.id+',\'name\',\''+nameEsc+'\')">'+h(e.name)+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'department\',\''+deptEsc+'\')">'+(e.department||'點此設定')+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'role\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
       + '<td>'+(e.line_user_id?'<span class="badge badge-in">已綁定</span>':'<span class="badge badge-out">未綁定</span>')+'</td>'
@@ -389,7 +389,7 @@ router.get('/employees', auth, async (_, res) => {
     var appSel3 = makeApproverSelect(3, e.approver3_id);
     rows += '<tr>'
       + '<td>'+h(e.employee_no)+'</td>'
-      + '<td>'+h(e.name)+'</td>'
+      + '<td><span class="editable" onclick="editField('+e.id+',\'name\',\''+nameEsc+'\')">'+h(e.name)+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'department\',\''+deptEsc+'\')">'+(e.department||'點此設定')+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'role\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
       + '<td>'+(e.line_user_id?'<span class="badge badge-in">已綁定</span>':'<span class="badge badge-out">未綁定</span>')+'</td>'
@@ -818,7 +818,7 @@ router.get('/salary', auth, async function(_, res) {
     rows += '<tr>'
       + '<td>'+(i+1)+'</td>'
       + '<td>'+h(e.employee_no)+'</td>'
-      + '<td>'+h(e.name)+'</td>'
+      + '<td><span class="editable" onclick="editField('+e.id+',\'name\',\''+nameEsc+'\')">'+h(e.name)+'</span></td>'
       + '<td>'+h(e.department||'')+'</td>'
       + '<td><span class="badge badge-in">已綁定</span></td>'
       + '<td>'

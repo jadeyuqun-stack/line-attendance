@@ -1852,7 +1852,13 @@ async function queryMonthAttendance(emp, client, replyToken) {
     var tm = todayEmpMap[ae.id];
     var onLeaveToday = leaveTodayMap[ae.id];
     if (onLeaveToday) {
-      leaveTodayNames.push(ae.employee_no + ' ' + ae.name + '（' + leaveTypeLabel(onLeaveToday.leave_type) + '）');
+      var _ls = typeof onLeaveToday.start_date === 'string' ? onLeaveToday.start_date : String(onLeaveToday.start_date);
+      var _le = typeof onLeaveToday.end_date === 'string' ? onLeaveToday.end_date : String(onLeaveToday.end_date);
+      var _tIdx1 = _ls.indexOf(' '); if (_tIdx1 === -1) _tIdx1 = _ls.indexOf('T');
+      var _tIdx2 = _le.indexOf(' '); if (_tIdx2 === -1) _tIdx2 = _le.indexOf('T');
+      var _st = _tIdx1 > 0 ? _ls.substring(_tIdx1 + 1, _tIdx1 + 6) : '';
+      var _et = _tIdx2 > 0 ? _le.substring(_tIdx2 + 1, _tIdx2 + 6) : '';
+      leaveTodayNames.push(ae.employee_no + ' ' + ae.name + '（' + leaveTypeLabel(onLeaveToday.leave_type) + ' ' + _st + '~' + _et + '）');
     }
     if (tm && tm.checkIn) {
       checkedInCount++;

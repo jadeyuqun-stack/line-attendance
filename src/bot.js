@@ -254,22 +254,23 @@ async function handleText(text, uid, client, replyToken) {
     }
   } catch(e) { console.error('[notif] check error:', e.message); }
 
-  // 待簽核逾期提醒：主管互動時跳出，不需另外推播
-  // 提醒不阻擋指令，有逾期時自動顯示待簽核清單
+  // 待簽核提醒：有新項目時顯示提示，但不阻擋指令
+  var _pendingMsg = '';
   try {
-    var _isApprovalCmd = cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending' || cmd === '核准全部' || cmd === '駁回全部';
-    var _isInApprovalFlow = states.has(uid) && (states.get(uid).flow === 'approval_browse' || states.get(uid).flow === 'reject_leave' || states.get(uid).flow === 'reject_ot' || states.get(uid).flow === 'reject_missed');
-    if (!_isApprovalCmd && !_isInApprovalFlow) {
-      var _reminderText = await getOverdueApprovalReminder(emp);
-      if (_reminderText) {
-        console.log('[reminder] ' + emp.name + ' 有逾期待簽核');
-        return checkPendingApprovalsCmd(emp, client, replyToken, uid);
+    if (emp && (emp.can_approve || emp.role === '經理' || emp.role === '老闆')) {
+      var _isApprovalCmd = cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending' || cmd === '核准全部' || cmd === '駁回全部';
+      var _isInApprovalFlow = states.has(uid) && (states.get(uid).flow === 'approval_browse' || states.get(uid).flow === 'reject_leave' || states.get(uid).flow === 'reject_ot' || states.get(uid).flow === 'reject_missed');
+      if (!_isApprovalCmd && !_isInApprovalFlow) {
+        var _pendingCount = await countPendingForApprover(emp);
+        if (_pendingCount > 0) {
+          _pendingMsg = '📋 您有 ' + _pendingCount + ' 筆待簽核，輸入「待簽核」查看';
+        }
       }
     }
   } catch(e) { console.error('[reminder] check error:', e.message); }
 
   if (cmd === '我的ID' || cmd.toLowerCase() === 'my id') {
-    return client.replyMessage(replyToken, [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
+    return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')] : [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
   if (cmd === '查詢當天考勤') return queryTodayAttendance(emp, client, replyToken);
@@ -283,7 +284,7 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken);
   if (cmd === '駁回全部') return batchRejectAll(emp, client, replyToken);
-  if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('已取消操作。')]); }
+  if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('已取消操作。')] : [withMenu('已取消操作。')]); }
   if (states.has(uid)) {
     var state2 = states.get(uid);
     if (state2.flow === 'reject_leave' || state2.flow === 'reject_ot' || state2.flow === 'reject_missed') {
@@ -294,11 +295,11 @@ async function handleText(text, uid, client, replyToken) {
     }
     return handleFlow(cmd, uid, client, replyToken, emp);
   }
-  if (cmd.includes('上班')) { states.set(uid, { flow: 'gps_check', type: 'check_in' }); return client.replyMessage(replyToken, [{ type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
-  if (cmd.includes('下班')) { states.set(uid, { flow: 'gps_check', type: 'check_out' }); return client.replyMessage(replyToken, [{ type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
+  if (cmd.includes('上班')) { states.set(uid, { flow: 'gps_check', type: 'check_in' }); return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, { type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }] : [{ type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
+  if (cmd.includes('下班')) { states.set(uid, { flow: 'gps_check', type: 'check_out' }); return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, { type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }] : [{ type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
   if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken);
-  if (cmd.includes('幫助')) return client.replyMessage(replyToken, [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
-  return client.replyMessage(replyToken, [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
+  if (cmd.includes('幫助')) return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')] : [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
+  return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')] : [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
 }
 
 // 待簽核查詢指令
@@ -349,6 +350,40 @@ async function getOverdueApprovalReminder(emp) {
   }
   if (count === 0) return null;
   return '您有 ' + count + ' 筆待簽核申請已超過 ' + hours + ' 小時未處理。';
+}
+
+// 計算該簽核人員目前待簽核總數（不分逾期與否）
+async function countPendingForApprover(emp) {
+  if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆')) return 0;
+  try {
+    var pl = await db.getLeaveRequests('pending', 200);
+    var po = await db.getOvertimeRequests('pending', 200);
+    var pm = await db.getMissedPunches('pending', 200);
+    var c = 0;
+    for (var i = 0; i < pl.length; i++) {
+      var e = await db.getEmployeeById(pl[i].employee_id);
+      if (!e) continue;
+      var lv = pl[i].approval_level || 1;
+      var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+      var isDes = e[col] === emp.id;
+      if (emp.can_approve || isDes) c++;
+    }
+    for (var i = 0; i < po.length; i++) {
+      var e = await db.getEmployeeById(po[i].employee_id);
+      if (!e) continue;
+      var lv2 = po[i].approval_level || 1;
+      var col2 = lv2 === 1 ? 'approver_id' : lv2 === 2 ? 'approver2_id' : 'approver3_id';
+      var isDes2 = e[col2] === emp.id;
+      if (emp.can_approve || isDes2) c++;
+    }
+    for (var i = 0; i < pm.length; i++) {
+      var e = await db.getEmployeeById(pm[i].employee_id);
+      if (!e) continue;
+      var isDes3 = e.approver_id === emp.id || e.approver2_id === emp.id || e.approver3_id === emp.id;
+      if (emp.can_approve || isDes3) c++;
+    }
+    return c;
+  } catch(e) { return 0; }
 }
 
 async function checkPendingApprovalsCmd(emp, client, replyToken, uid) {
@@ -560,9 +595,9 @@ async function batchApproveAll(emp, client, replyToken) {
   var mps = await db.getMissedPunches('pending', 200);
   var lines = [];
   function canBatch(emp2, eid) { return emp2.approver_id === eid || emp2.approver2_id === eid || emp2.approver3_id === eid || (!emp2.approver_id && !emp2.approver2_id && !emp2.approver3_id); }
-  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); } } }
-  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); } } }
-  for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && (canBatch(e, emp.id) || emp.can_approve)) { var _r3 = await db.updateMissedPunchStatus(mps[i].id, 'approved', emp.id); if (_r3) { lines.push('📝 ' + e.name + ' ' + (mps[i].punch_type === 'check_in' ? '補上班' : '補下班') + ' ' + mps[i].punch_date); } } }
+  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch(e, emp.id)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); } } }
+  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch(e, emp.id)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); } } }
+  for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && canBatch(e, emp.id)) { var _r3 = await db.updateMissedPunchStatus(mps[i].id, 'approved', emp.id); if (_r3) { lines.push('📝 ' + e.name + ' ' + (mps[i].punch_type === 'check_in' ? '補上班' : '補下班') + ' ' + mps[i].punch_date); } } }
   if (lines.length === 0) return client.replyMessage(replyToken, [withMenu('✅ 無可核准的項目（可能非您簽核階段）')]);
   return client.replyMessage(replyToken, [withMenu('✅ 已核准 ' + lines.length + ' 筆：\n' + lines.join('\n'))]);
 }
@@ -574,9 +609,9 @@ async function batchRejectAll(emp, client, replyToken) {
   var mps = await db.getMissedPunches('pending', 200);
   var lCount = 0, otCount = 0, mpCount = 0;
   function canBatch2(emp2, eid) { return emp2.approver_id === eid || emp2.approver2_id === eid || emp2.approver3_id === eid || (!emp2.approver_id && !emp2.approver2_id && !emp2.approver3_id); }
-  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && (canBatch2(e, emp.id) || emp.can_approve)) { await db.updateLeaveStatus(leaves[i].id, 'rejected', emp.id); lCount++; } }
-  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && (canBatch2(e, emp.id) || emp.can_approve)) { await db.updateOvertimeStatus(ots[i].id, 'rejected', emp.id); otCount++; } }
-  for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && (canBatch2(e, emp.id) || emp.can_approve)) { await db.updateMissedPunchStatus(mps[i].id, 'rejected', emp.id); mpCount++; } }
+  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch2(e, emp.id)) { await db.updateLeaveStatus(leaves[i].id, 'rejected', emp.id); lCount++; } }
+  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch2(e, emp.id)) { await db.updateOvertimeStatus(ots[i].id, 'rejected', emp.id); otCount++; } }
+  for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && canBatch2(e, emp.id)) { await db.updateMissedPunchStatus(mps[i].id, 'rejected', emp.id); mpCount++; } }
   var detail = '';
   if (lCount > 0) detail += '🏖 請假：' + lCount + ' 筆 ';
   if (otCount > 0) detail += '🕐 加班：' + otCount + ' 筆 ';

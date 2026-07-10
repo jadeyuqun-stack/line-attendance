@@ -1877,8 +1877,16 @@ async function queryMonthAttendance(emp, client, replyToken) {
   lines.push('📅 今日出勤概況：');
   lines.push('  👥 在職：' + allActive.length + ' 人');
   lines.push('  ✅ 已上班：' + checkedInCount + ' 人');
-  lines.push('  🏖 請假：' + leaveTodayNames.length + ' 人');
-  lines.push('  ❌ 未打卡：' + absentCount + ' 人');
+  if (leaveTodayNames.length > 0) {
+    lines.push('  🏖 請假 ' + leaveTodayNames.length + ' 人：' + leaveTodayNames.join('、'));
+  } else {
+    lines.push('  🏖 請假：0 人');
+  }
+  if (absentCount > 0) {
+    lines.push('  ❌ 未打卡 ' + absentCount + ' 人：' + absentNames.join('、'));
+  } else {
+    lines.push('  ❌ 未打卡：0 人');
+  }
   if (lateTodayCount > 0) {
     lines.push('  ⚠️ 遲到 ' + lateTodayCount + ' 人：' + lateTodayNames.join('、'));
   }

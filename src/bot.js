@@ -105,7 +105,8 @@ function withMenu(text, emp) {
 // 文字 + 選單 + 日期時間選擇器（保留選單按鈕）
 function withDatePicker(text, data) {
   return { type: 'text', text: text, quickReply: { items: [
-    { type: 'action', action: { type: 'datetimepicker', label: '📅 點我選日期時間', data: data, mode: 'datetime' } }
+    { type: 'action', action: { type: 'datetimepicker', label: '📅 點我選日期時間', data: data, mode: 'datetime' } },
+    { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }
   ]}};
 }
 
@@ -244,18 +245,19 @@ async function handleText(text, uid, client, replyToken) {
     assignRichMenu(uid, emp.role).catch(function(e2) {});
   }
 
-  // 檢查待辦通知（簽核結果，LINE 推播失敗時的備援）
+  // 簽核結果通知：下次互動時顯示（不耗 push 額度）
+  var _notifMsg = '';
   try {
     var notifs = await db.getPendingNotifications(emp.id);
     if (notifs && notifs.length > 0) {
-      var msgs = notifs.map(function(n) { return n.message; }).join('\n\n');
+      var _msgs = notifs.map(function(n) { return n.message; }).join('\n\n');
       await db.clearPendingNotifications(emp.id);
-      return client.replyMessage(replyToken, [withMenu('📬 ' + msgs.replace(/\n/g, ' · ') + '（請重新輸入您要執行的操作）')]);
+      _notifMsg = '📬 ' + _msgs.replace(/\n/g, ' · ');
     }
   } catch(e) { console.error('[notif] check error:', e.message); }
 
   // 待簽核提醒：有新項目時顯示提示，但不阻擋指令
-  var _pendingMsg = '';
+  var _pendingMsg = _notifMsg;
   try {
     if (emp && (emp.can_approve || emp.role === '經理' || emp.role === '老闆')) {
       var _isApprovalCmd = cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending' || cmd === '核准全部' || cmd === '駁回全部';
@@ -263,7 +265,7 @@ async function handleText(text, uid, client, replyToken) {
       if (!_isApprovalCmd && !_isInApprovalFlow) {
         var _pendingCount = await countPendingForApprover(emp);
         if (_pendingCount > 0) {
-          _pendingMsg = '📋 您有 ' + _pendingCount + ' 筆待簽核，輸入「待簽核」查看';
+          _pendingMsg = (_pendingMsg ? _pendingMsg + '\n' : '') + '📋 您有 ' + _pendingCount + ' 筆待簽核，輸入「待簽核」查看';
         }
       }
     }
@@ -272,7 +274,7 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '我的ID' || cmd.toLowerCase() === 'my id') {
     return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')] : [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
   }
-  if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken);
+  if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken, _pendingMsg || undefined);
   if (cmd === '查詢當天考勤') return queryTodayAttendance(emp, client, replyToken);
   if (cmd === '查詢當月考勤') return queryMonthAttendance(emp, client, replyToken);
   if (cmd === '公司今日考勤') return queryBossTodayStatus(emp, client, replyToken);
@@ -280,8 +282,8 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '本月遲到累計') return queryBossMonthLates(emp, client, replyToken);
   if (cmd === '本月加班累計') return queryBossMonthOvertime(emp, client, replyToken);
   if (cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending') return checkPendingApprovalsCmd(emp, client, replyToken, uid);
-  if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken);
-  if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken);
+  if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken, _pendingMsg || undefined);
+  if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken, _pendingMsg || undefined);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken);
   if (cmd === '駁回全部') return batchRejectAll(emp, client, replyToken);
   if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('已取消操作。')] : [withMenu('已取消操作。')]); }
@@ -297,7 +299,7 @@ async function handleText(text, uid, client, replyToken) {
   }
   if (cmd.includes('上班')) { states.set(uid, { flow: 'gps_check', type: 'check_in' }); return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, { type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }] : [{ type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
   if (cmd.includes('下班')) { states.set(uid, { flow: 'gps_check', type: 'check_out' }); return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, { type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }] : [{ type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }] } }]); }
-  if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken);
+  if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken, _pendingMsg || undefined);
   if (cmd.includes('幫助')) return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')] : [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
   return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')] : [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
 }
@@ -577,15 +579,17 @@ function fmtDt(str) {
   return s;
 }
 
-async function startMissedPunch(uid, client, replyToken) {
+async function startMissedPunch(uid, client, replyToken, _prefix) {
   states.set(uid, { flow: "missed", step: "type" });
-  return client.replyMessage(replyToken, [{
+  var _msg = [{
     type: "text", text: "📝 補打卡申請\n\n請選擇補打卡類型：",
     quickReply: { items: [
       { type: "action", action: { type: "message", label: "🔵 補上班卡", text: "補上班" } },
       { type: "action", action: { type: "message", label: "🔴 補下班卡", text: "補下班" } },
       { type: "action", action: { type: "message", label: "取消", text: "取消" } }
-    ]}}]);
+    ]}}];
+  if (_prefix) _msg.unshift({ type: "text", text: _prefix });
+  return client.replyMessage(replyToken, _msg);
 }
 
 async function batchApproveAll(emp, client, replyToken) {
@@ -730,7 +734,7 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
 }
 
 // ===== Query Flex =====
-async function doQuery(emp, client, replyToken) {
+async function doQuery(emp, client, replyToken, _prefix) {
   var now = new Date();
   var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var monthStart = thisMonth + '-01';
@@ -886,6 +890,7 @@ async function doQuery(emp, client, replyToken) {
   } else {
     messages.push({ type: 'text', text: lines.join('\n') });
   }
+  if (_prefix) messages.unshift({ type: 'text', text: _prefix });
   return client.replyMessage(replyToken, messages);
 }
 
@@ -950,9 +955,9 @@ function leaveHours(startStr, endStr) {
   return total;
 }
 
-async function startLeaveFlow(uid, client, replyToken) {
+async function startLeaveFlow(uid, client, replyToken, _prefix) {
   states.set(uid, { step: 'type' });
-  return client.replyMessage(replyToken, [{
+  var _msg = [{
     type: 'text', text: '🏖 請假申請\n\n請選擇假別：',
     quickReply: {
       items: [
@@ -965,7 +970,9 @@ async function startLeaveFlow(uid, client, replyToken) {
         { type: 'action', action: { type: 'message', label: '取消', text: '取消' } },
       ]
     }
-  }]);
+  }];
+  if (_prefix) _msg.unshift({ type: 'text', text: _prefix });
+  return client.replyMessage(replyToken, _msg);
 }
 
 function validateOvertimeTime(dt) {
@@ -975,9 +982,11 @@ function validateOvertimeTime(dt) {
   return totalMin >= 1050 && totalMin <= 1380;
 }
 
-async function startOvertimeFlow(uid, client, replyToken) {
+async function startOvertimeFlow(uid, client, replyToken, _prefix) {
   states.set(uid, { flow: "overtime", step: "start" });
-  return client.replyMessage(replyToken, [withDatePicker("🕐 加班申請\n\n請選擇「開始日期時間」", "ot_start")]);
+  var _msg = [withDatePicker("🕐 加班申請\n\n請選擇「開始日期時間」", "ot_start")];
+  if (_prefix) _msg.unshift({ type: "text", text: _prefix });
+  return client.replyMessage(replyToken, _msg);
 }
 
 async function handleFlow(text, uid, client, replyToken, emp) {

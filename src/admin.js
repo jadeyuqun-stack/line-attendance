@@ -1593,19 +1593,8 @@ var data = [];
 					status = '出勤';
 					lateMin = 0;
 				}
-							// 計算遲到當天的請假時數
-				var _llh = '';
-				if (lateMin > 0) {
-					for (var _lx = 0; _lx < leaves.length; _lx++) {
-						var _lvx = leaves[_lx];
-						if (_lvx.employee_id === r.employee_id && _lvx.status === 'approved' && dateOverlaps(_lvx.start_date, _lvx.end_date, r.work_date)) {
-							var _lh = await db.calcPeriodHours(_lvx.start_date, _lvx.end_date);
-							_llh = _lh + 'h';
-							break;
-						}
-					}
-				}
-				
+			
+
 } else if (ci && !co) {
 				// 只有上班沒下班
 				status = '未下班';

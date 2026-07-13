@@ -1789,7 +1789,9 @@ var summaryData = [];
 						for (var _lx = 0; _lx < leaves.length; _lx++) {
 							var _lvx = leaves[_lx];
 							if (_lvx.employee_id === r.employee_id && _lvx.status === 'approved' && dateOverlaps(_lvx.start_date, _lvx.end_date, r.work_date)) {
-								var _lh = await db.calcPeriodHours(_lvx.start_date, _lvx.end_date);
+								var _ld = (new Date(_lvx.end_date) - new Date(_lvx.start_date)) / 3600000;
+								var _lh = Math.round(_ld * 2) / 2;
+								if (_lh < 0.5) _lh = 0.5;
 								_llh = _lh + 'h';
 								break;
 							}

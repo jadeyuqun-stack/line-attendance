@@ -939,10 +939,10 @@ async function doQuery(emp, client, replyToken, _prefix) {
     var _funBal2 = await db.getFuneralLeaveBalance(emp.id);
     var _balLines2 = [];
     if (_annBal2.entitlement_days > 0) _balLines2.push('🏖 特休：' + _annBal2.remaining_hours + 'h（' + _annBal2.entitlement_days + '天）');
-    if (_marBal2.total_hours > 0) _balLines2.push('\n[婚]婚假：' + _marBal2.remaining_hours + 'h');
-    if (_funBal2.total_hours > 0) _balLines2.push('\n[喪]喪假：' + _funBal2.remaining_hours + 'h');
+    if (_marBal2.total_hours > 0) _balLines2.push('💍 婚假：' + _marBal2.remaining_hours + 'h');
+    if (_funBal2.total_hours > 0) _balLines2.push('💐 喪假：' + _funBal2.remaining_hours + 'h');
     var _compBal2 = await db.getCompLeaveBalance(emp.id);
-    if (_compBal2.total_hours > 0) _balLines2.push('\n[補]補休：' + _compBal2.remaining_hours + 'h');
+    if (_compBal2.total_hours > 0) _balLines2.push('⏰ 補休：' + _compBal2.remaining_hours + 'h');
     if (_balLines2.length > 0) lines.push('\n' + _balLines2.join(' \n'));
   } catch(_ex2) {}
   if (emp.role === '經理' && emp.manager_mode === 'test') {

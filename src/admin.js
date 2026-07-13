@@ -162,7 +162,7 @@ router.get('/', auth, async (_, res) => {
     if (lStart <= todayStr && lEnd >= todayStr) {
       if (!leaveEmpIds[l.employee_id]) {
         leaveEmpIds[l.employee_id] = true;
-        var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type;
+        var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type === 'marriage' ? '婚假' : l.leave_type === 'funeral' ? '喪假' : l.leave_type;
         todayLeaves.push({ name: l.name, no: l.employee_no, dept: l.department, type: leaveLabel, start: lStart, end: lEnd });
       }
     }
@@ -416,14 +416,15 @@ router.get('/employees', auth, async (_, res) => {
     + '<div><label>員工編號</label><input id="no" required></div>'
     + '<div><label>姓名</label><input id="ename" required></div>'
     + '<div><label>部門</label><input id="dept"></div>'
-    + '<div><label>角色</label><select id="role"><option value="員工">一般員工</option><option value="簽核人員">簽核人員</option><option value="經理">經理</option><option value="老闆">老闆</option></select></div>'
+    + '<div><label>入職日</label><input id="hireDate" type="date"></div>'
+	    + '<div><label>角色</label><select id="role"><option value="員工">一般員工</option><option value="簽核人員">簽核人員</option><option value="經理">經理</option><option value="老闆">老闆</option></select></div>'
     + '<div style="align-items:center;flex-direction:row;gap:6px"><input type="checkbox" id="canApprove" style="width:16px;height:16px"><label for="canApprove" style="margin:0">簽核人</label></div>'
     + '<button type="submit" class="btn">新增</button></form></div>'
-    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>L3簽核</th><th>操作</th></tr>'+(rows||'<tr><td colspan="10">尚無員工</td></tr>')+'</table></div>'
+    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>入職日</th><th>特休(h)</th><th>婚假(h)</th><th>喪假(h)</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>L3簽核</th><th>模式</th><th>操作</th></tr>'+(rows||'<tr><td colspan="14">尚無員工</td></tr>')+'</table></div>'
     + inactiveList
     + modalHtml();
 
-  body += '<script>'+jsLib()+'\ndocument.getElementById("empForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/employees",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({employee_no:document.getElementById("no").value,name:document.getElementById("ename").value,department:document.getElementById("dept").value,role:document.getElementById("role").value||"員工",can_approve:document.getElementById("canApprove").checked})});var j=await r.json();j.success?location.reload():alert(j.error);};</script>';
+  body += '<script>'+jsLib()+'\ndocument.getElementById("empForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/employees",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({employee_no:document.getElementById("no").value,name:document.getElementById("ename").value,department:document.getElementById("dept").value,role:document.getElementById("role").value||"員工",can_approve:document.getElementById("canApprove").checked,hire_date:document.getElementById("hireDate").value})});var j=await r.json();j.success?location.reload():alert(j.error);};</script>';
   res.send(layout('員工管理', '員工管理', body));
 });
 
@@ -708,7 +709,7 @@ router.get('/settings', auth, async (_, res) => {
 router.post('/api/employees', auth, express.json(), async (req, res) => {
   var b = req.body;
   if (!b.employee_no || !b.name) return res.status(400).json({ error: '必填' });
-  var r = await db.createEmployee(b.employee_no, b.name, b.department, b.role, b.can_approve);
+  var r = await db.createEmployee(b.employee_no, b.name, b.department, b.role, b.can_approve, b.hire_date);
   r.success ? res.json(r) : res.status(400).json(r);
 });
 router.put('/api/employees/:id', auth, express.json(), async (req, res) => {
@@ -1448,7 +1449,7 @@ router.get('/export/summary', auth, async function(req, res) {
 		}
 
 		// 假別標籤
-		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出' };
+		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假' };
 
 		// 建立請假查詢用 Map（employee_id → 當天有效的請假）
 		var leaveByEmp = {};
@@ -1466,7 +1467,21 @@ router.get('/export/summary', auth, async function(req, res) {
 		}
 
 		// 逐列分析
-		var data = [];
+		
+	// 建立員工特休/婚假/喪假額度 Map
+	var annualLeaveMap = {};
+	async function _getALB(eid) {
+		if (!annualLeaveMap[eid]) {
+			try {
+				var _a = await db.getAnnualLeaveBalance(eid);
+				var _m = await db.getMarriageLeaveBalance(eid);
+				var _f = await db.getFuneralLeaveBalance(eid);
+				annualLeaveMap[eid] = { ad: _a.entitlement_days, au: _a.used_hours, ar: _a.remaining_hours, mr: _m.remaining_hours, fr: _f.remaining_hours };
+			} catch(ex) { annualLeaveMap[eid] = { ad:0, au:0, ar:0, mr:0, fr:0 }; }
+		}
+		return annualLeaveMap[eid];
+	}
+var data = [];
 		for (var i = 0; i < summaryRows.length; i++) {
 			var r = summaryRows[i];
 			var ci = r.check_in_time ? new Date(r.check_in_time) : null;
@@ -1543,14 +1558,19 @@ router.get('/export/summary', auth, async function(req, res) {
 				'考勤狀態': status,
 				'遲到分鐘': lateMin > 0 ? lateMin : '',
 				'請假假別': leaveType,
-				'備註': note
+				'備註': note,
+				'特休額度(天)': (await _getALB(r.employee_id)).ad,
+				'特休已用(h)': (await _getALB(r.employee_id)).au,
+				'特休剩餘(h)': (await _getALB(r.employee_id)).ar,
+				'婚假剩餘(h)': (await _getALB(r.employee_id)).mr,
+				'喪假剩餘(h)': (await _getALB(r.employee_id)).fr
 			});
 		}
 
 		// 建立 Excel
 		var wb = XLSX.utils.book_new();
 		var ws = XLSX.utils.json_to_sheet(data, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註','特休額度(天)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws, '出勤彙總');
 		var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -1587,7 +1607,7 @@ router.get('/export/all', auth, async function(req, res) {
 		var missedPunches = await db.getMissedPunches('approved', 500);
 		var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
 		var lateBufMin = parseInt(await db.getSetting('late_buffer_minutes') || '30');
-		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出' };
+		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假' };
 
 		function fmtTime2(d) {
 			return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
@@ -1605,7 +1625,21 @@ router.get('/export/all', auth, async function(req, res) {
 			missedSet[mp.employee_id + '::' + mp.punch_date] = true;
 		}
 
-		var summaryData = [];
+		
+	// 建立員工特休/婚假/喪假額度 Map
+	var annualLeaveMap2 = {};
+	async function _getALB2(eid) {
+		if (!annualLeaveMap2[eid]) {
+			try {
+				var _a = await db.getAnnualLeaveBalance(eid);
+				var _m = await db.getMarriageLeaveBalance(eid);
+				var _f = await db.getFuneralLeaveBalance(eid);
+				annualLeaveMap2[eid] = { ad: _a.entitlement_days, au: _a.used_hours, ar: _a.remaining_hours, mr: _m.remaining_hours, fr: _f.remaining_hours };
+			} catch(ex) { annualLeaveMap2[eid] = { ad:0, au:0, ar:0, mr:0, fr:0 }; }
+		}
+		return annualLeaveMap2[eid];
+	}
+var summaryData = [];
 		for (var i = 0; i < summaryRows.length; i++) {
 			var r = summaryRows[i];
 			var ci = r.check_in_time ? new Date(r.check_in_time) : null;
@@ -1662,11 +1696,16 @@ router.get('/export/all', auth, async function(req, res) {
 				'考勤狀態': status,
 				'遲到分鐘': lateMin > 0 ? lateMin : '',
 				'請假假別': leaveType,
-				'備註': note
+				'備註': note,
+			'特休額度(天)': (await _getALB2(r.employee_id)).ad,
+			'特休已用(h)': (await _getALB2(r.employee_id)).au,
+			'特休剩餘(h)': (await _getALB2(r.employee_id)).ar,
+			'婚假剩餘(h)': (await _getALB2(r.employee_id)).mr,
+			'喪假剩餘(h)': (await _getALB2(r.employee_id)).fr
 			});
 		}
 		var ws1 = XLSX.utils.json_to_sheet(summaryData, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註','特休額度(天)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws1, '出勤彙總');
 
@@ -1711,7 +1750,7 @@ router.get('/export/all', auth, async function(req, res) {
 		// ===== Sheet 3: 請假紀錄 =====
 		var allLeaves = await db.getLeaveRequests('', 2000);
 		var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-		var typeLabels2 = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出' };
+		var typeLabels2 = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假' };
 		var leaveData = [];
 		for (var lv = 0; lv < allLeaves.length; lv++) {
 			var lr = allLeaves[lv];

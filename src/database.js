@@ -42,6 +42,11 @@ async function initDatabase() {
   try { await pool.query('ALTER TABLE employees ADD COLUMN approver_id INTEGER REFERENCES employees(id)'); } catch(e) {}
   try { await pool.query('ALTER TABLE employees ADD COLUMN approver2_id INTEGER REFERENCES employees(id)'); } catch(e) {}
   try { await pool.query('ALTER TABLE employees ADD COLUMN approver3_id INTEGER REFERENCES employees(id)'); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN hire_date TEXT DEFAULT ''"); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN annual_leave_used_manual NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN marriage_leave_total NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN funeral_leave_total NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN manager_mode TEXT DEFAULT 'normal'"); } catch(e) {}
 
   // 簽核層級欄位
   try { await pool.query("ALTER TABLE leave_requests ADD COLUMN approval_level INTEGER DEFAULT 1"); } catch(e) {}
@@ -216,7 +221,7 @@ async function getDesignatedEmployeeIds(approverId) {
   );
   return rows;
 }
-async function createEmployee(no, name, dept, role, canApprove) {
+async function createEmployee(no, name, dept, role, canApprove, hireDate) {
   try {
     // 先檢查是否有 inactive 的同編號員工 → 復原
     var { rows: inactive } = await pool.query(
@@ -225,15 +230,15 @@ async function createEmployee(no, name, dept, role, canApprove) {
     );
     if (inactive.length > 0) {
       await pool.query(
-        "UPDATE employees SET name=$1, department=$2, role=$3, can_approve=$4, status='active', line_user_id=NULL, updated_at=NOW() WHERE id=$5",
-        [name, dept || '', role || '員工', canApprove || false, inactive[0].id]
+        "UPDATE employees SET name=$1, department=$2, role=$3, can_approve=$4, hire_date=$5, status='active', line_user_id=NULL, updated_at=NOW() WHERE id=$6",
+        [name, dept || '', role || '員工', canApprove || false, hireDate || '', inactive[0].id]
       );
       return { success: true, id: inactive[0].id, reactivated: true };
     }
     // 新增
     var { rows } = await pool.query(
-      'INSERT INTO employees (employee_no, name, department, role, can_approve) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-      [no.trim(), name, dept || '', role || '員工', canApprove || false]
+      'INSERT INTO employees (employee_no, name, department, role, can_approve, hire_date) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [no.trim(), name, dept || '', role || '員工', canApprove || false, hireDate || '']
     );
     return { success: true, id: rows[0].id };
   } catch (e) {
@@ -266,7 +271,7 @@ async function listInactiveEmployees() {
   return rows;
 }
 async function updateEmployee(id, fields) {
-  const allowed = ['name', 'department', 'role', 'can_approve'];
+  const allowed = ['name', 'department', 'role', 'can_approve', 'hire_date', 'annual_leave_used_manual', 'marriage_leave_total', 'funeral_leave_total', 'manager_mode'];
   const sets = [];
   const vals = [];
   let i = 1;
@@ -622,6 +627,169 @@ async function getEmployeeOvertimeRequests(employeeId, status, limit) {
 }
 
 
+// =========== Annual Leave / Leave Balance ===========
+// 計算請假時數（扣除週末、國定假日、午休、上限 8h/天）
+// 與 bot.js 的 leaveHours 邏輯一致，但 holidays 由呼叫方傳入
+async function calcPeriodHours(startStr, endStr) {
+  if (!startStr) return 0;
+  var s = new Date(startStr), e = new Date(endStr || startStr);
+  var diff = e - s;
+  if (diff <= 0) return 1;
+
+  // 讀取國定假日
+  var holidays = [];
+  try {
+    var raw = await getSetting('tw_holidays') || '[]';
+    holidays = JSON.parse(raw);
+  } catch (ex) { holidays = []; }
+
+  var sDay = new Date(s.getFullYear(), s.getMonth(), s.getDate());
+  var eDay = new Date(e.getFullYear(), e.getMonth(), e.getDate());
+  var total = 0;
+  var current = new Date(sDay);
+  while (current <= eDay) {
+    var dow = current.getDay();
+    var ds = current.getFullYear() + '-' + String(current.getMonth() + 1).padStart(2, '0') + '-' + String(current.getDate()).padStart(2, '0');
+    if (dow !== 0 && dow !== 6 && holidays.indexOf(ds) === -1) {
+      var dayStart = current.getTime() === sDay.getTime() ? s : new Date(current);
+      var dayEnd;
+      if (current.getTime() === eDay.getTime()) {
+        dayEnd = e;
+      } else {
+        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 23, 59, 59);
+      }
+      var dayDiff = dayEnd - dayStart;
+      if (dayDiff > 0) {
+        var dayRaw = Math.ceil(dayDiff / 3600000);
+        var lunch = (dayStart.getHours() < 12 && dayEnd.getHours() >= 13) ? 1 : 0;
+        var dayHours = dayRaw - lunch;
+        if (dayHours > 8) dayHours = 8;
+        if (dayHours > 0) total += dayHours;
+      }
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  if (total < 1 && startStr === endStr) total = 1;
+  return total;
+}
+
+// 依勞基法計算特休額度
+// 年資 = 截至今年 1/1 的服務年數
+// 規則: 半年3天、1年7天、2年10天、3年14天、5年15天、10年起+1/年 max30
+async function calculateAnnualLeaveEntitlement(hireDate) {
+  if (!hireDate) return { entitlement_days: 0, entitlement_hours: 0 };
+  var hire = new Date(hireDate);
+  if (isNaN(hire.getTime())) return { entitlement_days: 0, entitlement_hours: 0 };
+
+  var now = new Date();
+  var currentYear = now.getFullYear();
+  var thisJan1 = new Date(currentYear, 0, 1);
+
+  // 截至今年 1/1 的年資（年）
+  var yearsOfService = (thisJan1 - hire) / (365.25 * 86400000);
+  var baseDays = 0;
+
+  if (yearsOfService < 0.5) {
+    // 未滿半年，檢查是否已到職滿半年
+    var sixMonthsAgo = new Date(now);
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    if (hire > sixMonthsAgo) return { entitlement_days: 0, entitlement_hours: 0 };
+    // 滿半年但未滿一年：3天按比例（入職日至年底 / 365）
+    var dec31 = new Date(currentYear, 11, 31);
+    var daysFromHire = Math.round((dec31 - hire) / 86400000) + 1;
+    if (daysFromHire < 1) return { entitlement_days: 0, entitlement_hours: 0 };
+    var prorated = Math.round(3 * Math.min(daysFromHire, 365) / 365);
+    return { entitlement_days: prorated, entitlement_hours: prorated * 8 };
+  } else if (yearsOfService < 1) {
+    // 滿半年未滿一年
+    var dec31 = new Date(currentYear, 11, 31);
+    var daysFromHire = Math.round((dec31 - hire) / 86400000) + 1;
+    if (daysFromHire < 1) return { entitlement_days: 0, entitlement_hours: 0 };
+    var prorated = Math.round(3 * Math.min(daysFromHire, 365) / 365);
+    return { entitlement_days: prorated, entitlement_hours: prorated * 8 };
+  } else if (yearsOfService < 2) {
+    baseDays = 7;
+  } else if (yearsOfService < 3) {
+    baseDays = 10;
+  } else if (yearsOfService < 5) {
+    baseDays = 14;
+  } else if (yearsOfService < 10) {
+    baseDays = 15;
+  } else {
+    baseDays = Math.min(15 + Math.floor(yearsOfService - 9), 30);
+  }
+  return { entitlement_days: baseDays, entitlement_hours: baseDays * 8 };
+}
+
+// 查特休餘額（年度重置）
+async function getAnnualLeaveBalance(employeeId) {
+  var emp = await getEmployeeById(employeeId);
+  if (!emp) return { entitlement_days: 0, entitlement_hours: 0, used_hours: 0, remaining_hours: 0 };
+
+  var calc = await calculateAnnualLeaveEntitlement(emp.hire_date);
+  var entitlementHours = calc.entitlement_hours;
+
+  // 今年已核准特休
+  var currentYear = new Date().getFullYear();
+  var yearStart = currentYear + '-01-01 00:00';
+  var yearEnd = currentYear + '-12-31 23:59';
+  var { rows: approved } = await pool.query(
+    "SELECT * FROM leave_requests WHERE employee_id=$1 AND leave_type='annual' AND status='approved' AND start_date >= $2 AND start_date <= $3",
+    [employeeId, yearStart, yearEnd]
+  );
+  var systemUsed = 0;
+  for (var i = 0; i < approved.length; i++) {
+    systemUsed += await calcPeriodHours(approved[i].start_date, approved[i].end_date);
+  }
+
+  var manualUsed = parseFloat(emp.annual_leave_used_manual) || 0;
+  var totalUsed = systemUsed + manualUsed;
+  var remaining = Math.max(0, entitlementHours - totalUsed);
+
+  return {
+    entitlement_days: calc.entitlement_days,
+    entitlement_hours: entitlementHours,
+    used_hours: totalUsed,
+    remaining_hours: remaining
+  };
+}
+
+// 查婚假額度餘額（一次性終身額度）
+async function getMarriageLeaveBalance(employeeId) {
+  var emp = await getEmployeeById(employeeId);
+  if (!emp) return { total_hours: 0, used_hours: 0, remaining_hours: 0 };
+
+  var total = parseFloat(emp.marriage_leave_total) || 0;
+
+  var { rows: approved } = await pool.query(
+    "SELECT * FROM leave_requests WHERE employee_id=$1 AND leave_type='marriage' AND status='approved'",
+    [employeeId]
+  );
+  var used = 0;
+  for (var i = 0; i < approved.length; i++) {
+    used += await calcPeriodHours(approved[i].start_date, approved[i].end_date);
+  }
+  return { total_hours: total, used_hours: used, remaining_hours: Math.max(0, total - used) };
+}
+
+// 查喪假額度餘額（一次性終身額度）
+async function getFuneralLeaveBalance(employeeId) {
+  var emp = await getEmployeeById(employeeId);
+  if (!emp) return { total_hours: 0, used_hours: 0, remaining_hours: 0 };
+
+  var total = parseFloat(emp.funeral_leave_total) || 0;
+
+  var { rows: approved } = await pool.query(
+    "SELECT * FROM leave_requests WHERE employee_id=$1 AND leave_type='funeral' AND status='approved'",
+    [employeeId]
+  );
+  var used = 0;
+  for (var i = 0; i < approved.length; i++) {
+    used += await calcPeriodHours(approved[i].start_date, approved[i].end_date);
+  }
+  return { total_hours: total, used_hours: used, remaining_hours: Math.max(0, total - used) };
+}
+
 // =========== Pending Notifications ===========
 async function addPendingNotification(employeeId, message) {
   if (!employeeId || !message) { console.log('[notif] skip: empId='+employeeId+' msg='+message); return; }
@@ -649,4 +817,5 @@ module.exports = {
   createOvertimeRequest, getOvertimeRequests, getOvertimeById, deleteOvertimeRequest, updateOvertimeStatus, getEmployeeOvertimeRequests,
   createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus,
   addPendingNotification, getPendingNotifications, clearPendingNotifications,
+  calcPeriodHours, calculateAnnualLeaveEntitlement, getAnnualLeaveBalance, getMarriageLeaveBalance, getFuneralLeaveBalance,
 };

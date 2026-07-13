@@ -300,6 +300,15 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd.includes('上班')) { states.set(uid, { flow: 'gps_check', type: 'check_in' }); var _gpsQR1 = { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }, { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }] }; var _msg1 = [{ type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: _gpsQR1 }]; if (_pendingMsg) _msg1.push({ type: 'text', text: _pendingMsg }); return client.replyMessage(replyToken, _msg1); }
   if (cmd.includes('下班')) { states.set(uid, { flow: 'gps_check', type: 'check_out' }); var _gpsQR2 = { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }, { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }] }; var _msg2 = [{ type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: _gpsQR2 }]; if (_pendingMsg) _msg2.push({ type: 'text', text: _pendingMsg }); return client.replyMessage(replyToken, _msg2); }
   if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken, _pendingMsg || undefined);
+  // 經理測試模式切換
+  if (cmd === '切換測試模式' || cmd === '測試模式') {
+    if (emp.role !== '經理') return client.replyMessage(replyToken, [withMenu('❌ 僅經理可使用測試模式')]);
+    var newMode = emp.manager_mode === 'test' ? 'normal' : 'test';
+    await db.updateEmployee(emp.id, { manager_mode: newMode });
+    emp.manager_mode = newMode;
+    return client.replyMessage(replyToken, [withMenu(newMode === 'test' ? '🔬 已切換為測試模式，所有規則限制已暫停。\n\n任何打卡、請假、加班皆不檢查限制。\n\n輸入「切換測試模式」可恢復正常模式。' : '✅ 已切換為正常模式，規則限制已恢復。')]);
+  }
+
   if (cmd.includes('幫助')) return client.replyMessage(replyToken, _pendingMsg ? [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部'), { type: 'text', text: _pendingMsg }] : [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
   return client.replyMessage(replyToken, _pendingMsg ? [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID'), { type: 'text', text: _pendingMsg }] : [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
 }
@@ -308,7 +317,7 @@ async function handleText(text, uid, client, replyToken) {
 // 請假類型對照
 var _leaveTypeLabels = {
   'annual': '特休', 'personal': '事假', 'sick': '病假',
-  'official': '公假', 'outing': '外出', 'other': '其他'
+  'official': '公假', 'outing': '外出', 'other': '其他', 'marriage': '婚假', 'funeral': '喪假'
 };
 function leaveTypeLabel(t) { return _leaveTypeLabels[t] || t || '請假'; }
 
@@ -900,6 +909,21 @@ async function doQuery(emp, client, replyToken, _prefix) {
     lines.push('\n🕐 加班：無');
   }
 
+  // 假別額度餘額顯示
+  try {
+    var _annBal2 = await db.getAnnualLeaveBalance(emp.id);
+    var _marBal2 = await db.getMarriageLeaveBalance(emp.id);
+    var _funBal2 = await db.getFuneralLeaveBalance(emp.id);
+    var _balLines2 = [];
+    if (_annBal2.entitlement_days > 0) _balLines2.push('🏖 特休：' + _annBal2.remaining_hours + 'h（' + _annBal2.entitlement_days + '天）');
+    if (_marBal2.total_hours > 0) _balLines2.push('💘 婚假：' + _marBal2.remaining_hours + 'h');
+    if (_funBal2.total_hours > 0) _balLines2.push('🐪 喪假：' + _funBal2.remaining_hours + 'h');
+    if (_balLines2.length > 0) lines.push('\n' + _balLines2.join(' \n'));
+  } catch(_ex2) {}
+  if (emp.role === '經理' && emp.manager_mode === 'test') {
+    lines.push('🔬 測試模式（不限制規則）');
+  }
+
   var png = textToImage(lines[0], lines.join('\n'));
   var imgUrl = '';
   if (png) {
@@ -993,6 +1017,8 @@ async function startLeaveFlow(uid, client, replyToken, _prefix) {
         { type: 'action', action: { type: 'message', label: '公假', text: '公假' } },
         { type: 'action', action: { type: 'message', label: '外出', text: '外出' } },
         { type: 'action', action: { type: 'message', label: '其他', text: '其他' } },
+        { type: 'action', action: { type: 'message', label: '婚假', text: '婚假' } },
+        { type: 'action', action: { type: 'message', label: '喪假', text: '喪假' } },
         { type: 'action', action: { type: 'message', label: '取消', text: '取消' } },
       ]
     }
@@ -1043,7 +1069,16 @@ async function handleFlow(text, uid, client, replyToken, emp) {
     const type = LEAVE_TYPES[text];
     if (!type) return client.replyMessage(replyToken, [withMenu('請選擇假別，或點「取消」退出')]);
     state.type = type; state.typeLabel = text; state.step = 'start_date';
-    return client.replyMessage(replyToken, [withDatePicker('🏖 請假：選擇「開始日期時間」\n\n選日期時間後請點「傳送」', 'leave_start')]);
+    var _balText = '';
+    if (type === 'annual') {
+      try { var _annBal = await db.getAnnualLeaveBalance(emp.id); if (_annBal.entitlement_days > 0) _balText = '\n🏖 特休餘額：' + _annBal.remaining_hours + 'h（' + _annBal.entitlement_days + '天，已用' + _annBal.used_hours + 'h）'; } catch(_ex) {}
+    } else if (type === 'marriage') {
+      try { var _marBal = await db.getMarriageLeaveBalance(emp.id); if (_marBal.total_hours > 0) _balText = '\n💘 婚假額度：' + _marBal.remaining_hours + 'h / ' + _marBal.total_hours + 'h'; } catch(_ex) {}
+    } else if (type === 'funeral') {
+      try { var _funBal = await db.getFuneralLeaveBalance(emp.id); if (_funBal.total_hours > 0) _balText = '\n🐪 喪假額度：' + _funBal.remaining_hours + 'h / ' + _funBal.total_hours + 'h'; } catch(_ex) {}
+    }
+    if (emp.manager_mode === 'test') _balText = '\n🔬 測試模式中' + _balText;
+    return client.replyMessage(replyToken, [withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')]);
   }
   if (state.flow === "overtime" && state.step === 'reason') {
     state.reason = text;
@@ -1056,6 +1091,21 @@ async function handleFlow(text, uid, client, replyToken, emp) {
   if (!state.flow && state.step === 'reason') {
     state.reason = text;
     try {
+      // 特休/婚假/喪假 額度檢查（測試模式跳過）
+      if (state.type === 'annual' || state.type === 'marriage' || state.type === 'funeral') {
+        if (emp.manager_mode !== 'test') {
+          var _balCheck = null;
+          if (state.type === 'annual') _balCheck = await db.getAnnualLeaveBalance(emp.id);
+          else if (state.type === 'marriage') _balCheck = await db.getMarriageLeaveBalance(emp.id);
+          else if (state.type === 'funeral') _balCheck = await db.getFuneralLeaveBalance(emp.id);
+          var reqHours = await db.calcPeriodHours(state.startDateTime, state.endDateTime);
+          if (_balCheck && reqHours > _balCheck.remaining_hours) {
+            states.delete(uid);
+            var _typeLabel2 = state.type === 'annual' ? '特休' : state.type === 'marriage' ? '婚假' : '喪假';
+            return client.replyMessage(replyToken, [withMenu('❌ ' + _typeLabel2 + '餘額不足\n\n額度：' + (_balCheck.entitlement_hours || _balCheck.total_hours || 0) + 'h\n已用：' + _balCheck.used_hours + 'h\n剩餘：' + _balCheck.remaining_hours + 'h\n本次需：' + reqHours + 'h\n\n請選擇其他假別或縮短時間。')]);
+          }
+        }
+      }
       const leaveId = await db.createLeaveRequest(emp.id, state.type, state.startDateTime, state.endDateTime, state.reason);
       states.delete(uid);
       await client.replyMessage(replyToken, [
@@ -1140,7 +1190,14 @@ async function handlePostback(postback, uid, client, replyToken) {
     var threeDaysAgo = new Date(now2);
     threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
     threeDaysAgo.setHours(0, 0, 0, 0);
-    if (punchDt < threeDaysAgo) { states.delete(uid); return client.replyMessage(replyToken, [withMenu('❌ 只能補打 3 天內的卡')]); }
+    if (punchDt < threeDaysAgo) {
+      if (emp && emp.manager_mode === 'test') {
+        console.log('[MP] ' + emp.name + ' 測試模式，跳過補打卡時間限制');
+      } else {
+        states.delete(uid);
+        return client.replyMessage(replyToken, [withMenu('❌ 只能補打 3 天內的卡')]);
+      }
+    }
     var emp2 = await db.getEmployeeByLineId(uid);
     var todayCheckins = await db.queryCheckins(emp2.id, state.punchDate, state.punchDate, 10, 0);
     var alreadyIn2 = todayCheckins.some(function(r) { return r.type === 'check_in'; });

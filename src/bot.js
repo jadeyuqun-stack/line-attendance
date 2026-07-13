@@ -1037,14 +1037,13 @@ async function startLeaveFlow(uid, client, replyToken, _prefix) {
     quickReply: {
       items: [
         { type: 'action', action: { type: 'message', label: '特休', text: '特休' } },
-        { type: 'action', action: { type: 'message', label: '事假', text: '事假' } },
         { type: 'action', action: { type: 'message', label: '病假', text: '病假' } },
+        { type: 'action', action: { type: 'message', label: '事假', text: '事假' } },
+        { type: 'action', action: { type: 'message', label: '補休', text: '補休' } },
         { type: 'action', action: { type: 'message', label: '公假', text: '公假' } },
-        { type: 'action', action: { type: 'message', label: '外出', text: '外出' } },
-        { type: 'action', action: { type: 'message', label: '其他', text: '其他' } },
         { type: 'action', action: { type: 'message', label: '婚假', text: '婚假' } },
         { type: 'action', action: { type: 'message', label: '喪假', text: '喪假' } },
-        { type: 'action', action: { type: 'message', label: '補休', text: '補休' } },
+        { type: 'action', action: { type: 'message', label: '其他', text: '其他' } },
         { type: 'action', action: { type: 'message', label: '取消', text: '取消' } },
       ]
     }

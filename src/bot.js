@@ -145,15 +145,15 @@ async function checkPendingApprovals(client, uid, replyToken) {
     var myLeaves = [], myOTs = [], myMPs = [];
     for (var li = 0; li < leaves.length; li++) {
       var le = await db.getEmployeeById(leaves[li].employee_id);
-      if (le && (le.approver_id === emp.id || le.approver2_id === emp.id || le.approver3_id === emp.id)) myLeaves.push(leaves[li]);
+      if (le) { var lv = leaves[li].approval_level || 1; var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id'; var noAppL = !le.approver_id && !le.approver2_id && !le.approver3_id; if (le[col] === emp.id || (emp.can_approve && noAppL)) myLeaves.push(leaves[li]);
     }
     for (var oi = 0; oi < ots.length; oi++) {
       var oe = await db.getEmployeeById(ots[oi].employee_id);
-      if (oe && (oe.approver_id === emp.id || oe.approver2_id === emp.id || oe.approver3_id === emp.id)) myOTs.push(ots[oi]);
+      if (oe) { var lv2 = ots[oi].approval_level || 1; var col2 = lv2 === 1 ? 'approver_id' : lv2 === 2 ? 'approver2_id' : 'approver3_id'; var noAppO = !oe.approver_id && !oe.approver2_id && !oe.approver3_id; if (oe[col2] === emp.id || (emp.can_approve && noAppO)) myOTs.push(ots[oi]);
     }
     for (var mi = 0; mi < mps.length; mi++) {
       var me = await db.getEmployeeById(mps[mi].employee_id);
-      if (me && (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id)) myMPs.push(mps[mi]);
+      if (me) { var noAppM = !me.approver_id && !me.approver2_id && !me.approver3_id; if (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id || (emp.can_approve && noAppM)) myMPs.push(mps[mi]);
     }
     return myLeaves.length + myOTs.length + myMPs.length;
   } catch(e) { return 0; }
@@ -333,28 +333,35 @@ async function getOverdueApprovalReminder(emp) {
     var le = await db.getEmployeeById(pendingLeaves[li].employee_id);
     if (!le) continue;
     if (pendingLeaves[li].created_at && new Date(pendingLeaves[li].created_at) >= threshold) continue;
-    var isDesignated = le.approver_id === emp.id || le.approver2_id === emp.id || le.approver3_id === emp.id;
-    if (emp.can_approve || isDesignated) count++;
+    var lv = pendingLeaves[li].approval_level || 1;
+    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var isDes = le[col] === emp.id;
+    var noApp = !le.approver_id && !le.approver2_id && !le.approver3_id;
+    if (isDes || (emp.can_approve && noApp)) count++;
   }
   for (var oi = 0; oi < pendingOTs.length; oi++) {
     var oe = await db.getEmployeeById(pendingOTs[oi].employee_id);
     if (!oe) continue;
     if (pendingOTs[oi].created_at && new Date(pendingOTs[oi].created_at) >= threshold) continue;
-    var isDesignated2 = oe.approver_id === emp.id || oe.approver2_id === emp.id || oe.approver3_id === emp.id;
-    if (emp.can_approve || isDesignated2) count++;
+    var lv2 = pendingOTs[oi].approval_level || 1;
+    var col2 = lv2 === 1 ? 'approver_id' : lv2 === 2 ? 'approver2_id' : 'approver3_id';
+    var isDes2 = oe[col2] === emp.id;
+    var noApp2 = !oe.approver_id && !oe.approver2_id && !oe.approver3_id;
+    if (isDes2 || (emp.can_approve && noApp2)) count++;
   }
   for (var mi = 0; mi < pendingMPs.length; mi++) {
     var me = await db.getEmployeeById(pendingMPs[mi].employee_id);
     if (!me) continue;
     if (pendingMPs[mi].created_at && new Date(pendingMPs[mi].created_at) >= threshold) continue;
-    var isDesignated3 = me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id;
-    if (emp.can_approve || isDesignated3) count++;
+    var noApp3 = !me.approver_id && !me.approver2_id && !me.approver3_id;
+    var isDes3 = me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id;
+    if (isDes3 || (emp.can_approve && noApp3)) count++;
   }
   if (count === 0) return null;
   return '您有 ' + count + ' 筆待簽核申請已超過 ' + hours + ' 小時未處理。';
 }
 
-// 計算該簽核人員目前待簽核總數（不分逾期與否）
+// 計算該簽核人員目前當階待簽核總數（只看自己該階的項目）
 async function countPendingForApprover(emp) {
   if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆')) return 0;
   try {
@@ -368,7 +375,8 @@ async function countPendingForApprover(emp) {
       var lv = pl[i].approval_level || 1;
       var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
       var isDes = e[col] === emp.id;
-      if (emp.can_approve || isDes) c++;
+      var noApprover = !e.approver_id && !e.approver2_id && !e.approver3_id;
+      if (isDes || (emp.can_approve && noApprover)) c++;
     }
     for (var i = 0; i < po.length; i++) {
       var e = await db.getEmployeeById(po[i].employee_id);
@@ -376,13 +384,15 @@ async function countPendingForApprover(emp) {
       var lv2 = po[i].approval_level || 1;
       var col2 = lv2 === 1 ? 'approver_id' : lv2 === 2 ? 'approver2_id' : 'approver3_id';
       var isDes2 = e[col2] === emp.id;
-      if (emp.can_approve || isDes2) c++;
+      var noApprover2 = !e.approver_id && !e.approver2_id && !e.approver3_id;
+      if (isDes2 || (emp.can_approve && noApprover2)) c++;
     }
     for (var i = 0; i < pm.length; i++) {
       var e = await db.getEmployeeById(pm[i].employee_id);
       if (!e) continue;
+      var noApprover3 = !e.approver_id && !e.approver2_id && !e.approver3_id;
       var isDes3 = e.approver_id === emp.id || e.approver2_id === emp.id || e.approver3_id === emp.id;
-      if (emp.can_approve || isDes3) c++;
+      if (isDes3 || (emp.can_approve && noApprover3)) c++;
     }
     return c;
   } catch(e) { return 0; }
@@ -396,17 +406,17 @@ async function checkPendingApprovalsCmd(emp, client, replyToken, uid) {
     var items = [];
     for (var li = 0; li < leaves.length; li++) {
       var le = await db.getEmployeeById(leaves[li].employee_id);
-      if (le && (le.approver_id === emp.id || le.approver2_id === emp.id || le.approver3_id === emp.id))
+      if (le) { var lv = leaves[li].approval_level || 1; var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id'; var noAppL = !le.approver_id && !le.approver2_id && !le.approver3_id; if (le[col] === emp.id || (emp.can_approve && noAppL))
         items.push({ type: 'leave', data: leaves[li], empName: le.name, empNo: le.employee_no });
     }
     for (var oi = 0; oi < ots.length; oi++) {
       var oe = await db.getEmployeeById(ots[oi].employee_id);
-      if (oe && (oe.approver_id === emp.id || oe.approver2_id === emp.id || oe.approver3_id === emp.id))
+      if (oe) { var lv2 = ots[oi].approval_level || 1; var col2 = lv2 === 1 ? 'approver_id' : lv2 === 2 ? 'approver2_id' : 'approver3_id'; var noAppO = !oe.approver_id && !oe.approver2_id && !oe.approver3_id; if (oe[col2] === emp.id || (emp.can_approve && noAppO))
         items.push({ type: 'ot', data: ots[oi], empName: oe.name, empNo: oe.employee_no });
     }
     for (var mi = 0; mi < mps.length; mi++) {
       var me = await db.getEmployeeById(mps[mi].employee_id);
-      if (me && (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id))
+      if (me) { var noAppM = !me.approver_id && !me.approver2_id && !me.approver3_id; if (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id || (emp.can_approve && noAppM))
         items.push({ type: 'missed', data: mps[mi], empName: me.name, empNo: me.employee_no });
     }
     if (items.length === 0) return client.replyMessage(replyToken, [withMenu('✅ 目前無待簽核項目')]);

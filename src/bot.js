@@ -472,21 +472,36 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
       detailText += '假別：' + leaveTypeLabel(item.data.leave_type) + '\n';
       detailText += '時間：' + fmtDt(item.data.start_date) + ' ~ ' + fmtDt(item.data.end_date) + '（' + lh + ' 小時）\n';
       detailText += '原因：' + (item.data.reason || '未填寫');
-      return client.replyMessage(replyToken, [withMenu(detailText + '\n\n----\n✅ 輸入「核准」\n❌ 輸入「駁回 [原因]」\n🔙 輸入「返回」回到清單\n❌ 輸入「取消」離開')]);
+      return client.replyMessage(replyToken, [{ type: 'text', text: detailText, quickReply: { items: [
+        { type: 'action', action: { type: 'message', label: '✅ 核准', text: '核准' } },
+        { type: 'action', action: { type: 'message', label: '❌ 駁回', text: '駁回 ' } },
+        { type: 'action', action: { type: 'message', label: '🔙 返回', text: '返回' } },
+        { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }
+      ] } }]);
     } else if (item.type === 'ot') {
       var oh = calcHours(item.data.start_time, item.data.end_time);
       var detailText = '🕐 加班申請\n';
       detailText += '員工：' + item.empName + '（' + item.empNo + '）\n';
       detailText += '時間：' + fmtDt(item.data.start_time) + ' ~ ' + fmtDt(item.data.end_time) + '（' + oh + ' 小時）\n';
       detailText += '原因：' + (item.data.reason || '未填寫');
-      return client.replyMessage(replyToken, [withMenu(detailText + '\n\n----\n✅ 輸入「核准」\n❌ 輸入「駁回 [原因]」\n🔙 輸入「返回」回到清單\n❌ 輸入「取消」離開')]);
+      return client.replyMessage(replyToken, [{ type: 'text', text: detailText, quickReply: { items: [
+        { type: 'action', action: { type: 'message', label: '✅ 核准', text: '核准' } },
+        { type: 'action', action: { type: 'message', label: '❌ 駁回', text: '駁回 ' } },
+        { type: 'action', action: { type: 'message', label: '🔙 返回', text: '返回' } },
+        { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }
+      ] } }]);
     } else if (item.type === 'missed') {
       var detailText = '📝 補打卡申請\n';
       detailText += '員工：' + item.empName + '（' + item.empNo + '）\n';
       detailText += '類型：' + (item.data.punch_type === 'check_in' ? '🔵補上班' : '🔴補下班') + '\n';
       detailText += '日期：' + item.data.punch_date + ' ' + item.data.punch_time + '\n';
       detailText += '原因：' + (item.data.reason || '未填寫');
-      return client.replyMessage(replyToken, [withMenu(detailText + '\n\n----\n✅ 輸入「核准」\n❌ 輸入「駁回 [原因]」\n🔙 輸入「返回」回到清單\n❌ 輸入「取消」離開')]);
+      return client.replyMessage(replyToken, [{ type: 'text', text: detailText, quickReply: { items: [
+        { type: 'action', action: { type: 'message', label: '✅ 核准', text: '核准' } },
+        { type: 'action', action: { type: 'message', label: '❌ 駁回', text: '駁回 ' } },
+        { type: 'action', action: { type: 'message', label: '🔙 返回', text: '返回' } },
+        { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }
+      ] } }]);
     }
   }
   // 從 detail 處理核准/駁回

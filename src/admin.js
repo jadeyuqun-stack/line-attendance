@@ -821,7 +821,8 @@ function dateOverlaps(startStr, endStr, targetDate) {
   var s = startStr.length >= 10 ? startStr.substring(0, 10) : startStr;
   var e = endStr || s;
   if (e.length >= 10) e = e.substring(0, 10);
-  return s <= targetDate && e >= targetDate;
+  var t = (targetDate && targetDate.length >= 10) ? targetDate.substring(0, 10) : targetDate;
+  return s <= t && e >= t;
 }
 function modalHtml() {
   return '<div id="modal" class="modal"><div><h3>綁定 LINE ID</h3><p id="modalEmp" style="color:#999;margin-bottom:12px"></p><label>LINE User ID</label><input id="lineIdInput" placeholder="貼上員工的 LINE User ID"><p style="color:#999;font-size:12px;margin:8px 0">💡 員工在 LINE Bot 輸入「我的ID」取得</p><div class="actions"><button onclick="closeModal()" class="btn-sm btn-gray">取消</button><button onclick="saveLine()" class="btn-sm btn">儲存</button></div></div></div>';

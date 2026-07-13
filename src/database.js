@@ -624,12 +624,14 @@ async function getEmployeeOvertimeRequests(employeeId, status, limit) {
 
 // =========== Pending Notifications ===========
 async function addPendingNotification(employeeId, message) {
-  if (!employeeId || !message) return;
+  if (!employeeId || !message) { console.log('[notif] skip: empId='+employeeId+' msg='+message); return; }
   await pool.query('INSERT INTO pending_notifications (employee_id, message) VALUES ($1, $2)', [employeeId, message]);
+  console.log('[notif] stored for empId='+employeeId+' msg='+message.substring(0,60));
 }
 async function getPendingNotifications(employeeId) {
   if (!employeeId) return [];
   var { rows } = await pool.query('SELECT * FROM pending_notifications WHERE employee_id=$1 ORDER BY created_at ASC', [employeeId]);
+  if (rows.length > 0) console.log('[notif] retrieved '+rows.length+' for empId='+employeeId);
   return rows;
 }
 async function clearPendingNotifications(employeeId) {

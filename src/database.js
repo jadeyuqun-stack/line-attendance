@@ -409,7 +409,7 @@ async function updateLeaveStatus(id, status, approvedBy, rejectReason) {
     // 檢查該簽核人是否有權限簽核當前層級（不可跳階）
     var empRecord = await getEmployeeById(leave.employee_id);
     var currentLevel = leave.approval_level || 1;
-    var levelCol = currentLevel === 1 ? 'approver_id' : currentLevel === 2 ? 'approver2_id' : 'approver3_id';
+    var levelCol = currentLevel === 1 ? 'approver_id' : 'approver2_id';
     var designatedApprover = empRecord ? empRecord[levelCol] : null;
     var isDesignated = designatedApprover && designatedApprover === approvedBy;
     if (approvedBy !== null && designatedApprover && !isDesignated) {
@@ -418,7 +418,7 @@ async function updateLeaveStatus(id, status, approvedBy, rejectReason) {
     }
     var nextLevel = currentLevel + 1;
     console.log('[DB] nextLevel='+nextLevel+' looking for approvers...');
-    if (nextLevel <= 3) {
+    if (nextLevel <= 2) {
       var nextApprovers = await findApprovers(leave.employee_id, nextLevel);
       console.log('[DB] found '+nextApprovers.length+' approvers for level '+nextLevel);
       if (nextApprovers.length > 0) {
@@ -446,7 +446,7 @@ async function getEmployeeById(id) {
 }
 async function findApprovers(forEmployeeId, level) {
   level = level || 1;
-  var col = level === 1 ? 'approver_id' : level === 2 ? 'approver2_id' : 'approver3_id';
+  var col = level === 1 ? 'approver_id' : 'approver2_id';
   console.log('[DB] findApprovers empId='+forEmployeeId+' level='+level+' col='+col);
   if (forEmployeeId) {
     var emp = await getEmployeeById(forEmployeeId);
@@ -464,7 +464,7 @@ async function findApprovers(forEmployeeId, level) {
   return [];
 }
 async function setApprover(employeeId, approverId, level) {
-  var col = level === 1 ? 'approver_id' : level === 2 ? 'approver2_id' : 'approver3_id';
+  var col = level === 1 ? 'approver_id' : 'approver2_id';
   await pool.query('UPDATE employees SET '+col+'=$1 WHERE id=$2', [approverId || null, employeeId]);
 }
 async function listApprovers() {
@@ -594,7 +594,7 @@ async function updateOvertimeStatus(id, status, approvedBy, rejectReason) {
     // 檢查該簽核人是否有權限簽核當前層級（不可跳階）
     var empRecord = await getEmployeeById(ot.employee_id);
     var currentLevel = ot.approval_level || 1;
-    var levelCol = currentLevel === 1 ? 'approver_id' : currentLevel === 2 ? 'approver2_id' : 'approver3_id';
+    var levelCol = currentLevel === 1 ? 'approver_id' : 'approver2_id';
     var designatedApprover = empRecord ? empRecord[levelCol] : null;
     var isDesignated = designatedApprover && designatedApprover === approvedBy;
     if (approvedBy !== null && designatedApprover && !isDesignated) {
@@ -602,7 +602,7 @@ async function updateOvertimeStatus(id, status, approvedBy, rejectReason) {
       return { advanced: false, notYourTurn: true };
     }
     var nextLevel = currentLevel + 1;
-    if (nextLevel <= 3) {
+    if (nextLevel <= 2) {
       var nextApprovers = await findApprovers(ot.employee_id, nextLevel);
       if (nextApprovers.length > 0) {
         await pool.query("UPDATE overtime_requests SET approval_level=$1, approved_by=$2, approved_at=NOW() WHERE id=$3", [nextLevel, approvedBy, id]);

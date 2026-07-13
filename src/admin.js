@@ -355,7 +355,7 @@ router.get('/employees', auth, async (_, res) => {
     var emp = empMap[rec.employee_id];
     if (!emp) return '';
     var lv = rec.approval_level || 1;
-    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var col = lv === 1 ? 'approver_id' : 'approver2_id';
     var apprId = emp[col];
     var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
     return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
@@ -396,7 +396,7 @@ router.get('/employees', auth, async (_, res) => {
     }
     var appSel1 = makeApproverSelect(1, e.approver_id);
     var appSel2 = makeApproverSelect(2, e.approver2_id);
-    var appSel3 = makeApproverSelect(3, e.approver3_id);
+    
     rows += '<tr>'
       + '<td>'+h(e.employee_no)+'</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'name\',\''+nameEsc+'\')">'+h(e.name)+'</span></td>'
@@ -407,7 +407,7 @@ router.get('/employees', auth, async (_, res) => {
       + '<td><button onclick="toggleApprove('+e.id+','+e.can_approve+')" class="btn-sm '+(e.can_approve?'btn':'btn-gray')+'">'+(e.can_approve?'可簽核':'設為簽核人')+'</button></td>'
       + '<td>'+appSel1+'</td>'
       + '<td>'+appSel2+'</td>'
-      + '<td>'+appSel3+'</td>'
+      
       + '<td>'
       + '<button onclick="editLine('+e.id+',\''+nameEsc+'\',\''+esc(e.line_user_id||'')+'\')" class="btn-sm btn-blue">LINE</button> '
 	      + (e.role==='經理'?'<button onclick="toggleManagerMode('+e.id+','+esc(e.manager_mode||'normal')+')" class="btn-sm '+(e.manager_mode==='test'?'btn':'btn-gray')+'">'+(e.manager_mode==='test'?'🔬 正常':'測試')+'</button> ':'')
@@ -424,7 +424,7 @@ router.get('/employees', auth, async (_, res) => {
 	    + '<div><label>角色</label><select id="role"><option value="員工">一般員工</option><option value="簽核人員">簽核人員</option><option value="經理">經理</option><option value="老闆">老闆</option></select></div>'
     + '<div style="align-items:center;flex-direction:row;gap:6px"><input type="checkbox" id="canApprove" style="width:16px;height:16px"><label for="canApprove" style="margin:0">簽核人</label></div>'
     + '<button type="submit" class="btn">新增</button></form></div>'
-    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>入職日</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>L3簽核</th><th>操作</th></tr>'+(rows||'<tr><td colspan="11">尚無員工</td></tr>')+'</table></div>'
+    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>入職日</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>操作</th></tr>'+(rows||'<tr><td colspan="10">尚無員工</td></tr>')+'</table></div>'
     + inactiveList
     + modalHtml();
 
@@ -439,24 +439,49 @@ router.get('/leave-balances', auth, async (req, res) => {
   for (var i = 0; i < emps.length; i++) {
     var e = emps[i];
     var nameEsc = esc(e.name);
+    // 查詢各項額度餘額
+    var _al = { entitlement_days: 0, used_hours: 0, remaining_hours: 0 };
+    var _ml = { total_hours: 0, used_hours: 0, remaining_hours: 0 };
+    var _fl = { total_hours: 0, used_hours: 0, remaining_hours: 0 };
+    try { _al = await db.getAnnualLeaveBalance(e.id); } catch(ex) {}
+    try { _ml = await db.getMarriageLeaveBalance(e.id); } catch(ex) {}
+    try { _fl = await db.getFuneralLeaveBalance(e.id); } catch(ex) {}
+    // 年度事假/病假累計
+    var _personalYTD = 0, _sickYTD = 0;
+    try {
+      var _leaves = await db.getEmployeeLeaveRequests(e.id, 'approved', 200);
+      var _ys = new Date().getFullYear() + '-01-01';
+      for (var _li = 0; _li < _leaves.length; _li++) {
+        var _lv = _leaves[_li];
+        if (_lv.start_date < _ys) continue;
+        var _h = await db.calcPeriodHours(_lv.start_date, _lv.end_date);
+        if (_lv.leave_type === 'personal') _personalYTD += _h;
+        else if (_lv.leave_type === 'sick') _sickYTD += _h;
+      }
+    } catch(ex) {}
     rows += '<tr>'
       + '<td>'+h(e.employee_no)+'</td>'
       + '<td>'+h(e.name)+'</td>'
       + '<td>'+h(e.department||'')+'</td>'
+      + '<td>'+(e.hire_date||'<span style="color:#999">未設定</span>')+'</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'annual_leave_used_manual\',\''+esc(e.annual_leave_used_manual||'0')+'\')">'+(e.annual_leave_used_manual||'0')+'</span></td>'
+      + '<td>' + _al.remaining_hours + 'h</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'marriage_leave_total\',\''+esc(e.marriage_leave_total||'0')+'\')">'+(e.marriage_leave_total||'0')+'</span></td>'
+      + '<td>' + _ml.remaining_hours + 'h</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'funeral_leave_total\',\''+esc(e.funeral_leave_total||'0')+'\')">'+(e.funeral_leave_total||'0')+'</span></td>'
+      + '<td>' + _fl.remaining_hours + 'h</td>'
+      + '<td>' + _personalYTD + 'h</td>'
+      + '<td>' + _sickYTD + 'h</td>'
       + '</tr>';
   }
-  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假總額度、喪假總額度。點擊數值直接編輯。</p>'
-    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>特休已用(h)<br><small>系統上線前</small></th><th>婚假總額(h)</th><th>喪假總額(h)</th></tr>'
-    + (rows||'<tr><td colspan="6">尚無員工</td></tr>')
+  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假總額度、喪假總額度。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'
+    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
+    + (rows||'<tr><td colspan="12">尚無員工</td></tr>')
     + '</table></div>'
     + '<div class="card"><h3>📖 說明</h3><ul style="font-size:13px;color:#666;line-height:2">'
-    + '<li>特休：依入職日與勞基法年資自動計算額度。此處「特休已用(h)」僅補登系統上線前已使用的時數。</li>'
-    + '<li>婚假：管理員設定總額度（台灣勞基法婚假 8 天 = 64 小時），員工於 LINE 申請時自動扣減。</li>'
-    + '<li>喪假：管理員設定總額度，員工於 LINE 申請時自動扣減。</li>'
-    + '<li>所有額度皆為「剩餘」概念，已核准的申請會自動扣減，無須手動調整。</li>'
+    + '<li>特休：依入職日與勞基法年資自動計算額度。手動補登僅用於系統上線前已使用的時數。</li>'
+    + '<li>婚假/喪假：管理員設定總額度，員工於 LINE 申請時自動扣減剩餘。</li>'
+    + '<li>本年度事假/病假為當年度已核准的累計時數（僅供參考，不影響額度）。</li>'
     + '</ul></div>';
 	  + modalHtml();
   body += '<script>'+jsLib()+'</script>';
@@ -479,7 +504,7 @@ router.get('/leaves', auth, async (req, res) => {
     var emp = empMap[rec.employee_id];
     if (!emp) return '';
     var lv = rec.approval_level || 1;
-    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var col = lv === 1 ? 'approver_id' : 'approver2_id';
     var apprId = emp[col];
     var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
     return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
@@ -508,7 +533,7 @@ router.get('/leaves', auth, async (req, res) => {
     var emp = empMap[leave.employee_id];
     if (!emp) return '';
     var lv = leave.approval_level || 1;
-    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var col = lv === 1 ? 'approver_id' : 'approver2_id';
     var apprId = emp[col];
     var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
     return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
@@ -825,7 +850,7 @@ router.get('/missed', auth, async function(_, res) {
     var names = [];
     if (emp.approver_id && empMap[emp.approver_id]) names.push('L1 ' + empMap[emp.approver_id].name);
     if (emp.approver2_id && empMap[emp.approver2_id]) names.push('L2 ' + empMap[emp.approver2_id].name);
-    if (emp.approver3_id && empMap[emp.approver3_id]) names.push('L3 ' + empMap[emp.approver3_id].name);
+    
     if (names.length === 0) return '';
     return ' <small style="color:#8e44ad">↳ ' + names.join(', ') + '</small>';
   }
@@ -865,7 +890,7 @@ router.get('/overtime', auth, async function(_, res) {
     var emp = empMap[rec.employee_id];
     if (!emp) return '';
     var lv = rec.approval_level || 1;
-    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var col = lv === 1 ? 'approver_id' : 'approver2_id';
     var apprId = emp[col];
     var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
     return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
@@ -934,7 +959,7 @@ router.get('/salary', auth, async function(_, res) {
     var emp = empMap[rec.employee_id];
     if (!emp) return '';
     var lv = rec.approval_level || 1;
-    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var col = lv === 1 ? 'approver_id' : 'approver2_id';
     var apprId = emp[col];
     var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
     return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';

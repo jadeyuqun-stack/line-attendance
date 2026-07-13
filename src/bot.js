@@ -145,15 +145,15 @@ async function checkPendingApprovals(client, uid, replyToken) {
     var myLeaves = [], myOTs = [], myMPs = [];
     for (var li = 0; li < leaves.length; li++) {
       var le = await db.getEmployeeById(leaves[li].employee_id);
-      if (le) { var lv = leaves[li].approval_level || 1; var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id'; var noAppL = !le.approver_id && !le.approver2_id && !le.approver3_id; if (le[col] === emp.id || (emp.can_approve && noAppL)) myLeaves.push(leaves[li]); }
+      if (le) { var lv = leaves[li].approval_level || 1; var col = lv === 1 ? 'approver_id' : 'approver2_id'; var noAppL = !le.approver_id && !le.approver2_id ; if (le[col] === emp.id || (emp.can_approve && noAppL)) myLeaves.push(leaves[li]); }
     }
     for (var oi = 0; oi < ots.length; oi++) {
       var oe = await db.getEmployeeById(ots[oi].employee_id);
-      if (oe) { var lv2 = ots[oi].approval_level || 1; var col2 = lv2 === 1 ? 'approver_id' : lv2 === 2 ? 'approver2_id' : 'approver3_id'; var noAppO = !oe.approver_id && !oe.approver2_id && !oe.approver3_id; if (oe[col2] === emp.id || (emp.can_approve && noAppO)) myOTs.push(ots[oi]); }
+      if (oe) { var lv2 = ots[oi].approval_level || 1; var col2 = lv2 === 1 ? 'approver_id' : 'approver2_id'; var noAppO = !oe.approver_id && !oe.approver2_id; if (oe[col2] === emp.id || (emp.can_approve && noAppO)) myOTs.push(ots[oi]); }
     }
     for (var mi = 0; mi < mps.length; mi++) {
       var me = await db.getEmployeeById(mps[mi].employee_id);
-      if (me) { var noAppM = !me.approver_id && !me.approver2_id && !me.approver3_id; if (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id || (emp.can_approve && noAppM)) myMPs.push(mps[mi]); }
+      if (me) { var noAppM = !me.approver_id && !me.approver2_id; if (me.approver_id === emp.id || me.approver2_id === emp.id ||  (emp.can_approve && noAppM)) myMPs.push(mps[mi]); }
     }
     return myLeaves.length + myOTs.length + myMPs.length;
   } catch(e) { return 0; }
@@ -343,9 +343,9 @@ async function getOverdueApprovalReminder(emp) {
     if (!le) continue;
     if (pendingLeaves[li].created_at && new Date(pendingLeaves[li].created_at) >= threshold) continue;
     var lv = pendingLeaves[li].approval_level || 1;
-    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var col = lv === 1 ? 'approver_id' : 'approver2_id';
     var isDes = le[col] === emp.id;
-    var noApp = !le.approver_id && !le.approver2_id && !le.approver3_id;
+    var noApp = !le.approver_id && !le.approver2_id ;
     if (isDes || (emp.can_approve && noApp)) count++;
   }
   for (var oi = 0; oi < pendingOTs.length; oi++) {
@@ -353,16 +353,16 @@ async function getOverdueApprovalReminder(emp) {
     if (!oe) continue;
     if (pendingOTs[oi].created_at && new Date(pendingOTs[oi].created_at) >= threshold) continue;
     var lv2 = pendingOTs[oi].approval_level || 1;
-    var col2 = lv2 === 1 ? 'approver_id' : lv2 === 2 ? 'approver2_id' : 'approver3_id';
+    var col2 = lv2 === 1 ? 'approver_id' : 'approver2_id';
     var isDes2 = oe[col2] === emp.id;
-    var noApp2 = !oe.approver_id && !oe.approver2_id && !oe.approver3_id;
+    var noApp2 = !oe.approver_id && !oe.approver2_id;
     if (isDes2 || (emp.can_approve && noApp2)) count++;
   }
   for (var mi = 0; mi < pendingMPs.length; mi++) {
     var me = await db.getEmployeeById(pendingMPs[mi].employee_id);
     if (!me) continue;
     if (pendingMPs[mi].created_at && new Date(pendingMPs[mi].created_at) >= threshold) continue;
-    var noApp3 = !me.approver_id && !me.approver2_id && !me.approver3_id;
+    var noApp3 = !me.approver_id && !me.approver2_id;
     var isDes3 = me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id;
     if (isDes3 || (emp.can_approve && noApp3)) count++;
   }
@@ -382,24 +382,24 @@ async function countPendingForApprover(emp) {
       var e = await db.getEmployeeById(pl[i].employee_id);
       if (!e) continue;
       var lv = pl[i].approval_level || 1;
-      var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+      var col = lv === 1 ? 'approver_id' : 'approver2_id';
       var isDes = e[col] === emp.id;
-      var noApprover = !e.approver_id && !e.approver2_id && !e.approver3_id;
+      var noApprover = !e.approver_id && !e.approver2_id;
       if (isDes || (emp.can_approve && noApprover)) c++;
     }
     for (var i = 0; i < po.length; i++) {
       var e = await db.getEmployeeById(po[i].employee_id);
       if (!e) continue;
       var lv2 = po[i].approval_level || 1;
-      var col2 = lv2 === 1 ? 'approver_id' : lv2 === 2 ? 'approver2_id' : 'approver3_id';
+      var col2 = lv2 === 1 ? 'approver_id' : 'approver2_id';
       var isDes2 = e[col2] === emp.id;
-      var noApprover2 = !e.approver_id && !e.approver2_id && !e.approver3_id;
+      var noApprover2 = !e.approver_id && !e.approver2_id;
       if (isDes2 || (emp.can_approve && noApprover2)) c++;
     }
     for (var i = 0; i < pm.length; i++) {
       var e = await db.getEmployeeById(pm[i].employee_id);
       if (!e) continue;
-      var noApprover3 = !e.approver_id && !e.approver2_id && !e.approver3_id;
+      var noApprover3 = !e.approver_id && !e.approver2_id;
       var isDes3 = e.approver_id === emp.id || e.approver2_id === emp.id || e.approver3_id === emp.id;
       if (isDes3 || (emp.can_approve && noApprover3)) c++;
     }
@@ -418,15 +418,15 @@ async function checkPendingApprovalsCmd(emp, client, replyToken, uid, _prefix) {
     var items = [];
     for (var li = 0; li < leaves.length; li++) {
       var le = await db.getEmployeeById(leaves[li].employee_id);
-      if (le) { var lv = leaves[li].approval_level || 1; var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id'; var noAppL = !le.approver_id && !le.approver2_id && !le.approver3_id; if (le[col] === emp.id || (emp.can_approve && noAppL)) items.push({ type: 'leave', data: leaves[li], empName: le.name, empNo: le.employee_no }); }
+      if (le) { var lv = leaves[li].approval_level || 1; var col = lv === 1 ? 'approver_id' : 'approver2_id'; var noAppL = !le.approver_id && !le.approver2_id ; if (le[col] === emp.id || (emp.can_approve && noAppL)) items.push({ type: 'leave', data: leaves[li], empName: le.name, empNo: le.employee_no }); }
     }
     for (var oi = 0; oi < ots.length; oi++) {
       var oe = await db.getEmployeeById(ots[oi].employee_id);
-      if (oe) { var lv2 = ots[oi].approval_level || 1; var col2 = lv2 === 1 ? 'approver_id' : lv2 === 2 ? 'approver2_id' : 'approver3_id'; var noAppO = !oe.approver_id && !oe.approver2_id && !oe.approver3_id; if (oe[col2] === emp.id || (emp.can_approve && noAppO)) items.push({ type: 'ot', data: ots[oi], empName: oe.name, empNo: oe.employee_no }); }
+      if (oe) { var lv2 = ots[oi].approval_level || 1; var col2 = lv2 === 1 ? 'approver_id' : 'approver2_id'; var noAppO = !oe.approver_id && !oe.approver2_id; if (oe[col2] === emp.id || (emp.can_approve && noAppO)) items.push({ type: 'ot', data: ots[oi], empName: oe.name, empNo: oe.employee_no }); }
     }
     for (var mi = 0; mi < mps.length; mi++) {
       var me = await db.getEmployeeById(mps[mi].employee_id);
-      if (me) { var noAppM = !me.approver_id && !me.approver2_id && !me.approver3_id; if (me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id || (emp.can_approve && noAppM)) items.push({ type: 'missed', data: mps[mi], empName: me.name, empNo: me.employee_no }); }
+      if (me) { var noAppM = !me.approver_id && !me.approver2_id; if (me.approver_id === emp.id || me.approver2_id === emp.id ||  (emp.can_approve && noAppM)) items.push({ type: 'missed', data: mps[mi], empName: me.name, empNo: me.employee_no }); }
     }
     if (items.length === 0) return client.replyMessage(replyToken, [withMenu('✅ 目前無待簽核項目')]);
     // 儲存到 state
@@ -633,7 +633,7 @@ async function batchApproveAll(emp, client, replyToken, _prefix) {
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
   var lines = [];
-  function canBatch(emp2, eid) { return emp2.approver_id === eid || emp2.approver2_id === eid || emp2.approver3_id === eid || (!emp2.approver_id && !emp2.approver2_id && !emp2.approver3_id); }
+  function canBatch(emp2, eid) { return emp2.approver_id === eid || emp2.approver2_id === eid ||  (!emp2.approver_id && !emp2.approver2_id); }
   for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch(e, emp.id)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); } } }
   for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch(e, emp.id)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); } } }
   for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && canBatch(e, emp.id)) { var _r3 = await db.updateMissedPunchStatus(mps[i].id, 'approved', emp.id); if (_r3) { lines.push('📝 ' + e.name + ' ' + (mps[i].punch_type === 'check_in' ? '補上班' : '補下班') + ' ' + mps[i].punch_date); } } }
@@ -647,7 +647,7 @@ async function batchRejectAll(emp, client, replyToken, _prefix) {
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
   var lCount = 0, otCount = 0, mpCount = 0;
-  function canBatch2(emp2, eid) { return emp2.approver_id === eid || emp2.approver2_id === eid || emp2.approver3_id === eid || (!emp2.approver_id && !emp2.approver2_id && !emp2.approver3_id); }
+  function canBatch2(emp2, eid) { return emp2.approver_id === eid || emp2.approver2_id === eid ||  (!emp2.approver_id && !emp2.approver2_id); }
   for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch2(e, emp.id)) { await db.updateLeaveStatus(leaves[i].id, 'rejected', emp.id); lCount++; } }
   for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch2(e, emp.id)) { await db.updateOvertimeStatus(ots[i].id, 'rejected', emp.id); otCount++; } }
   for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && canBatch2(e, emp.id)) { await db.updateMissedPunchStatus(mps[i].id, 'rejected', emp.id); mpCount++; } }
@@ -909,6 +909,27 @@ async function doQuery(emp, client, replyToken, _prefix) {
     lines.push('\n🕐 加班：無');
   }
 
+  // 
+  // 入職日與年度請假統計
+  try {
+    if (emp.hire_date) lines.push('\\n\U0001f4c5 入職日：' + emp.hire_date);
+  } catch(_ex3) {}
+  try {
+    var _allLeaves3 = await db.getEmployeeLeaveRequests(emp.id, 'approved', 200);
+    var _yearStart3 = new Date().getFullYear() + '-01-01';
+    var _personalTotal3 = 0, _sickTotal3 = 0;
+    for (var _li3 = 0; _li3 < _allLeaves3.length; _li3++) {
+      var _lv3 = _allLeaves3[_li3];
+      if (_lv3.start_date < _yearStart3) continue;
+      var _h3 = await db.calcPeriodHours(_lv3.start_date, _lv3.end_date);
+      if (_lv3.leave_type === 'personal') _personalTotal3 += _h3;
+      else if (_lv3.leave_type === 'sick') _sickTotal3 += _h3;
+    }
+    var _ytdLines3 = [];
+    if (_personalTotal3 > 0) _ytdLines3.push('事假 ' + _personalTotal3 + 'h');
+    if (_sickTotal3 > 0) _ytdLines3.push('病假 ' + _sickTotal3 + 'h');
+    if (_ytdLines3.length > 0) lines.push('\\n\U0001f4ca 年度累計：' + _ytdLines3.join(' \\n'));
+  } catch(_ex4) {}
   // 假別額度餘額顯示
   try {
     var _annBal2 = await db.getAnnualLeaveBalance(emp.id);

@@ -259,7 +259,7 @@ async function handleText(text, uid, client, replyToken) {
   // 待簽核提醒：有新項目時顯示提示，但不阻擋指令
   var _pendingMsg = _notifMsg;
   try {
-    if (emp && (emp.can_approve || emp.role === '經理' || emp.role === '老闆')) {
+    if (emp && (emp.can_approve || emp.role === '經理' || emp.role === '老闆' || emp.role === '簽核人員')) {
       var _isApprovalCmd = cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending' || cmd === '核准全部' || cmd === '駁回全部';
       var _isInApprovalFlow = states.has(uid) && (states.get(uid).flow === 'approval_browse' || states.get(uid).flow === 'reject_leave' || states.get(uid).flow === 'reject_ot' || states.get(uid).flow === 'reject_missed');
       if (!_isApprovalCmd && !_isInApprovalFlow) {
@@ -320,7 +320,7 @@ function calcHours(s, e) {
 }
 
 async function getOverdueApprovalReminder(emp) {
-  if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆')) return null;
+  if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆' && emp.role !== '簽核人員')) return null;
   var hoursStr = await db.getSetting('approval_remind_hours') || '0';
   var hours = parseInt(hoursStr);
   if (hours <= 0) return null;
@@ -363,7 +363,7 @@ async function getOverdueApprovalReminder(emp) {
 
 // 計算該簽核人員目前當階待簽核總數（只看自己該階的項目）
 async function countPendingForApprover(emp) {
-  if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆')) return 0;
+  if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆' && emp.role !== '簽核人員')) return 0;
   try {
     var pl = await db.getLeaveRequests('pending', 200);
     var po = await db.getOvertimeRequests('pending', 200);
@@ -399,6 +399,9 @@ async function countPendingForApprover(emp) {
 }
 
 async function checkPendingApprovalsCmd(emp, client, replyToken, uid) {
+  if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆' && emp.role !== '簽核人員')) {
+    return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+  }
   try {
     var leaves = await db.getLeaveRequests('pending', 50);
     var ots = await db.getOvertimeRequests('pending', 50);

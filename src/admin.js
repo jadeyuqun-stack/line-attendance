@@ -351,6 +351,18 @@ router.get('/employees', auth, async (_, res) => {
   } catch(e) {}
 
   var rows = '';
+  var empMap = {};
+  for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
+  function getOtApprover(rec) {
+    if (rec.status !== 'pending') return '';
+    var emp = empMap[rec.employee_id];
+    if (!emp) return '';
+    var lv = rec.approval_level || 1;
+    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var apprId = emp[col];
+    var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
+    return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
+  }
   for (var i = 0; i < emps.length; i++) {
     var e = emps[i];
     var nameEsc = esc(e.name), deptEsc = esc(e.department||''), roleEsc = esc(e.role||'員工');
@@ -428,6 +440,18 @@ router.get('/leaves', auth, async (req, res) => {
   var now = new Date();
   var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var rows = '';
+  var empMap = {};
+  for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
+  function getOtApprover(rec) {
+    if (rec.status !== 'pending') return '';
+    var emp = empMap[rec.employee_id];
+    if (!emp) return '';
+    var lv = rec.approval_level || 1;
+    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var apprId = emp[col];
+    var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
+    return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
+  }
   var companyMonth = 0, companyTotal = 0;
   // 個人時數彙整
   var personMap = {};
@@ -445,10 +469,22 @@ router.get('/leaves', auth, async (req, res) => {
     return Math.min(workHours, days * 8);
   }
   function sd(d) { return typeof d === 'string' ? d : (d ? d.toISOString().split('T')[0] : ''); }
+  var empMap = {};  // employee_id -> { approver fields }
+  for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
+  function getCurrentApprover(leave) {
+    if (leave.status !== 'pending') return '';
+    var emp = empMap[leave.employee_id];
+    if (!emp) return '';
+    var lv = leave.approval_level || 1;
+    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var apprId = emp[col];
+    var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
+    return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
+  }
   for (var i = 0; i < leaves.length; i++) {
     var l = leaves[i];
     if (filterEid && l.employee_id !== filterEid) continue;
-    var statusBadge = l.status === 'pending' ? '<span class="badge badge-warn">待審核</span>'
+    var statusBadge = l.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getCurrentApprover(l)
       : l.status === 'approved' ? '<span class="badge badge-in">已核准</span>'
       : '<span class="badge badge-out">已駁回</span>';
     var actionHtml = '';
@@ -734,6 +770,18 @@ router.get('/missed', auth, async function(_, res) {
   var status = _.query.status || '';
   var records = await db.getMissedPunches(status, 200);
   var rows = '';
+  var empMap = {};
+  for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
+  function getOtApprover(rec) {
+    if (rec.status !== 'pending') return '';
+    var emp = empMap[rec.employee_id];
+    if (!emp) return '';
+    var lv = rec.approval_level || 1;
+    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var apprId = emp[col];
+    var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
+    return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
+  }
   for (var i = 0; i < records.length; i++) {
     var r = records[i];
     var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
@@ -757,6 +805,18 @@ router.get('/overtime', auth, async function(_, res) {
   var records = await db.getOvertimeRequests(status, 200);
   var emps = await db.listActiveEmployees();
   var rows = '';
+  var empMap = {};
+  for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
+  function getOtApprover(rec) {
+    if (rec.status !== 'pending') return '';
+    var emp = empMap[rec.employee_id];
+    if (!emp) return '';
+    var lv = rec.approval_level || 1;
+    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var apprId = emp[col];
+    var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
+    return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
+  }
   for (var i = 0; i < records.length; i++) {
     var r = records[i];
     // 員工篩選
@@ -766,7 +826,7 @@ router.get('/overtime', auth, async function(_, res) {
       var sd = typeof r.start_time === 'string' ? r.start_time : '';
       if (sd.indexOf(filterMonth) !== 0) continue;
     }
-    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
+    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getOtApprover(r) : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
     var ah = '';
     var otCb = r.status === 'pending' ? '<input type="checkbox" class="otCb" value="'+r.id+'" style="width:auto;height:auto">' : '';
     if (r.status === 'pending') ah = '<button onclick="approveOt('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectOt('+r.id+')" class="btn-sm btn-red">駁回</button>';
@@ -810,6 +870,18 @@ router.get('/salary', auth, async function(_, res) {
   }
 
   var rows = '';
+  var empMap = {};
+  for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
+  function getOtApprover(rec) {
+    if (rec.status !== 'pending') return '';
+    var emp = empMap[rec.employee_id];
+    if (!emp) return '';
+    var lv = rec.approval_level || 1;
+    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
+    var apprId = emp[col];
+    var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
+    return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
+  }
   for (var i = 0; i < bound.length; i++) {
     var e = bound[i];
     var sv = savedMap[e.id] || {};

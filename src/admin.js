@@ -1952,10 +1952,25 @@ router.get('/debug-late-hours', auth, async function(req, res) {
 
 		var html = '<h2>除錯：遲到請假時數</h2><pre style="font-size:12px;line-height:1.5">';
 
+		html += '日期範圍: ' + start + ' ~ ' + end + '\n';
+		html += 'summaryRows 總筆數: ' + rows.length + '\n';
+
+		// 列出 001 的所有 work_date
+		html += '\n=== 001 的所有 work_date ===\n';
+		var emp001Rows = rows.filter(function(rr) { return rr.employee_no === '001'; });
+		if (emp001Rows.length === 0) {
+			html += '(無任何 001 的彙總資料)\n';
+		} else {
+			for (var ri = 0; ri < emp001Rows.length; ri++) {
+				var rr = emp001Rows[ri];
+				html += '  work_date=' + JSON.stringify(rr.work_date) + ' (typeof=' + (typeof rr.work_date) + ') ci=' + (rr.check_in_time ? 'Y' : 'N') + ' co=' + (rr.check_out_time ? 'Y' : 'N') + '\n';
+			}
+		}
+
 		// 找葉宗祺（employee_no=001）
 		var target = null;
 		for (var i = 0; i < rows.length; i++) {
-			if (rows[i].employee_no === '001' && rows[i].work_date === '2026-07-13') {
+			if (rows[i].employee_no === '001' && String(rows[i].work_date).indexOf('2026-07-13') !== -1) {
 				target = rows[i];
 				break;
 			}

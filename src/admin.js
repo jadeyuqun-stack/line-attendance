@@ -769,6 +769,7 @@ function jsLib() {
 router.get('/missed', auth, async function(_, res) {
   var status = _.query.status || '';
   var records = await db.getMissedPunches(status, 200);
+  var emps = await db.listActiveEmployees();
   var rows = '';
   var empMap = {};
   for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];

@@ -108,9 +108,10 @@ function sidebar(active) {
     ['/admin/records', '📋', '打卡記錄'],
     ['/admin/employees', '👥', '員工管理'],
     ['/admin/leaves', '🏖', '請假管理'],
-    ['/admin/salary', '💵', '薪資發送'],
     ['/admin/overtime', '🕐', '加班管理'],
     ['/admin/missed', '📝', '補打卡'],
+    ['/admin/leave-balances', '🎯', '假期設定'],
+    ['/admin/salary', '💵', '薪資發送'],
     ['/admin/data', '📦', '資料彙整'],
     ['/admin/settings', '⚙️', '系統設定'],
   ];
@@ -367,6 +368,8 @@ router.get('/employees', auth, async (_, res) => {
       + '<td><span class="editable" onclick="editField('+e.id+',\'name\',\''+nameEsc+'\')">'+h(e.name)+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'department\',\''+deptEsc+'\')">'+(e.department||'點此設定')+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'role\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
+	      + '<td><span class="editable" onclick="editField('+e.id+',\'hire_date\',\''+esc(e.hire_date||'')+'\')">'+(e.hire_date||'<span style="color:#999">設定</span>')+'</span></td>'
+	      + '<td>'+(e.role==='經理'?(e.manager_mode==='test'?'<span style="color:#e67e22">🔬 測試</span>':'<span style="color:#2ecc71">正常</span>'):'')+'</td>'
       + '<td>'+(e.line_user_id?'<span class="badge badge-in">已綁定</span>':'<span class="badge badge-out">未綁定</span>')+'</td>'
       + '<td>'
       + '<button onclick="toggleApprove('+e.id+','+e.can_approve+')" class="btn-sm '+(e.can_approve?'btn':'btn-gray')+'">'+(e.can_approve?'可簽核':'設為簽核人')+'</button> '
@@ -400,6 +403,8 @@ router.get('/employees', auth, async (_, res) => {
       + '<td><span class="editable" onclick="editField('+e.id+',\'name\',\''+nameEsc+'\')">'+h(e.name)+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'department\',\''+deptEsc+'\')">'+(e.department||'點此設定')+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'role\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
+	      + '<td><span class="editable" onclick="editField('+e.id+',\'hire_date\',\''+esc(e.hire_date||'')+'\')">'+(e.hire_date||'<span style="color:#999">設定</span>')+'</span></td>'
+	      + '<td>'+(e.role==='經理'?(e.manager_mode==='test'?'<span style="color:#e67e22">🔬 測試</span>':'<span style="color:#2ecc71">正常</span>'):'')+'</td>'
       + '<td>'+(e.line_user_id?'<span class="badge badge-in">已綁定</span>':'<span class="badge badge-out">未綁定</span>')+'</td>'
       + '<td><button onclick="toggleApprove('+e.id+','+e.can_approve+')" class="btn-sm '+(e.can_approve?'btn':'btn-gray')+'">'+(e.can_approve?'可簽核':'設為簽核人')+'</button></td>'
       + '<td>'+appSel1+'</td>'
@@ -420,12 +425,41 @@ router.get('/employees', auth, async (_, res) => {
 	    + '<div><label>角色</label><select id="role"><option value="員工">一般員工</option><option value="簽核人員">簽核人員</option><option value="經理">經理</option><option value="老闆">老闆</option></select></div>'
     + '<div style="align-items:center;flex-direction:row;gap:6px"><input type="checkbox" id="canApprove" style="width:16px;height:16px"><label for="canApprove" style="margin:0">簽核人</label></div>'
     + '<button type="submit" class="btn">新增</button></form></div>'
-    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>入職日</th><th>特休(h)</th><th>婚假(h)</th><th>喪假(h)</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>L3簽核</th><th>模式</th><th>操作</th></tr>'+(rows||'<tr><td colspan="14">尚無員工</td></tr>')+'</table></div>'
+    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>入職日</th><th>模式</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>L3簽核</th><th>操作</th></tr>'+(rows||'<tr><td colspan="12">尚無員工</td></tr>')+'</table></div>'
     + inactiveList
     + modalHtml();
 
   body += '<script>'+jsLib()+'\ndocument.getElementById("empForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/employees",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({employee_no:document.getElementById("no").value,name:document.getElementById("ename").value,department:document.getElementById("dept").value,role:document.getElementById("role").value||"員工",can_approve:document.getElementById("canApprove").checked,hire_date:document.getElementById("hireDate").value})});var j=await r.json();j.success?location.reload():alert(j.error);};</script>';
   res.send(layout('員工管理', '員工管理', body));
+});
+
+// ===== 假期設定 =====
+router.get('/leave-balances', auth, async (req, res) => {
+  var emps = await db.listActiveEmployees();
+  var rows = '';
+  for (var i = 0; i < emps.length; i++) {
+    var e = emps[i];
+    var nameEsc = esc(e.name);
+    rows += '<tr>'
+      + '<td>'+h(e.employee_no)+'</td>'
+      + '<td>'+h(e.name)+'</td>'
+      + '<td>'+h(e.department||'')+'</td>'
+      + '<td><span class="editable" onclick="editField('+e.id+',\'annual_leave_used_manual\',\''+esc(e.annual_leave_used_manual||'0')+'\')">'+(e.annual_leave_used_manual||'0')+'</span></td>'
+      + '<td><span class="editable" onclick="editField('+e.id+',\'marriage_leave_total\',\''+esc(e.marriage_leave_total||'0')+'\')">'+(e.marriage_leave_total||'0')+'</span></td>'
+      + '<td><span class="editable" onclick="editField('+e.id+',\'funeral_leave_total\',\''+esc(e.funeral_leave_total||'0')+'\')">'+(e.funeral_leave_total||'0')+'</span></td>'
+      + '</tr>';
+  }
+  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假總額度、喪假總額度。點擊數值直接編輯。</p>'
+    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>特休已用(h)<br><small>系統上線前</small></th><th>婚假總額(h)</th><th>喪假總額(h)</th></tr>'
+    + (rows||'<tr><td colspan="6">尚無員工</td></tr>')
+    + '</table></div>'
+    + '<div class="card"><h3>📖 說明</h3><ul style="font-size:13px;color:#666;line-height:2">'
+    + '<li>特休：依入職日與勞基法年資自動計算額度。此處「特休已用(h)」僅補登系統上線前已使用的時數。</li>'
+    + '<li>婚假：管理員設定總額度（台灣勞基法婚假 8 天 = 64 小時），員工於 LINE 申請時自動扣減。</li>'
+    + '<li>喪假：管理員設定總額度，員工於 LINE 申請時自動扣減。</li>'
+    + '<li>所有額度皆為「剩餘」概念，已核准的申請會自動扣減，無須手動調整。</li>'
+    + '</ul></div>';
+  res.send(layout('假期設定', '假期設定', body));
 });
 
 // ===== 請假管理 =====

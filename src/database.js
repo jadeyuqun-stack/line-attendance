@@ -46,6 +46,7 @@ async function initDatabase() {
   try { await pool.query("ALTER TABLE employees ADD COLUMN annual_leave_used_manual NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN marriage_leave_total NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN funeral_leave_total NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN comp_leave_total NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN manager_mode TEXT DEFAULT 'normal'"); } catch(e) {}
 
   // 簽核層級欄位
@@ -271,7 +272,7 @@ async function listInactiveEmployees() {
   return rows;
 }
 async function updateEmployee(id, fields) {
-  const allowed = ['name', 'department', 'role', 'can_approve', 'hire_date', 'annual_leave_used_manual', 'marriage_leave_total', 'funeral_leave_total', 'manager_mode'];
+  const allowed = ['name', 'department', 'role', 'can_approve', 'hire_date', 'annual_leave_used_manual', 'marriage_leave_total', 'funeral_leave_total', 'comp_leave_total', 'manager_mode'];
   const sets = [];
   const vals = [];
   let i = 1;
@@ -773,6 +774,23 @@ async function getMarriageLeaveBalance(employeeId) {
 }
 
 // 查喪假額度餘額（一次性終身額度）
+
+// 查補休額度餘額（一次性終身額度）
+async function getCompLeaveBalance(employeeId) {
+  var emp = await getEmployeeById(employeeId);
+  if (!emp) return { total_hours: 0, used_hours: 0, remaining_hours: 0 };
+  var total = parseFloat(emp.comp_leave_total) || 0;
+  var { rows: approved } = await pool.query(
+    "SELECT * FROM leave_requests WHERE employee_id=$1 AND leave_type='comp' AND status='approved'",
+    [employeeId]
+  );
+  var used = 0;
+  for (var i = 0; i < approved.length; i++) {
+    used += await calcPeriodHours(approved[i].start_date, approved[i].end_date);
+  }
+  return { total_hours: total, used_hours: used, remaining_hours: Math.max(0, total - used) };
+}
+
 async function getFuneralLeaveBalance(employeeId) {
   var emp = await getEmployeeById(employeeId);
   if (!emp) return { total_hours: 0, used_hours: 0, remaining_hours: 0 };
@@ -817,5 +835,5 @@ module.exports = {
   createOvertimeRequest, getOvertimeRequests, getOvertimeById, deleteOvertimeRequest, updateOvertimeStatus, getEmployeeOvertimeRequests,
   createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus,
   addPendingNotification, getPendingNotifications, clearPendingNotifications,
-  calcPeriodHours, calculateAnnualLeaveEntitlement, getAnnualLeaveBalance, getMarriageLeaveBalance, getFuneralLeaveBalance,
+  calcPeriodHours, calculateAnnualLeaveEntitlement, getAnnualLeaveBalance, getMarriageLeaveBalance, getFuneralLeaveBalance, getCompLeaveBalance,
 };

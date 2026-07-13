@@ -317,7 +317,7 @@ async function handleText(text, uid, client, replyToken) {
 // 請假類型對照
 var _leaveTypeLabels = {
   'annual': '特休', 'personal': '事假', 'sick': '病假',
-  'official': '公假', 'outing': '外出', 'other': '其他', 'marriage': '婚假', 'funeral': '喪假'
+  'official': '公假', 'outing': '外出', 'other': '其他', 'marriage': '婚假', 'funeral': '喪假', 'comp': '補休'
 };
 function leaveTypeLabel(t) { return _leaveTypeLabels[t] || t || '請假'; }
 
@@ -939,8 +939,10 @@ async function doQuery(emp, client, replyToken, _prefix) {
     var _funBal2 = await db.getFuneralLeaveBalance(emp.id);
     var _balLines2 = [];
     if (_annBal2.entitlement_days > 0) _balLines2.push('🏖 特休：' + _annBal2.remaining_hours + 'h（' + _annBal2.entitlement_days + '天）');
-    if (_marBal2.total_hours > 0) _balLines2.push('💒 婚假：' + _marBal2.remaining_hours + 'h');
-    if (_funBal2.total_hours > 0) _balLines2.push('🕊 喪假：' + _funBal2.remaining_hours + 'h');
+    if (_marBal2.total_hours > 0) _balLines2.push('\n[婚]婚假：' + _marBal2.remaining_hours + 'h');
+    if (_funBal2.total_hours > 0) _balLines2.push('\n[喪]喪假：' + _funBal2.remaining_hours + 'h');
+    var _compBal2 = await db.getCompLeaveBalance(emp.id);
+    if (_compBal2.total_hours > 0) _balLines2.push('\n[補]補休：' + _compBal2.remaining_hours + 'h');
     if (_balLines2.length > 0) lines.push('\n' + _balLines2.join(' \n'));
   } catch(_ex2) {}
   if (emp.role === '經理' && emp.manager_mode === 'test') {
@@ -968,7 +970,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
 }
 
 // ===== Leave flow (unchanged) =====
-const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official', '外出': 'outing', '其他': 'other', '婚假': 'marriage', '喪假': 'funeral' };
+const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official', '外出': 'outing', '其他': 'other', '婚假': 'marriage', '喪假': 'funeral', '補休': 'comp' };
 
 function ceilHours(diffMs) { return Math.ceil(Math.max(0, diffMs) / 3600000); }
 // 請假時數：取整後，跨天每日最多 8 小時
@@ -1042,6 +1044,7 @@ async function startLeaveFlow(uid, client, replyToken, _prefix) {
         { type: 'action', action: { type: 'message', label: '其他', text: '其他' } },
         { type: 'action', action: { type: 'message', label: '婚假', text: '婚假' } },
         { type: 'action', action: { type: 'message', label: '喪假', text: '喪假' } },
+        { type: 'action', action: { type: 'message', label: '補休', text: '補休' } },
         { type: 'action', action: { type: 'message', label: '取消', text: '取消' } },
       ]
     }
@@ -1099,6 +1102,8 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
       try { var _marBal = await db.getMarriageLeaveBalance(emp.id); if (_marBal.total_hours > 0) _balText = '\n💒 婚假額度：' + _marBal.remaining_hours + 'h / ' + _marBal.total_hours + 'h'; } catch(_ex) {}
     } else if (type === 'funeral') {
       try { var _funBal = await db.getFuneralLeaveBalance(emp.id); if (_funBal.total_hours > 0) _balText = '\n🕊 喪假額度：' + _funBal.remaining_hours + 'h / ' + _funBal.total_hours + 'h'; } catch(_ex) {}
+    } else if (type === 'comp') {
+      try { var _compBal = await db.getCompLeaveBalance(emp.id); if (_compBal.total_hours > 0) _balText = '\n[補]補休額度：' + _compBal.remaining_hours + 'h / ' + _compBal.total_hours + 'h'; } catch(_ex) {}
     }
     if (emp.manager_mode === 'test') _balText = '\n🔬 測試模式中' + _balText;
     return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')] : [withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')]);
@@ -1115,16 +1120,17 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
     state.reason = text;
     try {
       // 特休/婚假/喪假 額度檢查（測試模式跳過）
-      if (state.type === 'annual' || state.type === 'marriage' || state.type === 'funeral') {
+      if (state.type === 'annual' || state.type === 'marriage' || state.type === 'funeral' || state.type === 'comp') {
         if (emp.manager_mode !== 'test') {
           var _balCheck = null;
           if (state.type === 'annual') _balCheck = await db.getAnnualLeaveBalance(emp.id);
           else if (state.type === 'marriage') _balCheck = await db.getMarriageLeaveBalance(emp.id);
           else if (state.type === 'funeral') _balCheck = await db.getFuneralLeaveBalance(emp.id);
+          else if (state.type === 'comp') _balCheck = await db.getCompLeaveBalance(emp.id);
           var reqHours = await db.calcPeriodHours(state.startDateTime, state.endDateTime);
           if (_balCheck && reqHours > _balCheck.remaining_hours) {
             states.delete(uid);
-            var _typeLabel2 = state.type === 'annual' ? '特休' : state.type === 'marriage' ? '婚假' : '喪假';
+            var _typeLabel2 = state.type === 'annual' ? '特休' : state.type === 'marriage' ? '婚假' : state.type === 'funeral' ? '喪假' : '補休';
             return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ ' + _typeLabel2 + '餘額不足\n\n額度：' + (_balCheck.entitlement_hours || _balCheck.total_hours || 0) + 'h\n已用：' + _balCheck.used_hours + 'h\n剩餘：' + _balCheck.remaining_hours + 'h\n本次需：' + reqHours + 'h\n\n請選擇其他假別或縮短時間。')] : [withMenu('❌ ' + _typeLabel2 + '餘額不足\n\n額度：' + (_balCheck.entitlement_hours || _balCheck.total_hours || 0) + 'h\n已用：' + _balCheck.used_hours + 'h\n剩餘：' + _balCheck.remaining_hours + 'h\n本次需：' + reqHours + 'h\n\n請選擇其他假別或縮短時間。')]);
           }
         }

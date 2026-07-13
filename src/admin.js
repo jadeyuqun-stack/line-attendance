@@ -163,7 +163,7 @@ router.get('/', auth, async (_, res) => {
     if (lStart <= todayStr && lEnd >= todayStr) {
       if (!leaveEmpIds[l.employee_id]) {
         leaveEmpIds[l.employee_id] = true;
-        var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type === 'marriage' ? '婚假' : l.leave_type === 'funeral' ? '喪假' : l.leave_type;
+        var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type === 'marriage' ? '婚假' : l.leave_type === 'funeral' ? '喪假' : l.leave_type === 'comp' ? '補休' : l.leave_type;
         todayLeaves.push({ name: l.name, no: l.employee_no, dept: l.department, type: leaveLabel, start: lStart, end: lEnd });
       }
     }
@@ -446,6 +446,8 @@ router.get('/leave-balances', auth, async (req, res) => {
     try { _al = await db.getAnnualLeaveBalance(e.id); } catch(ex) {}
     try { _ml = await db.getMarriageLeaveBalance(e.id); } catch(ex) {}
     try { _fl = await db.getFuneralLeaveBalance(e.id); } catch(ex) {}
+    var _cl = { total_hours: 0, used_hours: 0, remaining_hours: 0 };
+    try { _cl = await db.getCompLeaveBalance(e.id); } catch(ex) {}
     // 年度事假/病假累計
     var _personalYTD = 0, _sickYTD = 0;
     try {
@@ -470,13 +472,15 @@ router.get('/leave-balances', auth, async (req, res) => {
       + '<td>' + _ml.remaining_hours + 'h</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'funeral_leave_total\',\''+esc(e.funeral_leave_total||'0')+'\')">'+(e.funeral_leave_total||'0')+'</span></td>'
       + '<td>' + _fl.remaining_hours + 'h</td>'
+	      + '<td><span class="editable" onclick="editField('+e.id+',\'comp_leave_total\',\''+esc(e.comp_leave_total||'0')+'\')">'+(e.comp_leave_total||'0')+'</span></td>'
+	      + '<td>' + (_cl ? _cl.remaining_hours : 0) + 'h</td>'
       + '<td>' + _personalYTD + 'h</td>'
       + '<td>' + _sickYTD + 'h</td>'
       + '</tr>';
   }
   var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假總額度、喪假總額度。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'
-    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
-    + (rows||'<tr><td colspan="12">尚無員工</td></tr>')
+    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>補休總額(h)</th><th>補休剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
+    + (rows||'<tr><td colspan="14">尚無員工</td></tr>')
     + '</table></div>'
     + '<div class="card"><h3>📖 說明</h3><ul style="font-size:13px;color:#666;line-height:2">'
     + '<li>特休：依入職日與勞基法年資自動計算額度。手動補登僅用於系統上線前已使用的時數。</li>'
@@ -1510,7 +1514,7 @@ router.get('/export/summary', auth, async function(req, res) {
 		}
 
 		// 假別標籤
-		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假' };
+		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
 
 		// 建立請假查詢用 Map（employee_id → 當天有效的請假）
 		var leaveByEmp = {};
@@ -1668,7 +1672,7 @@ router.get('/export/all', auth, async function(req, res) {
 		var missedPunches = await db.getMissedPunches('approved', 500);
 		var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
 		var lateBufMin = parseInt(await db.getSetting('late_buffer_minutes') || '30');
-		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假' };
+		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
 
 		function fmtTime2(d) {
 			return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
@@ -1811,7 +1815,7 @@ var summaryData = [];
 		// ===== Sheet 3: 請假紀錄 =====
 		var allLeaves = await db.getLeaveRequests('', 2000);
 		var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-		var typeLabels2 = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假' };
+		var typeLabels2 = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
 		var leaveData = [];
 		for (var lv = 0; lv < allLeaves.length; lv++) {
 			var lr = allLeaves[lv];

@@ -520,13 +520,14 @@ router.get('/leaves', auth, async (req, res) => {
     if (!startStr) return 0;
     var s2 = new Date(startStr), e2 = new Date(endStr||startStr);
     var diff = e2 - s2;
-    if (diff <= 0) return 1;
-    var raw = Math.ceil(diff / 3600000);
-    var days = Math.ceil(diff / 86400000);
-    var lunch = 0;
-    if (days <= 1 && s2.getHours() < 12 && e2.getHours() >= 13) lunch = 1;
+    if (diff <= 0) return 0.5;
+    var raw = Math.round(diff / 1800000) * 0.5;
+    var s2d = new Date(s2.getFullYear(), s2.getMonth(), s2.getDate());
+    var e2d = new Date(e2.getFullYear(), e2.getMonth(), e2.getDate());
+    var days = Math.round((e2d - s2d) / 86400000) + 1;
+    var lunch = (s2.getHours() < 12 && e2.getHours() >= 13) ? 1 : 0;
     var workHours = raw - lunch;
-    if (workHours < 1) workHours = 1;
+    if (workHours < 0.5) workHours = 0.5;
     return Math.min(workHours, days * 8);
   }
   function sd(d) { return typeof d === 'string' ? d : (d ? d.toISOString().split('T')[0] : ''); }
@@ -1262,7 +1263,7 @@ async function exportLeaveHours(startStr, endStr) {
   if (!startStr) return 0;
   var s = new Date(startStr), e = new Date(endStr||startStr);
   var diff = e - s;
-  if (diff <= 0) return 1;
+  if (diff <= 0) return 0.5;
 
   // 讀取國定假日
   var holidays = [];
@@ -1290,7 +1291,7 @@ async function exportLeaveHours(startStr, endStr) {
       }
       var dayDiff = dayEnd - dayStart;
       if (dayDiff > 0) {
-        var dayRaw = Math.ceil(dayDiff / 3600000);
+        var dayRaw = Math.round(dayDiff / 1800000) * 0.5;
         var lunch = (dayStart.getHours() < 12 && dayEnd.getHours() >= 13) ? 1 : 0;
         var dayHours = dayRaw - lunch;
         if (dayHours > 8) dayHours = 8;
@@ -1299,7 +1300,7 @@ async function exportLeaveHours(startStr, endStr) {
     }
     current.setDate(current.getDate() + 1);
   }
-  if (total < 1) total = 1;
+  if (total < 0.5 && startStr.substring(0, 10) === endStr.substring(0, 10)) total = 0.5;
   return total;
 }
 

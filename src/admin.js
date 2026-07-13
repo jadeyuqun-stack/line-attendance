@@ -1941,4 +1941,100 @@ summaryData.push({
 	}
 });
 
+// ===== 除錯：遲到請假時數 =====
+router.get('/debug-late-hours', auth, async function(req, res) {
+	try {
+		var start = '2026-07-01', end = '2026-07-31';
+		var rows = await db.getCheckinSummary(start, end);
+		var leaves = await db.getLeaveRequests('approved', 2000);
+		var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
+		var lateBufMin = parseInt(await db.getSetting('late_buffer_minutes') || '30');
+
+		var html = '<h2>除錯：遲到請假時數</h2><pre style="font-size:12px;line-height:1.5">';
+
+		// 找葉宗祺（employee_no=001）
+		var target = null;
+		for (var i = 0; i < rows.length; i++) {
+			if (rows[i].employee_no === '001' && rows[i].work_date === '2026-07-13') {
+				target = rows[i];
+				break;
+			}
+		}
+		if (!target) {
+			html += '❌ 找不到 001 2026-07-13 的資料\n\n所有 employee_no 列舉：\n';
+			var seen = {};
+			for (var i = 0; i < rows.length; i++) {
+				if (!seen[rows[i].employee_no]) { seen[rows[i].employee_no] = true; html += '  ' + rows[i].employee_no + ' (id=' + rows[i].employee_id + ')\n'; }
+			}
+		} else {
+			var r = target;
+			var ci = r.check_in_time ? new Date(r.check_in_time) : null;
+			var co = r.check_out_time ? new Date(r.check_out_time) : null;
+			var lateMin = 0;
+			if (ci && co) {
+				var ciMins = ci.getHours() * 60 + ci.getMinutes();
+				lateMin = ciMins - (workStartH * 60 + lateBufMin);
+				if (lateMin <= 0) lateMin = 0;
+			}
+
+			html += '=== 員工資訊 ===\n';
+			html += 'employee_no: ' + JSON.stringify(r.employee_no) + '\n';
+			html += 'employee_id: ' + JSON.stringify(r.employee_id) + ' (typeof=' + (typeof r.employee_id) + ')\n';
+			html += 'work_date: ' + JSON.stringify(r.work_date) + '\n';
+			html += 'check_in: ' + (ci ? ci.toISOString() : 'null') + '\n';
+			html += 'check_out: ' + (co ? co.toISOString() : 'null') + '\n';
+			html += 'lateMin: ' + lateMin + '\n';
+			html += 'ciMins calc: ' + (ci ? (ci.getHours()*60+ci.getMinutes()) : 'N/A') + ' - (' + workStartH + '*60+' + lateBufMin + '=' + (workStartH*60+lateBufMin) + ')\n';
+
+			html += '\n=== 所有已核准請假 ===\n';
+			if (leaves.length === 0) {
+				html += '(無任何已核准請假)\n';
+			} else {
+				for (var li = 0; li < leaves.length; li++) {
+					var l = leaves[li];
+					var match = (l.employee_id == r.employee_id) ? ' ← MATCH employee_id' : '';
+					var dateMatch = ' (dateOverlaps: ' + dateOverlaps(l.start_date, l.end_date, r.work_date) + ')';
+					html += '  [' + li + '] id=' + l.id + ' emp=' + l.employee_id + ' (' + (typeof l.employee_id) + ') no=' + l.employee_no + ' type=' + l.leave_type + ' status=' + l.status + ' start=' + l.start_date + ' end=' + l.end_date + match + dateMatch + '\n';
+				}
+			}
+
+			// 計算 _lateLeaveH
+			var _lateLeaveH = '';
+			if (lateMin > 0) {
+				for (var _lx2 = 0; _lx2 < leaves.length; _lx2++) {
+					var _lvx2 = leaves[_lx2];
+					if (_lvx2.employee_id == r.employee_id && _lvx2.status === 'approved' && dateOverlaps(_lvx2.start_date, _lvx2.end_date, r.work_date)) {
+						_lateLeaveH = Math.max(0.5, Math.round((new Date(_lvx2.end_date) - new Date(_lvx2.start_date)) / 1800000) * 0.5) + 'h';
+						html += '\n=== 比對結果 ===\n';
+						html += '找到請假 id=' + _lvx2.id + ' type=' + _lvx2.leave_type + '\n';
+						html += 'end_date=' + _lvx2.end_date + ' start_date=' + _lvx2.start_date + '\n';
+						html += 'diff=' + (new Date(_lvx2.end_date) - new Date(_lvx2.start_date)) + 'ms\n';
+						html += 'Math.max(0.5, Math.round(' + ((new Date(_lvx2.end_date) - new Date(_lvx2.start_date))/1800000) + ')*0.5) = ' + Math.max(0.5, Math.round((new Date(_lvx2.end_date) - new Date(_lvx2.start_date)) / 1800000) * 0.5) + '\n';
+						html += '_lateLeaveH = ' + _lateLeaveH + '\n';
+						break;
+					}
+				}
+				if (!_lateLeaveH) {
+					html += '\n=== 無符合請假 ===\n';
+					html += 'lateMin>0 但無符合的已核准請假\n';
+				}
+			} else {
+				html += '\n=== 未遲到 ===\n';
+			}
+		}
+
+		// 列出全體員工 id 對照
+		html += '\n\n=== 全體員工 ID 對照 ===\n';
+		var allEmps = await db.listActiveEmployees();
+		for (var ei = 0; ei < allEmps.length; ei++) {
+			html += '  id=' + allEmps[ei].id + ' no=' + allEmps[ei].employee_no + ' name=' + allEmps[ei].name + '\n';
+		}
+
+		html += '</pre><p><a href="/admin">← 返回儀表板</a></p>';
+		res.send(layout('除錯', '除錯：遲到請假時數', html));
+	} catch(e) {
+		res.status(500).send('除錯錯誤：' + e.message + '<br><pre>' + (e.stack || '') + '</pre>');
+	}
+});
+
 module.exports = router;

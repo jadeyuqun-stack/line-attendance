@@ -410,7 +410,7 @@ router.get('/employees', auth, async (_, res) => {
       
       + '<td>'
       + '<button onclick="editLine('+e.id+',\''+nameEsc+'\',\''+esc(e.line_user_id||'')+'\')" class="btn-sm btn-blue">LINE</button> '
-	      + (e.role==='經理'?'<button onclick="toggleManagerMode('+e.id+','+esc(e.manager_mode||'normal')+')" class="btn-sm '+(e.manager_mode==='test'?'btn':'btn-gray')+'">'+(e.manager_mode==='test'?'🔬 正常':'測試')+'</button> ':'')
+	      + (e.role==='經理'?'<button onclick="toggleManagerMode('+e.id+',\''+esc(e.manager_mode||'normal')+'\')" class="btn-sm '+(e.manager_mode==='test'?'btn':'btn-gray')+'">'+(e.manager_mode==='test'?'🔬 正常':'測試')+'</button> ':'')
       + '<button onclick="removeEmp('+e.id+',\''+nameEsc+'\')" class="btn-sm btn-red">移除</button>'
       + '</td></tr>';
   }

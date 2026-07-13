@@ -1359,12 +1359,14 @@ router.get('/export/overtime', auth, async function(req, res) {
       var otStart = typeof ot.start_time === 'string' ? (ot.start_time.indexOf(' ')!==-1 ? ot.start_time.split(' ')[0] : ot.start_time.split('T')[0]) : '';
       // 檢查日期區間是否重疊
       if (otStart < startDate || otStart > endDate) continue;
-      // 計算加班時數
-      var otHours = 0;
+      // 計算加班時數（分 2 小時內/超過 2 小時）
+      var otHours = 0, otIn2 = 0, otOver2 = 0;
       if (ot.start_time && ot.end_time) {
         var s2 = new Date(ot.start_time), e2 = new Date(ot.end_time);
         var diffMs = e2 - s2;
         if (diffMs > 0) otHours = Math.round(diffMs / 3600000 * 10) / 10;
+        if (otHours <= 2) { otIn2 = otHours; otOver2 = 0; }
+        else { otIn2 = 2; otOver2 = Math.round((otHours - 2) * 10) / 10; }
       }
       var osDt = ot.start_time ? edt(ot.start_time) : { date: '', time: '' };
       var oeDt = ot.end_time ? edt(ot.end_time) : { date: '', time: '' };
@@ -1375,14 +1377,16 @@ router.get('/export/overtime', auth, async function(req, res) {
         '日期': osDt.date,
         '開始時間': osDt.time,
         '結束時間': oeDt.time,
-        '時數(h)': otHours,
+        '總時數(h)': otHours,
+        '2小時內(h)': otIn2,
+        '超過2小時(h)': otOver2,
         '原因': ot.reason || '',
         '狀態': statusLabels2[ot.status] || ot.status,
         '駁回原因': ot.reject_reason || ''
       });
     }
     var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','日期','開始時間','結束時間','時數(h)','原因','狀態','駁回原因'] });
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'] });
     XLSX.utils.book_append_sheet(wb, ws, '加班記錄');
     var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     var label3 = startDate === endDate ? startDate : startDate + '_' + endDate;
@@ -1725,10 +1729,12 @@ router.get('/export/all', auth, async function(req, res) {
 			var ot = allOT[oi];
 			var otStart = typeof ot.start_time === 'string' ? (ot.start_time.indexOf(' ')!==-1 ? ot.start_time.split(' ')[0] : ot.start_time.split('T')[0]) : '';
 			if (otStart < startDate || otStart > endDate) continue;
-			var otHours = 0;
+			var otHours = 0, otIn2 = 0, otOver2 = 0;
 			if (ot.start_time && ot.end_time) {
 				var diffMs = new Date(ot.end_time) - new Date(ot.start_time);
 				if (diffMs > 0) otHours = Math.round(diffMs / 3600000 * 10) / 10;
+				if (otHours <= 2) { otIn2 = otHours; otOver2 = 0; }
+				else { otIn2 = 2; otOver2 = Math.round((otHours - 2) * 10) / 10; }
 			}
 			var osDt = ot.start_time ? edt(ot.start_time) : { date: '', time: '' };
 			var oeDt = ot.end_time ? edt(ot.end_time) : { date: '', time: '' };
@@ -1739,13 +1745,15 @@ router.get('/export/all', auth, async function(req, res) {
 				'日期': osDt.date,
 				'開始時間': osDt.time,
 				'結束時間': oeDt.time,
-				'時數(h)': otHours,
+				'總時數(h)': otHours,
+				'2小時內(h)': otIn2,
+				'超過2小時(h)': otOver2,
 				'原因': ot.reason || '',
 				'狀態': statusLabels2[ot.status] || ot.status,
 				'駁回原因': ot.reject_reason || ''
 			});
 		}
-		var ws4 = XLSX.utils.json_to_sheet(otData, { header: ['員工編號','姓名','部門','日期','開始時間','結束時間','時數(h)','原因','狀態','駁回原因'] });
+		var ws4 = XLSX.utils.json_to_sheet(otData, { header: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'] });
 		XLSX.utils.book_append_sheet(wb, ws4, '加班紀錄');
 
 		var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });

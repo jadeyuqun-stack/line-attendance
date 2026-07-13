@@ -888,6 +888,7 @@ router.get('/salary', auth, async function(_, res) {
     var sv = savedMap[e.id] || {};
     var content = sv.content || '';
     var hasImg = salaryImages[e.id] ? ' ✅已上傳圖片' : '';
+    var nameEsc = esc(e.name);
     rows += '<tr>'
       + '<td>'+(i+1)+'</td>'
       + '<td>'+h(e.employee_no)+'</td>'

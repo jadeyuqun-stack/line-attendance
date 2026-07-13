@@ -773,19 +773,20 @@ router.get('/missed', auth, async function(_, res) {
   var rows = '';
   var empMap = {};
   for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
-  function getOtApprover(rec) {
+  function getMpApprover(rec) {
     if (rec.status !== 'pending') return '';
     var emp = empMap[rec.employee_id];
     if (!emp) return '';
-    var lv = rec.approval_level || 1;
-    var col = lv === 1 ? 'approver_id' : lv === 2 ? 'approver2_id' : 'approver3_id';
-    var apprId = emp[col];
-    var apprName = apprId && empMap[apprId] ? empMap[apprId].name : '';
-    return ' <small style="color:#8e44ad">↳ L' + lv + (apprName ? ' ' + apprName : '') + '</small>';
+    var names = [];
+    if (emp.approver_id && empMap[emp.approver_id]) names.push('L1 ' + empMap[emp.approver_id].name);
+    if (emp.approver2_id && empMap[emp.approver2_id]) names.push('L2 ' + empMap[emp.approver2_id].name);
+    if (emp.approver3_id && empMap[emp.approver3_id]) names.push('L3 ' + empMap[emp.approver3_id].name);
+    if (names.length === 0) return '';
+    return ' <small style="color:#8e44ad">↳ ' + names.join(', ') + '</small>';
   }
   for (var i = 0; i < records.length; i++) {
     var r = records[i];
-    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
+    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getMpApprover(r) : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
     var ah = '';
     if (r.status === 'pending') ah = '<button onclick="approveMp('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectMp('+r.id+')" class="btn-sm btn-red">駁回</button>';
     rows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.punch_type==='check_in'?'🔵補上班':'🔴補下班')+'</td><td>'+h(r.punch_date)+' '+h(r.punch_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(r.reject_reason)+'</small>':'')+'</td><td>'+ah+'</td></tr>';

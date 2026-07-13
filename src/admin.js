@@ -217,6 +217,10 @@ router.get('/records', auth, async (req, res) => {
     if (r.type === 'check_in') empMap[key].checkIn = r; else empMap[key].checkOut = r;
   }
   // 判斷考勤狀態（dateOverlaps 已提取至模組層級）
+  var _startH = parseInt(await db.getSetting('work_start_hour') || '8');
+  var _buf = parseInt(await db.getSetting('late_buffer_minutes') || '30');
+  var _holidaysArr = [];
+  try { _holidaysArr = JSON.parse(await db.getSetting('tw_holidays') || '[]'); } catch(e2) {}
   var keys = Object.keys(empMap);
   var rows = '', absentCount = 0;
   for (var k = 0; k < keys.length; k++) {
@@ -227,20 +231,12 @@ router.get('/records', auth, async (req, res) => {
     if (hasCheckIn) {
       var ciDt = new Date(d2.checkIn.check_time);
       var ciH = ciDt.getHours(), ciM = ciDt.getMinutes();
-      var startH = parseInt(await db.getSetting('work_start_hour') || '8');
-      var buf = parseInt(await db.getSetting('late_buffer_minutes') || '30');
       // 假日不計遲到
       var ciDay = ciDt.getDay();
-      var ciDateStr = d; // d is the current date being checked (YYYY-MM-DD)
+      var ciDateStr = d;
       var isHoliday2 = ciDay === 0 || ciDay === 6;
-      if (!isHoliday2) {
-        try {
-          var holidaysRaw = await db.getSetting('tw_holidays') || '[]';
-          var holidaysArr = JSON.parse(holidaysRaw);
-          if (holidaysArr.indexOf(ciDateStr) !== -1) isHoliday2 = true;
-        } catch(e2) {}
-      }
-      d2.status = (!isHoliday2 && ciH*60+ciM > startH*60+buf) ? '⚠️遲到' : '✅出勤';
+      if (!isHoliday2 && _holidaysArr.indexOf(ciDateStr) !== -1) isHoliday2 = true;
+      d2.status = (!isHoliday2 && ciH*60+ciM > _startH*60+_buf) ? '⚠️遲到' : '✅出勤';
     } else {
       // 檢查當天是否有核准的請假
       var hasLeave = false;

@@ -556,6 +556,11 @@ router.put('/api/leaves/batch', auth, express.json(), async (req, res) => {
   var action = req.body.action;
   for (var i = 0; i < ids.length; i++) {
     await db.updateLeaveStatus(ids[i], action, null);
+    if (action === 'approved') {
+      var l = await db.getLeaveById(ids[i]);
+      var le = l ? await db.getEmployeeById(l.employee_id) : null;
+      if (le && le.line_user_id) await db.addPendingNotification(le.id, '🎉 請假已核准！' + (l.start_date ? ' ' + l.start_date.substring(0,10) : ''));
+    }
   }
   res.json({ success: true, count: ids.length });
 });
@@ -564,6 +569,11 @@ router.put('/api/overtime/batch', auth, express.json(), async (req, res) => {
   var action = req.body.action;
   for (var i = 0; i < ids.length; i++) {
     await db.updateOvertimeStatus(ids[i], action, null);
+    if (action === 'approved') {
+      var ot = await db.getOvertimeById(ids[i]);
+      var oe = ot ? await db.getEmployeeById(ot.employee_id) : null;
+      if (oe && oe.line_user_id) await db.addPendingNotification(oe.id, '🎉 加班已核准！' + (ot.start_time ? ' ' + ot.start_time.substring(0,10) : ''));
+    }
   }
   res.json({ success: true, count: ids.length });
 });

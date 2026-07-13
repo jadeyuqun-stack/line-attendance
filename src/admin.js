@@ -1030,7 +1030,8 @@ router.post('/salary/preview', auth, upload.any(), async function(req, res) {
       var content = (req.body[key] || '').trim();
       var hasImg = !!salaryImages[id];
       if ((content || hasImg) && empMap[id] && empMap[id].line_user_id) {
-        data.push({ id: id, emp: empMap[id], content: content, hasImg: hasImg });
+                var _llh = ''; if (lateMin > 0) { for (var _li=0;_li<leaves.length;_li++) { var _lv=leaves[_li]; if (_lv.employee_id===r.employee_id && _lv.status==='approved' && dateOverlaps(_lv.start_date,_lv.end_date,r.work_date)) { _llh = _lv.leave_type==='annual'?'特休':_lv.leave_type==='personal'?'事假':_lv.leave_type==='sick'?'病假':_lv.leave_type==='official'?'公假':_lv.leave_type==='outing'?'外出':_lv.leave_type==='marriage'?'婚假':_lv.leave_type==='funeral'?'喪假':_lv.leave_type==='comp'?'補休':_lv.leave_type; break; } } }
+data.push({ id: id, emp: empMap[id], content: content, hasImg: hasImg });
       }
     }
   }
@@ -1543,7 +1544,7 @@ router.get('/export/summary', auth, async function(req, res) {
 				var _a = await db.getAnnualLeaveBalance(eid);
 				var _m = await db.getMarriageLeaveBalance(eid);
 				var _f = await db.getFuneralLeaveBalance(eid);
-				annualLeaveMap[eid] = { ad: _a.entitlement_days, ah: _a.entitlement_hours, au: _a.used_hours, ar: _a.remaining_hours, mr: _m.remaining_hours, fr: _f.remaining_hours };
+				var _ytdP=0,_ytdS=0;try{var _yl=await db.getEmployeeLeaveRequests(eid,'approved',200);var _ys=new Date().getFullYear()+'-01-01';for(var _yi=0;_yi<_yl.length;_yi++){if(_yl[_yi].start_date<_ys)continue;var _yh=await db.calcPeriodHours(_yl[_yi].start_date,_yl[_yi].end_date);if(_yl[_yi].leave_type==='personal')_ytdP+=_yh;else if(_yl[_yi].leave_type==='sick')_ytdS+=_yh;}}catch(ex){}annualLeaveMap[eid]={ad:_a.entitlement_days,ah:_a.entitlement_hours,au:_a.used_hours,ar:_a.remaining_hours,mr:_m.remaining_hours,fr:_f.remaining_hours,_ytdP:_ytdP,_ytdS:_ytdS};
 			} catch(ex) { annualLeaveMap[eid] = { ad:0, au:0, ar:0, mr:0, fr:0 }; }
 		}
 		return annualLeaveMap[eid];
@@ -1631,20 +1632,23 @@ var data = [];
 				'是否<9h': under9h,
 				'考勤狀態': status,
 				'遲到分鐘': lateMin > 0 ? lateMin : '',
-				'請假假別': leaveType,
+				'遲到請假時數': _llh || '',
+								'請假假別': leaveType,
 				'備註': note,
 				'特休額度(h)': (await _getALB(r.employee_id)).ah,
 				'特休已用(h)': (await _getALB(r.employee_id)).au,
 				'特休剩餘(h)': (await _getALB(r.employee_id)).ar,
 				'婚假剩餘(h)': (await _getALB(r.employee_id)).mr,
-				'喪假剩餘(h)': (await _getALB(r.employee_id)).fr
+				'喪假剩餘(h)': (await _getALB(r.employee_id)).fr,
+				'年度事假(h)': (await _getALB(r.employee_id))._ytdP || 0,
+				'年度病假(h)': (await _getALB(r.employee_id))._ytdS || 0
 			});
 		}
 
 		// 建立 Excel
 		var wb = XLSX.utils.book_new();
 		var ws = XLSX.utils.json_to_sheet(data, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','遲到請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws, '出勤彙總');
 		var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -1710,7 +1714,7 @@ router.get('/export/all', auth, async function(req, res) {
 				var _a = await db.getAnnualLeaveBalance(eid);
 				var _m = await db.getMarriageLeaveBalance(eid);
 				var _f = await db.getFuneralLeaveBalance(eid);
-				annualLeaveMap2[eid] = { ad: _a.entitlement_days, ah: _a.entitlement_hours, au: _a.used_hours, ar: _a.remaining_hours, mr: _m.remaining_hours, fr: _f.remaining_hours };
+				var _ytdP2=0,_ytdS2=0;try{var _yl2=await db.getEmployeeLeaveRequests(eid,'approved',200);var _ys2=new Date().getFullYear()+'-01-01';for(var _yi2=0;_yi2<_yl2.length;_yi2++){if(_yl2[_yi2].start_date<_ys2)continue;var _yh2=await db.calcPeriodHours(_yl2[_yi2].start_date,_yl2[_yi2].end_date);if(_yl2[_yi2].leave_type==='personal')_ytdP2+=_yh2;else if(_yl2[_yi2].leave_type==='sick')_ytdS2+=_yh2;}}catch(ex){}annualLeaveMap2[eid]={ad:_a.entitlement_days,ah:_a.entitlement_hours,au:_a.used_hours,ar:_a.remaining_hours,mr:_m.remaining_hours,fr:_f.remaining_hours,_ytdP:_ytdP2,_ytdS:_ytdS2};
 			} catch(ex) { annualLeaveMap2[eid] = { ad:0, au:0, ar:0, mr:0, fr:0 }; }
 		}
 		return annualLeaveMap2[eid];
@@ -1767,7 +1771,8 @@ var summaryData = [];
 				}
 			}
 
-			summaryData.push({
+						var _llh = ''; if (lateMin > 0) { for (var _li=0;_li<leaves.length;_li++) { var _lv=leaves[_li]; if (_lv.employee_id===r.employee_id && _lv.status==='approved' && dateOverlaps(_lv.start_date,_lv.end_date,r.work_date)) { _llh = _lv.leave_type==='annual'?'特休':_lv.leave_type==='personal'?'事假':_lv.leave_type==='sick'?'病假':_lv.leave_type==='official'?'公假':_lv.leave_type==='outing'?'外出':_lv.leave_type==='marriage'?'婚假':_lv.leave_type==='funeral'?'喪假':_lv.leave_type==='comp'?'補休':_lv.leave_type; break; } } }
+summaryData.push({
 				'日期': (r.work_date || '').substring(0, 10),
 				'員工編號': r.employee_no || '-',
 				'姓名': r.name || '-',
@@ -1779,17 +1784,20 @@ var summaryData = [];
 				'是否<9h': under9h,
 				'考勤狀態': status,
 				'遲到分鐘': lateMin > 0 ? lateMin : '',
-				'請假假別': leaveType,
+				'遲到請假時數': _llh || '',
+								'請假假別': leaveType,
 				'備註': note,
 			'特休額度(h)': (await _getALB2(r.employee_id)).ah,
 			'特休已用(h)': (await _getALB2(r.employee_id)).au,
 			'特休剩餘(h)': (await _getALB2(r.employee_id)).ar,
 			'婚假剩餘(h)': (await _getALB2(r.employee_id)).mr,
-			'喪假剩餘(h)': (await _getALB2(r.employee_id)).fr
+			'喪假剩餘(h)': (await _getALB2(r.employee_id)).fr,
+				'年度事假(h)': (await _getALB2(r.employee_id))._ytdP || 0,
+				'年度病假(h)': (await _getALB2(r.employee_id))._ytdS || 0
 			});
 		}
 		var ws1 = XLSX.utils.json_to_sheet(summaryData, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','遲到請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws1, '出勤彙總');
 

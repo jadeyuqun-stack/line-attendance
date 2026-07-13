@@ -930,7 +930,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
     var _ytdLines3 = [];
     if (_personalTotal3 > 0) _ytdLines3.push('事假 ' + _personalTotal3 + 'h');
     if (_sickTotal3 > 0) _ytdLines3.push('病假 ' + _sickTotal3 + 'h');
-    if (_ytdLines3.length > 0) lines.splice(1, 0, '📊 年度累計：' + _ytdLines3.join(' · '));
+    if (_ytdLines3.length > 0) lines.push('✅ 年度累計：' + _ytdLines3.join(' · '));
   } catch(_ex4) {}
   // 假別額度餘額顯示
   try {

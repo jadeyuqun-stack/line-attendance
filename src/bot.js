@@ -272,7 +272,7 @@ async function handleText(text, uid, client, replyToken) {
   } catch(e) { console.error('[reminder] check error:', e.message); }
 
   if (cmd === '我的ID' || cmd.toLowerCase() === 'my id') {
-    return client.replyMessage(replyToken, _pendingMsg ? [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）'), { type: 'text', text: _pendingMsg }] : [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
+    return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')] : [withMenu('🆔 LINE User ID：' + uid + '\n✅ 已綁定：' + emp.name + '（' + emp.employee_no + '）')]);
   }
   if (cmd === '請假' || cmd === '请假') return startLeaveFlow(uid, client, replyToken, _pendingMsg || undefined);
   if (cmd === '查詢當天考勤') return queryTodayAttendance(emp, client, replyToken);
@@ -286,7 +286,7 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '補打卡' || cmd === '补打卡') return startMissedPunch(uid, client, replyToken, _pendingMsg || undefined);
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, _pendingMsg || undefined, uid);
   if (cmd === '駁回全部') return batchRejectAll(emp, client, replyToken, _pendingMsg || undefined, uid);
-  if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, _pendingMsg ? [withMenu('已取消操作。'), { type: 'text', text: _pendingMsg }] : [withMenu('已取消操作。')]); }
+  if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('已取消操作。')] : [withMenu('已取消操作。')]); }
   if (states.has(uid)) {
     var state2 = states.get(uid);
     if (state2.flow === 'reject_leave' || state2.flow === 'reject_ot' || state2.flow === 'reject_missed') {
@@ -297,8 +297,8 @@ async function handleText(text, uid, client, replyToken) {
     }
     return handleFlow(cmd, uid, client, replyToken, emp, _pendingMsg);
   }
-  if (cmd.includes('上班')) { states.set(uid, { flow: 'gps_check', type: 'check_in' }); var _gpsQR1 = { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }, { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }] }; var _msg1 = [{ type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: _gpsQR1 }]; if (_pendingMsg) _msg1.push({ type: 'text', text: _pendingMsg }); return client.replyMessage(replyToken, _msg1); }
-  if (cmd.includes('下班')) { states.set(uid, { flow: 'gps_check', type: 'check_out' }); var _gpsQR2 = { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }, { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }] }; var _msg2 = [{ type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: _gpsQR2 }]; if (_pendingMsg) _msg2.push({ type: 'text', text: _pendingMsg }); return client.replyMessage(replyToken, _msg2); }
+  if (cmd.includes('上班')) { states.set(uid, { flow: 'gps_check', type: 'check_in' }); var _gpsQR1 = { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }, { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }] }; var _msg1 = [{ type: 'text', text: '📍 請分享您的位置進行上班打卡：', quickReply: _gpsQR1 }]; if (_pendingMsg) _msg1.unshift({ type: 'text', text: _pendingMsg }); return client.replyMessage(replyToken, _msg1); }
+  if (cmd.includes('下班')) { states.set(uid, { flow: 'gps_check', type: 'check_out' }); var _gpsQR2 = { items: [{ type: 'action', action: { type: 'location', label: '📍 分享位置' } }, { type: 'action', action: { type: 'message', label: '取消', text: '取消' } }] }; var _msg2 = [{ type: 'text', text: '📍 請分享您的位置進行下班打卡：', quickReply: _gpsQR2 }]; if (_pendingMsg) _msg2.unshift({ type: 'text', text: _pendingMsg }); return client.replyMessage(replyToken, _msg2); }
   if (cmd.includes('查詢') || cmd.includes('記錄')) return doQuery(emp, client, replyToken, _pendingMsg || undefined);
   // 經理測試模式切換
   if (cmd === '切換測試模式' || cmd === '測試模式') {
@@ -309,8 +309,8 @@ async function handleText(text, uid, client, replyToken) {
     return client.replyMessage(replyToken, [withMenu(newMode === 'test' ? '🔬 已切換為測試模式，所有規則限制已暫停。\n\n任何打卡、請假、加班皆不檢查限制。\n\n輸入「切換測試模式」可恢復正常模式。' : '✅ 已切換為正常模式，規則限制已恢復。')]);
   }
 
-  if (cmd.includes('幫助')) return client.replyMessage(replyToken, _pendingMsg ? [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部'), { type: 'text', text: _pendingMsg }] : [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
-  return client.replyMessage(replyToken, _pendingMsg ? [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID'), { type: 'text', text: _pendingMsg }] : [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
+  if (cmd.includes('幫助')) return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')] : [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
+  return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')] : [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
 }
 
 // 待簽核查詢指令
@@ -629,7 +629,7 @@ async function startMissedPunch(uid, client, replyToken, _prefix) {
 
 async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
   if (uid) states.delete(uid);
-  if (!emp.can_approve) return client.replyMessage(replyToken, _prefix ? [withMenu('❌ 無簽核權限'), { type: 'text', text: _prefix }] : [withMenu('❌ 無簽核權限')]);
+  if (!emp.can_approve) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ 無簽核權限')] : [withMenu('❌ 無簽核權限')]);
   var leaves = await db.getLeaveRequests('pending', 200);
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
@@ -638,13 +638,13 @@ async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
   for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch(e, emp.id)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); } } }
   for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch(e, emp.id)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); } } }
   for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && canBatch(e, emp.id)) { var _r3 = await db.updateMissedPunchStatus(mps[i].id, 'approved', emp.id); if (_r3) { lines.push('📝 ' + e.name + ' ' + (mps[i].punch_type === 'check_in' ? '補上班' : '補下班') + ' ' + mps[i].punch_date); } } }
-  if (lines.length === 0) return client.replyMessage(replyToken, _prefix ? [withMenu('✅ 無可核准的項目（可能非您簽核階段）'), { type: 'text', text: _prefix }] : [withMenu('✅ 無可核准的項目（可能非您簽核階段）')]);
+  if (lines.length === 0) return client.replyMessage(replyToken, _prefix ? [withMenu('✅ 無可核准的項目（可能非您簽核階段）')] : [withMenu('✅ 無可核准的項目（可能非您簽核階段）')]);
   return client.replyMessage(replyToken, _prefix ? [withMenu('✅ 已核准 ' + lines.length + ' 筆\n' + lines.join(' · ')), { type: 'text', text: _prefix }] : [withMenu('✅ 已核准 ' + lines.length + ' 筆\n' + lines.join(' · '))]);
 }
 
 async function batchRejectAll(emp, client, replyToken, _prefix, uid) {
   if (uid) states.delete(uid);
-  if (!emp.can_approve) return client.replyMessage(replyToken, _prefix ? [withMenu('❌ 無簽核權限'), { type: 'text', text: _prefix }] : [withMenu('❌ 無簽核權限')]);
+  if (!emp.can_approve) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ 無簽核權限')] : [withMenu('❌ 無簽核權限')]);
   var leaves = await db.getLeaveRequests('pending', 200);
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
@@ -963,7 +963,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
   } else {
     messages.push({ type: 'text', text: lines.join('\n') });
   }
-  if (_prefix) messages.push({ type: 'text', text: _prefix });
+  if (_prefix) messages.unshift({ type: 'text', text: _prefix });
   return client.replyMessage(replyToken, messages);
 }
 
@@ -1046,7 +1046,7 @@ async function startLeaveFlow(uid, client, replyToken, _prefix) {
       ]
     }
   }];
-  if (_prefix) _msg.push({ type: 'text', text: _prefix });
+  if (_prefix) _msg.unshift({ type: 'text', text: _prefix });
   return client.replyMessage(replyToken, _msg);
 }
 
@@ -1082,15 +1082,15 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
       try {
         var mpId = await db.createMissedPunch(emp.id, state.punchType, state.punchDate, state.punchTime, state.reason);
         states.delete(uid);
-        return client.replyMessage(replyToken, _prefix ? [withMenu("✅ 補打卡申請已送出！\n\n" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班") + "\n日期：" + state.punchDate + " " + state.punchTime + "\n⏳ 等待簽核"), { type: 'text', text: _prefix }] : [withMenu("✅ 補打卡申請已送出！\n\n" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班") + "\n日期：" + state.punchDate + " " + state.punchTime + "\n⏳ 等待簽核")]);
-      } catch(e) { console.error('[mp] error:', e.message || e, e.stack || ''); states.delete(uid); return client.replyMessage(replyToken, _prefix ? [withMenu("❌ 申請失敗"), { type: 'text', text: _prefix }] : [withMenu("❌ 申請失敗")]); }
+        return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu("✅ 補打卡申請已送出！\n\n" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班") + "\n日期：" + state.punchDate + " " + state.punchTime + "\n⏳ 等待簽核")] : [withMenu("✅ 補打卡申請已送出！\n\n" + (state.punchType === "check_in" ? "🔵補上班" : "🔴補下班") + "\n日期：" + state.punchDate + " " + state.punchTime + "\n⏳ 等待簽核")]);
+      } catch(e) { console.error('[mp] error:', e.message || e, e.stack || ''); states.delete(uid); return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu("❌ 申請失敗")] : [withMenu("❌ 申請失敗")]); }
     }
     return;
   }
   if (state.step === 'type') {
-    if (text === '取消') { states.delete(uid); return client.replyMessage(replyToken, _prefix ? [withMenu('已取消請假。'), { type: 'text', text: _prefix }] : [withMenu('已取消請假。')]); }
+    if (text === '取消') { states.delete(uid); return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('已取消請假。')] : [withMenu('已取消請假。')]); }
     const type = LEAVE_TYPES[text];
-    if (!type) return client.replyMessage(replyToken, _prefix ? [withMenu('請選擇假別，或點「取消」退出'), { type: 'text', text: _prefix }] : [withMenu('請選擇假別，或點「取消」退出')]);
+    if (!type) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('請選擇假別，或點「取消」退出')] : [withMenu('請選擇假別，或點「取消」退出')]);
     state.type = type; state.typeLabel = text; state.step = 'start_date';
     var _balText = '';
     if (type === 'annual') {
@@ -1101,15 +1101,15 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
       try { var _funBal = await db.getFuneralLeaveBalance(emp.id); if (_funBal.total_hours > 0) _balText = '\n🕊 喪假額度：' + _funBal.remaining_hours + 'h / ' + _funBal.total_hours + 'h'; } catch(_ex) {}
     }
     if (emp.manager_mode === 'test') _balText = '\n🔬 測試模式中' + _balText;
-    return client.replyMessage(replyToken, _prefix ? [withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start'), { type: 'text', text: _prefix }] : [withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')]);
+    return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')] : [withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')]);
   }
   if (state.flow === "overtime" && state.step === 'reason') {
     state.reason = text;
     try {
       var otId = await db.createOvertimeRequest(emp.id, state.otStart, state.otEnd, state.reason);
       states.delete(uid);
-        var _otMsgs = [{ type: "text", text: "✅ 加班申請已送出！\n\n時間：" + fmtDt(state.otStart) + " ~ " + fmtDt(state.otEnd) + "\n原因：" + state.reason + "\n\n⏳ 等待簽核" }]; if (_prefix) _otMsgs.push({ type: 'text', text: _prefix }); await client.replyMessage(replyToken, _otMsgs);
-    } catch(e) { console.error('[ot] error:', e.message || e, e.stack || ''); states.delete(uid); return client.replyMessage(replyToken, _prefix ? [withMenu("❌ 申請失敗"), { type: 'text', text: _prefix }] : [withMenu("❌ 申請失敗")]); }
+        var _otMsgs = [{ type: "text", text: "✅ 加班申請已送出！\n\n時間：" + fmtDt(state.otStart) + " ~ " + fmtDt(state.otEnd) + "\n原因：" + state.reason + "\n\n⏳ 等待簽核" }]; if (_prefix) _otMsgs.unshift({ type: 'text', text: _prefix }); await client.replyMessage(replyToken, _otMsgs);
+    } catch(e) { console.error('[ot] error:', e.message || e, e.stack || ''); states.delete(uid); return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu("❌ 申請失敗")] : [withMenu("❌ 申請失敗")]); }
   }
   if (!state.flow && state.step === 'reason') {
     state.reason = text;
@@ -1125,7 +1125,7 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
           if (_balCheck && reqHours > _balCheck.remaining_hours) {
             states.delete(uid);
             var _typeLabel2 = state.type === 'annual' ? '特休' : state.type === 'marriage' ? '婚假' : '喪假';
-            return client.replyMessage(replyToken, _prefix ? [withMenu('❌ ' + _typeLabel2 + '餘額不足\n\n額度：' + (_balCheck.entitlement_hours || _balCheck.total_hours || 0) + 'h\n已用：' + _balCheck.used_hours + 'h\n剩餘：' + _balCheck.remaining_hours + 'h\n本次需：' + reqHours + 'h\n\n請選擇其他假別或縮短時間。'), { type: 'text', text: _prefix }] : [withMenu('❌ ' + _typeLabel2 + '餘額不足\n\n額度：' + (_balCheck.entitlement_hours || _balCheck.total_hours || 0) + 'h\n已用：' + _balCheck.used_hours + 'h\n剩餘：' + _balCheck.remaining_hours + 'h\n本次需：' + reqHours + 'h\n\n請選擇其他假別或縮短時間。')]);
+            return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ ' + _typeLabel2 + '餘額不足\n\n額度：' + (_balCheck.entitlement_hours || _balCheck.total_hours || 0) + 'h\n已用：' + _balCheck.used_hours + 'h\n剩餘：' + _balCheck.remaining_hours + 'h\n本次需：' + reqHours + 'h\n\n請選擇其他假別或縮短時間。')] : [withMenu('❌ ' + _typeLabel2 + '餘額不足\n\n額度：' + (_balCheck.entitlement_hours || _balCheck.total_hours || 0) + 'h\n已用：' + _balCheck.used_hours + 'h\n剩餘：' + _balCheck.remaining_hours + 'h\n本次需：' + reqHours + 'h\n\n請選擇其他假別或縮短時間。')]);
           }
         }
       }
@@ -1144,7 +1144,7 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
           }
         }
       ];
-      if (_prefix) _respMsgs.push({ type: 'text', text: _prefix });
+      if (_prefix) _respMsgs.unshift({ type: 'text', text: _prefix });
       await client.replyMessage(replyToken, _respMsgs);
     } catch (e) {
       console.error('[leave] error:', e.message || e, e.stack || '');

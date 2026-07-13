@@ -105,11 +105,11 @@ input{min-width:120px}select{min-width:100px}
 function sidebar(active) {
   var links = [
     ['/admin', '📊', '儀表板'],
-    ['/admin/records', '📋', '打卡記錄'],
     ['/admin/employees', '👥', '員工管理'],
+    ['/admin/records', '📋', '打卡記錄'],
+    ['/admin/missed', '📝', '補打卡'],
     ['/admin/leaves', '🏖', '請假管理'],
     ['/admin/overtime', '🕐', '加班管理'],
-    ['/admin/missed', '📝', '補打卡'],
     ['/admin/leave-balances', '🎯', '假期設定'],
     ['/admin/salary', '💵', '薪資發送'],
     ['/admin/data', '📦', '資料彙整'],
@@ -369,7 +369,6 @@ router.get('/employees', auth, async (_, res) => {
       + '<td><span class="editable" onclick="editField('+e.id+',\'department\',\''+deptEsc+'\')">'+(e.department||'點此設定')+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'role\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
 	      + '<td><span class="editable" onclick="editField('+e.id+',\'hire_date\',\''+esc(e.hire_date||'')+'\')">'+(e.hire_date||'<span style="color:#999">設定</span>')+'</span></td>'
-	      + '<td>'+(e.role==='經理'?(e.manager_mode==='test'?'<span style="color:#e67e22">🔬 測試</span>':'<span style="color:#2ecc71">正常</span>'):'')+'</td>'
       + '<td>'+(e.line_user_id?'<span class="badge badge-in">已綁定</span>':'<span class="badge badge-out">未綁定</span>')+'</td>'
       + '<td>'
       + '<button onclick="toggleApprove('+e.id+','+e.can_approve+')" class="btn-sm '+(e.can_approve?'btn':'btn-gray')+'">'+(e.can_approve?'可簽核':'設為簽核人')+'</button> '
@@ -404,7 +403,6 @@ router.get('/employees', auth, async (_, res) => {
       + '<td><span class="editable" onclick="editField('+e.id+',\'department\',\''+deptEsc+'\')">'+(e.department||'點此設定')+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'role\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
 	      + '<td><span class="editable" onclick="editField('+e.id+',\'hire_date\',\''+esc(e.hire_date||'')+'\')">'+(e.hire_date||'<span style="color:#999">設定</span>')+'</span></td>'
-	      + '<td>'+(e.role==='經理'?(e.manager_mode==='test'?'<span style="color:#e67e22">🔬 測試</span>':'<span style="color:#2ecc71">正常</span>'):'')+'</td>'
       + '<td>'+(e.line_user_id?'<span class="badge badge-in">已綁定</span>':'<span class="badge badge-out">未綁定</span>')+'</td>'
       + '<td><button onclick="toggleApprove('+e.id+','+e.can_approve+')" class="btn-sm '+(e.can_approve?'btn':'btn-gray')+'">'+(e.can_approve?'可簽核':'設為簽核人')+'</button></td>'
       + '<td>'+appSel1+'</td>'
@@ -412,6 +410,7 @@ router.get('/employees', auth, async (_, res) => {
       + '<td>'+appSel3+'</td>'
       + '<td>'
       + '<button onclick="editLine('+e.id+',\''+nameEsc+'\',\''+esc(e.line_user_id||'')+'\')" class="btn-sm btn-blue">LINE</button> '
+	      + (e.role==='經理'?'<button onclick="toggleManagerMode('+e.id+','+esc(e.manager_mode||'normal')+')" class="btn-sm '+(e.manager_mode==='test'?'btn':'btn-gray')+'">'+(e.manager_mode==='test'?'🔬 正常':'測試')+'</button> ':'')
       + '<button onclick="removeEmp('+e.id+',\''+nameEsc+'\')" class="btn-sm btn-red">移除</button>'
       + '</td></tr>';
   }
@@ -425,7 +424,7 @@ router.get('/employees', auth, async (_, res) => {
 	    + '<div><label>角色</label><select id="role"><option value="員工">一般員工</option><option value="簽核人員">簽核人員</option><option value="經理">經理</option><option value="老闆">老闆</option></select></div>'
     + '<div style="align-items:center;flex-direction:row;gap:6px"><input type="checkbox" id="canApprove" style="width:16px;height:16px"><label for="canApprove" style="margin:0">簽核人</label></div>'
     + '<button type="submit" class="btn">新增</button></form></div>'
-    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>入職日</th><th>模式</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>L3簽核</th><th>操作</th></tr>'+(rows||'<tr><td colspan="12">尚無員工</td></tr>')+'</table></div>'
+    + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>角色</th><th>入職日</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>L3簽核</th><th>操作</th></tr>'+(rows||'<tr><td colspan="11">尚無員工</td></tr>')+'</table></div>'
     + inactiveList
     + modalHtml();
 
@@ -459,6 +458,8 @@ router.get('/leave-balances', auth, async (req, res) => {
     + '<li>喪假：管理員設定總額度，員工於 LINE 申請時自動扣減。</li>'
     + '<li>所有額度皆為「剩餘」概念，已核准的申請會自動扣減，無須手動調整。</li>'
     + '</ul></div>';
+	  + modalHtml();
+  body += '<script>'+jsLib()+'</script>';
   res.send(layout('假期設定', '假期設定', body));
 });
 
@@ -801,6 +802,7 @@ function jsLib() {
     + 'function closeModal(){document.getElementById("modal").style.display="none";}'
     + 'async function saveLine(){var val=document.getElementById("lineIdInput").value.trim();var r=await fetch("/admin/api/employees/"+editId+"/lineid",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({line_user_id:val})});if(r.ok)location.reload();else alert("儲存失敗");}'
     + 'async function toggleApprove(id,current){await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({can_approve:!current})});location.reload();}'
+    + 'function toggleManagerMode(id,currentMode){var newMode=currentMode==="test"?"normal":"test";fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({manager_mode:newMode})}).then(function(r){return r.json();}).then(function(j){if(j.success)location.reload();else alert("失敗");}).catch(function(){alert("失敗");});}'
     + 'async function editField(id,field,current){if(field==="role"){var roles=["員工","簽核人員","經理","老闆"];var opts=roles.map(function(r){return"<option value=\\""+r+"\\""+(r===current?" selected":"")+">"+(r==="員工"?"一般員工":r)+"</option>";}).join("");var sel=prompt("修改角色\\n\\n1. 一般員工\\n2. 簽核人員\\n3. 經理\\n4. 老闆\\n\\n請輸入 1-4 或角色名稱：",current);if(sel===null)return;var val=sel;if(sel==="1")val="員工";else if(sel==="2")val="簽核人員";else if(sel==="3")val="經理";else if(sel==="4")val="老闆";var body={};body[field]=val;await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});location.reload();}else{var val=prompt("修改 "+field,current);if(val===null)return;var body={};body[field]=val;await fetch("/admin/api/employees/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});location.reload();}}'
     + 'async function setApprover(id,approverId,level){await fetch("/admin/api/employees/"+id+"/approver",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver_id:approverId||null,level:level||1})});}'
     + 'async function removeEmp(id,name){if(!confirm("確定移除 "+name+"？\\n打卡和請假記錄會保留。"))return;var r=await fetch("/admin/api/employees/"+id+"/deactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'

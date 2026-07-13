@@ -2852,6 +2852,9 @@ function textToImage(title, bodyText) {
     '👤': '* ',
     '🔵': '+ ',
     '🔴': '- ',
+    '💍': 'R ',
+    '💐': 'F ',
+    '⏰': 'C ',
     '📋': '',
     '📅': '',
     '📦': ''
@@ -2860,13 +2863,15 @@ function textToImage(title, bodyText) {
   var markerToEmoji = {
     '!': '⚠', 'X': '❌', 'V': '✅', '@': '📍',
     '~': '🏖', 'O': '🕐', '=': '📊', '*': '👤',
-    '+': '🔵', '-': '🔴'
+    '+': '🔵', '-': '🔴',
+    'R': '💍', 'F': '💐', 'C': '⏰'
   };
   // 標記對應的顏色（emoji 圖片載入失敗時降級用）
   var iconColors = {
     '!': '#f59e0b', 'X': '#ef4444', 'V': '#22c55e', '@': '#3b82f6',
     '~': '#eab308', 'O': '#a855f7', '=': '#10b981', '*': '#6b7280',
-    '+': '#3b82f6', '-': '#ef4444'
+    '+': '#3b82f6', '-': '#ef4444',
+    'R': '#e91e63', 'F': '#9c27b0', 'C': '#ff9800'
   };
   var emojiKeys = Object.keys(emojiMap);
   for (var ei = 0; ei < emojiKeys.length; ei++) {

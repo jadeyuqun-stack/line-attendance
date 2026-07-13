@@ -1102,7 +1102,7 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
     } else if (type === 'funeral') {
       try { var _funBal = await db.getFuneralLeaveBalance(emp.id); if (_funBal.total_hours > 0) _balText = '\n🕊 喪假額度：' + _funBal.remaining_hours + 'h / ' + _funBal.total_hours + 'h'; } catch(_ex) {}
     } else if (type === 'comp') {
-      try { var _compBal = await db.getCompLeaveBalance(emp.id); if (_compBal.total_hours > 0) _balText = '\n[補]補休額度：' + _compBal.remaining_hours + 'h / ' + _compBal.total_hours + 'h'; } catch(_ex) {}
+      try { var _compBal = await db.getCompLeaveBalance(emp.id); if (_compBal.total_hours > 0) _balText = '\n⏰ 補休額度：' + _compBal.remaining_hours + 'h / ' + _compBal.total_hours + 'h'; } catch(_ex) {}
     }
     if (emp.manager_mode === 'test') _balText = '\n🔬 測試模式中' + _balText;
     return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')] : [withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')]);

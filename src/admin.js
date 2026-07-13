@@ -1593,7 +1593,20 @@ var data = [];
 					status = '出勤';
 					lateMin = 0;
 				}
-			} else if (ci && !co) {
+							// 計算遲到當天的請假時數
+				var _llh = '';
+				if (lateMin > 0) {
+					for (var _lx = 0; _lx < leaves.length; _lx++) {
+						var _lvx = leaves[_lx];
+						if (_lvx.employee_id === r.employee_id && _lvx.status === 'approved' && dateOverlaps(_lvx.start_date, _lvx.end_date, r.work_date)) {
+							var _lh = await db.calcPeriodHours(_lvx.start_date, _lvx.end_date);
+							_llh = _lh + 'h';
+							break;
+						}
+					}
+				}
+				
+} else if (ci && !co) {
 				// 只有上班沒下班
 				status = '未下班';
 			} else {
@@ -1771,7 +1784,17 @@ var summaryData = [];
 				}
 			}
 
-						var _llh = ''; if (lateMin > 0) { for (var _li=0;_li<leaves.length;_li++) { var _lv=leaves[_li]; if (_lv.employee_id===r.employee_id && _lv.status==='approved' && dateOverlaps(_lv.start_date,_lv.end_date,r.work_date)) { _llh = _lv.leave_type==='annual'?'特休':_lv.leave_type==='personal'?'事假':_lv.leave_type==='sick'?'病假':_lv.leave_type==='official'?'公假':_lv.leave_type==='outing'?'外出':_lv.leave_type==='marriage'?'婚假':_lv.leave_type==='funeral'?'喪假':_lv.leave_type==='comp'?'補休':_lv.leave_type; break; } } }
+						var _llh = '';
+					if (lateMin > 0) {
+						for (var _lx = 0; _lx < leaves.length; _lx++) {
+							var _lvx = leaves[_lx];
+							if (_lvx.employee_id === r.employee_id && _lvx.status === 'approved' && dateOverlaps(_lvx.start_date, _lvx.end_date, r.work_date)) {
+								var _lh = await db.calcPeriodHours(_lvx.start_date, _lvx.end_date);
+								_llh = _lh + 'h';
+								break;
+							}
+						}
+					}
 summaryData.push({
 				'日期': (r.work_date || '').substring(0, 10),
 				'員工編號': r.employee_no || '-',

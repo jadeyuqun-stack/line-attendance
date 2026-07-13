@@ -2805,6 +2805,7 @@ async function loadEmojiImages() {
       '⚠': '26a0', '❌': '274c', '✅': '2705', '📍': '1f4cd',
       '🏖': '1f3d6', '🕐': '1f550', '📊': '1f4ca', '👤': '1f464',
       '🔵': '1f535', '🔴': '1f534', '📋': '1f4cb', '📅': '1f4c5',
+      '💍': '1f48d', '💐': '1f490', '⏰': '23f0',
     };
     var keys = Object.keys(codes);
     for (var i = 0; i < keys.length; i++) {

@@ -942,7 +942,9 @@ async function doQuery(emp, client, replyToken, _prefix) {
     if (_funBal2.total_hours > 0) _balLines2.push('💐 喪假：' + _funBal2.remaining_hours + '/' + _funBal2.total_hours + 'h');
     if (_compBal2.total_hours > 0) _balLines2.push('⏰ 補休：' + _compBal2.remaining_hours + '/' + _compBal2.total_hours + 'h');
     lines.push('\n📊 剩餘/累計假期');
-    lines.push('' + _balLines2.join(' · '));
+    for (var _bi3 = 0; _bi3 < _balLines2.length; _bi3++) {
+      lines.push(_balLines2[_bi3]);
+    }
   } catch(_ex2) {}
   if (_ytdLines3.length > 0) lines.push('✅ 年度累計：' + _ytdLines3.join(' · '));
   if (emp.role === '經理' && emp.manager_mode === 'test') {

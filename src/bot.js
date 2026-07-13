@@ -816,7 +816,8 @@ async function doQuery(emp, client, replyToken, _prefix) {
   var allLeaves = await db.getLeaveRequests('approved', 2000);
   var allOTs = await db.getOvertimeRequests('approved', 500);
 
-  var lines = ['📅 當月考勤明細（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）'];
+  var _titleExtra = emp.hire_date ? ' | 📅 入職日：' + emp.hire_date : '';
+  var lines = ['📅 當月考勤明細（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）' + _titleExtra + ''];
 
   // 遲到記錄
   var lateRecords = [];
@@ -913,9 +914,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
 
   // 
   // 入職日與年度請假統計
-  try {
-    if (emp.hire_date) lines.splice(1, 0, '', '📅 入職日：' + emp.hire_date);
-  } catch(_ex3) {}
+
   try {
     var _allLeaves3 = await db.getEmployeeLeaveRequests(emp.id, 'approved', 200);
     var _yearStart3 = new Date().getFullYear() + '-01-01';
@@ -930,7 +929,6 @@ async function doQuery(emp, client, replyToken, _prefix) {
     var _ytdLines3 = [];
     if (_personalTotal3 > 0) _ytdLines3.push('事假 ' + _personalTotal3 + 'h');
     if (_sickTotal3 > 0) _ytdLines3.push('病假 ' + _sickTotal3 + 'h');
-    if (_ytdLines3.length > 0) lines.push('✅ 年度累計：' + _ytdLines3.join(' · '));
   } catch(_ex4) {}
   // 假別額度餘額顯示
   try {
@@ -945,11 +943,12 @@ async function doQuery(emp, client, replyToken, _prefix) {
     if (_compBal2.total_hours > 0) _balLines2.push('⏰ 補休：' + _compBal2.remaining_hours + 'h');
     if (_balLines2.length > 0) lines.push('\n' + _balLines2.join(' \n'));
   } catch(_ex2) {}
+  if (_ytdLines3.length > 0) lines.push('✅ 年度累計：' + _ytdLines3.join(' · '));
   if (emp.role === '經理' && emp.manager_mode === 'test') {
     lines.push('🔬 測試模式（不限制規則）');
   }
 
-  var png = textToImage(lines[0], lines.join('\n'));
+  var png = textToImage(lines[0], lines.slice(1).join('\n'));
   var imgUrl = '';
   if (png) {
     var imgId = 'q_' + Date.now() + '_' + Math.floor(Math.random() * 10000);

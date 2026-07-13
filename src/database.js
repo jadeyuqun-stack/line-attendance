@@ -635,7 +635,7 @@ async function calcPeriodHours(startStr, endStr) {
   if (!startStr) return 0;
   var s = new Date(startStr), e = new Date(endStr || startStr);
   var diff = e - s;
-  if (diff <= 0) return 1;
+  if (diff <= 0) return 0.5;
 
   // 讀取國定假日
   var holidays = [];
@@ -670,7 +670,7 @@ async function calcPeriodHours(startStr, endStr) {
     }
     current.setDate(current.getDate() + 1);
   }
-  if (total < 1 && startStr === endStr) total = 1;
+  if (total < 0.5 && startStr === endStr) total = 0.5;
   return total;
 }
 

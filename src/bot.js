@@ -938,7 +938,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
     var _marBal2 = await db.getMarriageLeaveBalance(emp.id);
     var _funBal2 = await db.getFuneralLeaveBalance(emp.id);
     var _balLines2 = [];
-    if (_annBal2.entitlement_days > 0) _balLines2.push('🏖 特休：' + _annBal2.remaining_hours + 'h（' + _annBal2.entitlement_days + '天）');
+    if (_annBal2.entitlement_hours > 0) _balLines2.push('🏖 特休：' + _annBal2.remaining_hours + 'h / ' + _annBal2.entitlement_hours + 'h');
     if (_marBal2.total_hours > 0) _balLines2.push('💍 婚假：' + _marBal2.remaining_hours + 'h');
     if (_funBal2.total_hours > 0) _balLines2.push('💐 喪假：' + _funBal2.remaining_hours + 'h');
     var _compBal2 = await db.getCompLeaveBalance(emp.id);
@@ -993,7 +993,7 @@ function leaveHours(startStr, endStr) {
   if (!startStr) return 0;
   var s = new Date(startStr), e = new Date(endStr||startStr);
   var diff = e - s;
-  if (diff <= 0) return 1;
+  if (diff <= 0) return 0.5;
 
   // 逐日計算，跳過週六(6)週日(0)及國定假日
   var sDay = new Date(s.getFullYear(), s.getMonth(), s.getDate());
@@ -1026,7 +1026,7 @@ function leaveHours(startStr, endStr) {
     }
     current.setDate(current.getDate() + 1);
   }
-  if (total < 1) total = 1;
+  if (total < 0.5) total = 0.5;
   return total;
 }
 
@@ -1096,7 +1096,7 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
     state.type = type; state.typeLabel = text; state.step = 'start_date';
     var _balText = '';
     if (type === 'annual') {
-      try { var _annBal = await db.getAnnualLeaveBalance(emp.id); if (_annBal.entitlement_days > 0) _balText = '\n🏖 特休餘額：' + _annBal.remaining_hours + 'h（' + _annBal.entitlement_days + '天，已用' + _annBal.used_hours + 'h）'; } catch(_ex) {}
+      try { var _annBal = await db.getAnnualLeaveBalance(emp.id); if (_annBal.entitlement_hours > 0) _balText = '\n🏖 特休餘額：' + _annBal.remaining_hours + 'h / ' + _annBal.entitlement_hours + 'h，已用' + _annBal.used_hours + 'h'; } catch(_ex) {}
     } else if (type === 'marriage') {
       try { var _marBal = await db.getMarriageLeaveBalance(emp.id); if (_marBal.total_hours > 0) _balText = '\n💒 婚假額度：' + _marBal.remaining_hours + 'h / ' + _marBal.total_hours + 'h'; } catch(_ex) {}
     } else if (type === 'funeral') {
@@ -1127,6 +1127,12 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
           else if (state.type === 'funeral') _balCheck = await db.getFuneralLeaveBalance(emp.id);
           else if (state.type === 'comp') _balCheck = await db.getCompLeaveBalance(emp.id);
           var reqHours = await db.calcPeriodHours(state.startDateTime, state.endDateTime);
+          // 婚假/喪假最低 8 小時
+          if ((state.type === "marriage" || state.type === "funeral") && reqHours < 8) {
+            states.delete(uid);
+            var _minLabel = state.type === "marriage" ? "婚假" : "喪假";
+            return client.replyMessage(replyToken, _prefix ? [{ type: "text", text: _prefix }, withMenu("❌ " + _minLabel + "最少需申請 8 小時（1 天）\n請將時間調整為至少 8 小時。")] : [withMenu("❌ " + _minLabel + "最少需申請 8 小時（1 天）\n請將時間調整為至少 8 小時。")]);
+          }
           if (_balCheck && reqHours > _balCheck.remaining_hours) {
             states.delete(uid);
             var _typeLabel2 = state.type === 'annual' ? '特休' : state.type === 'marriage' ? '婚假' : state.type === 'funeral' ? '喪假' : '補休';

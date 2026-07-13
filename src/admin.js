@@ -4,7 +4,7 @@ const XLSX = require('xlsx');
 const router = express.Router();
 
 function auth(req, res, next) {
-  if (req.session && req.session.admin) return next();
+  if (req.session && req.session.ahmin) return next();
   return req.method === 'GET' ? res.redirect('/admin/login') : res.status(401).json({ error: '未登入' });
 }
 
@@ -135,7 +135,7 @@ router.get('/login', (req, res) => {
   res.send('<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登入</title><style>'+CSS+'</style></head><body><div class="login-page"><div class="login-box"><h1>📋 打卡管理系統</h1><p class="sub">請輸入管理員帳號密碼</p>'+(req.query.err?'<div class="err">帳號或密碼錯誤</div>':'')+'<form method="POST" action="/admin/login"><input name="username" placeholder="帳號" required autofocus><input type="password" name="password" placeholder="密碼" required><button class="btn">登入</button></form></div></div></body></html>');
 });
 router.post('/login', express.urlencoded({ extended: true }), (req, res) => {
-  if (req.body.username === process.env.ADMIN_USERNAME && req.body.password === process.env.ADMIN_PASSWORD) { req.session.admin = true; return res.redirect('/admin'); }
+  if (req.body.username === process.env.ADMIN_USERNAME && req.body.password === process.env.ADMIN_PASSWORD) { req.session.ahmin = true; return res.redirect('/admin'); }
   res.redirect('/admin/login?err=1');
 });
 router.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/admin/login'); });
@@ -261,8 +261,8 @@ router.get('/records', auth, async (req, res) => {
     // 篩選員工
     if (req.query.eid && parseInt(req.query.eid) !== parseInt(e.id)) continue;
 
-    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 <span id="ci_'+d2.checkIn.id+'">'+fmt(d2.checkIn.check_time)+'</span></span> <button onclick="editTime('+d2.checkIn.id+',\'ci\')" class="btn-sm" style="font-size:10px;padding:1px 4px;background:#f0f0f0;border:1px solid #ddd;border-radius:3px;cursor:pointer" title="修改時間">✎</button>'+(d2.checkIn.address?'<br><small style="color:#999">📍 '+h(d2.checkIn.address)+'</small>':'')+(d2.checkIn.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
-    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 <span id="co_'+d2.checkOut.id+'">'+fmt(d2.checkOut.check_time)+'</span></span> <button onclick="editTime('+d2.checkOut.id+',\'co\')" class="btn-sm" style="font-size:10px;padding:1px 4px;background:#f0f0f0;border:1px solid #ddd;border-radius:3px;cursor:pointer" title="修改時間">✎</button>'+(d2.checkOut.address?'<br><small style="color:#999">📍 '+h(d2.checkOut.address)+'</small>':'')+(d2.checkOut.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
+    var inHtml = d2.checkIn ? '<span style="color:#06c755">🔵 <span id="ci_'+d2.checkIn.id+'">'+fmt(d2.checkIn.check_time)+'</span></span> <button onclick="editTime('+d2.checkIn.id+',\'ci\')" class="btn-sm" style="font-size:10px;padding:1px 4px;background:#f0f0f0;border:1px solid #ddd;border-radius:3px;cursor:pointer" title="修改時間">✎</button>'+(d2.checkIn.ahdress?'<br><small style="color:#999">📍 '+h(d2.checkIn.ahdress)+'</small>':'')+(d2.checkIn.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
+    var outHtml = d2.checkOut ? '<span style="color:#e74c3c">🔴 <span id="co_'+d2.checkOut.id+'">'+fmt(d2.checkOut.check_time)+'</span></span> <button onclick="editTime('+d2.checkOut.id+',\'co\')" class="btn-sm" style="font-size:10px;padding:1px 4px;background:#f0f0f0;border:1px solid #ddd;border-radius:3px;cursor:pointer" title="修改時間">✎</button>'+(d2.checkOut.ahdress?'<br><small style="color:#999">📍 '+h(d2.checkOut.ahdress)+'</small>':'')+(d2.checkOut.in_range===false?' <span class="badge badge-warn">⚠️超出</span>':'') : '<span style="color:#ccc">--:--</span>';
     var hours = '-', workH = 0;
     if (d2.checkIn && d2.checkOut) {
       var ci = new Date(d2.checkIn.check_time), co = new Date(d2.checkOut.check_time);
@@ -603,7 +603,7 @@ router.put('/api/leaves/:id/approve', auth, async (req, res) => {
   if (!leave) return res.status(404).json({ error: '找不到' });
   await db.updateLeaveStatus(leave.id, 'approved', null);
   var le = await db.getEmployeeById(leave.employee_id);
-  if (le && le.line_user_id) await db.addPendingNotification(le.id, '🎉 請假已核准！' + (leave.start_date ? ' ' + leave.start_date.substring(0,10) : ''));
+  if (le && le.line_user_id) await db.ahdPendingNotification(le.id, '🎉 請假已核准！' + (leave.start_date ? ' ' + leave.start_date.substring(0,10) : ''));
   res.json({ success: true });
 });
 router.put('/api/leaves/:id/reject', auth, express.json(), async (req, res) => {
@@ -620,7 +620,7 @@ router.put('/api/leaves/batch', auth, express.json(), async (req, res) => {
     if (action === 'approved') {
       var l = await db.getLeaveById(ids[i]);
       var le = l ? await db.getEmployeeById(l.employee_id) : null;
-      if (le && le.line_user_id) await db.addPendingNotification(le.id, '🎉 請假已核准！' + (l.start_date ? ' ' + l.start_date.substring(0,10) : ''));
+      if (le && le.line_user_id) await db.ahdPendingNotification(le.id, '🎉 請假已核准！' + (l.start_date ? ' ' + l.start_date.substring(0,10) : ''));
     }
   }
   res.json({ success: true, count: ids.length });
@@ -633,7 +633,7 @@ router.put('/api/overtime/batch', auth, express.json(), async (req, res) => {
     if (action === 'approved') {
       var ot = await db.getOvertimeById(ids[i]);
       var oe = ot ? await db.getEmployeeById(ot.employee_id) : null;
-      if (oe && oe.line_user_id) await db.addPendingNotification(oe.id, '🎉 加班已核准！' + (ot.start_time ? ' ' + ot.start_time.substring(0,10) : ''));
+      if (oe && oe.line_user_id) await db.ahdPendingNotification(oe.id, '🎉 加班已核准！' + (ot.start_time ? ' ' + ot.start_time.substring(0,10) : ''));
     }
   }
   res.json({ success: true, count: ids.length });
@@ -874,7 +874,7 @@ router.put('/api/missed/:id/approve', auth, async function(req, res) {
   await db.updateMissedPunchStatus(parseInt(req.params.id), 'approved', null);
   var mp = await db.getMissedPunchById(parseInt(req.params.id));
   var me = mp ? await db.getEmployeeById(mp.employee_id) : null;
-  if (me && me.line_user_id) await db.addPendingNotification(me.id, '🎉 補打卡已核准！' + (mp.punch_date ? ' ' + mp.punch_date : ''));
+  if (me && me.line_user_id) await db.ahdPendingNotification(me.id, '🎉 補打卡已核准！' + (mp.punch_date ? ' ' + mp.punch_date : ''));
   res.json({ success: true });
 });
 router.put('/api/missed/:id/reject', auth, express.json(), async function(req, res) { await db.updateMissedPunchStatus(parseInt(req.params.id), 'rejected', null, req.body.reason || ''); res.json({ success: true }); });
@@ -929,7 +929,7 @@ router.put('/api/overtime/:id/approve', auth, async function(req, res) {
   await db.updateOvertimeStatus(parseInt(req.params.id), 'approved', null);
   var ot = await db.getOvertimeById(parseInt(req.params.id));
   var oe = ot ? await db.getEmployeeById(ot.employee_id) : null;
-  if (oe && oe.line_user_id) await db.addPendingNotification(oe.id, '🎉 加班已核准！' + (ot.start_time ? ' ' + ot.start_time.substring(0,10) : ''));
+  if (oe && oe.line_user_id) await db.ahdPendingNotification(oe.id, '🎉 加班已核准！' + (ot.start_time ? ' ' + ot.start_time.substring(0,10) : ''));
   res.json({ success: true });
 });
 router.put('/api/overtime/:id/reject', auth, express.json(), async function(req, res) {
@@ -1330,7 +1330,7 @@ router.get('/export/checkins', auth, async function(req, res) {
         '姓名': r.name || '-',
         '部門': r.department || '',
         '類型': r.type === 'check_in' ? '上班' : '下班',
-        '位置': (r.address || '').substring(0, 80),
+        '位置': (r.ahdress || '').substring(0, 80),
         'GPS': r.in_range === false ? '超出範圍' : '範圍內',
         '備註': ''
       });
@@ -1515,6 +1515,8 @@ router.get('/export/summary', auth, async function(req, res) {
 
 		// 假別標籤
 		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
+			var _holidays2 = [];
+			try { _holidays2 = JSON.parse(await db.getSetting('tw_holidays') || '[]'); } catch(ex) {}
 
 		// 建立請假查詢用 Map（employee_id → 當天有效的請假）
 		var leaveByEmp = {};
@@ -1541,7 +1543,7 @@ router.get('/export/summary', auth, async function(req, res) {
 				var _a = await db.getAnnualLeaveBalance(eid);
 				var _m = await db.getMarriageLeaveBalance(eid);
 				var _f = await db.getFuneralLeaveBalance(eid);
-				annualLeaveMap[eid] = { ad: _a.entitlement_days, au: _a.used_hours, ar: _a.remaining_hours, mr: _m.remaining_hours, fr: _f.remaining_hours };
+				annualLeaveMap[eid] = { ad: _a.entitlement_days, ah: _a.entitlement_hours, au: _a.used_hours, ar: _a.remaining_hours, mr: _m.remaining_hours, fr: _f.remaining_hours };
 			} catch(ex) { annualLeaveMap[eid] = { ad:0, au:0, ar:0, mr:0, fr:0 }; }
 		}
 		return annualLeaveMap[eid];
@@ -1608,6 +1610,13 @@ var data = [];
 				if (status === '曠職' && missedSet[r.employee_id + '::' + r.work_date]) {
 					status = '已補卡';
 				}
+				// 檢查是否為六日或國定假日
+				if (status === '曠職') {
+					var _dow = new Date(r.work_date).getDay();
+					if (_dow === 0 || _dow === 6 || _holidays.indexOf(r.work_date) !== -1) {
+						status = '假日';
+					}
+				}
 			}
 
 			data.push({
@@ -1624,7 +1633,7 @@ var data = [];
 				'遲到分鐘': lateMin > 0 ? lateMin : '',
 				'請假假別': leaveType,
 				'備註': note,
-				'特休額度(天)': (await _getALB(r.employee_id)).ad,
+				'特休額度(h)': (await _getALB(r.employee_id)).ah,
 				'特休已用(h)': (await _getALB(r.employee_id)).au,
 				'特休剩餘(h)': (await _getALB(r.employee_id)).ar,
 				'婚假剩餘(h)': (await _getALB(r.employee_id)).mr,
@@ -1635,7 +1644,7 @@ var data = [];
 		// 建立 Excel
 		var wb = XLSX.utils.book_new();
 		var ws = XLSX.utils.json_to_sheet(data, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註','特休額度(天)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws, '出勤彙總');
 		var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -1673,6 +1682,8 @@ router.get('/export/all', auth, async function(req, res) {
 		var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
 		var lateBufMin = parseInt(await db.getSetting('late_buffer_minutes') || '30');
 		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
+			var _holidays2 = [];
+			try { _holidays2 = JSON.parse(await db.getSetting('tw_holidays') || '[]'); } catch(ex) {}
 
 		function fmtTime2(d) {
 			return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
@@ -1699,7 +1710,7 @@ router.get('/export/all', auth, async function(req, res) {
 				var _a = await db.getAnnualLeaveBalance(eid);
 				var _m = await db.getMarriageLeaveBalance(eid);
 				var _f = await db.getFuneralLeaveBalance(eid);
-				annualLeaveMap2[eid] = { ad: _a.entitlement_days, au: _a.used_hours, ar: _a.remaining_hours, mr: _m.remaining_hours, fr: _f.remaining_hours };
+				annualLeaveMap2[eid] = { ad: _a.entitlement_days, ah: _a.entitlement_hours, au: _a.used_hours, ar: _a.remaining_hours, mr: _m.remaining_hours, fr: _f.remaining_hours };
 			} catch(ex) { annualLeaveMap2[eid] = { ad:0, au:0, ar:0, mr:0, fr:0 }; }
 		}
 		return annualLeaveMap2[eid];
@@ -1746,6 +1757,14 @@ var summaryData = [];
 					}
 				}
 				if (status === '曠職' && missedSet[r.employee_id + '::' + r.work_date]) status = '已補卡';
+				// 檢查是否為六日或國定假日
+				if (status === '曠職') {
+					var _d2 = new Date(r.work_date);
+					var _day2 = _d2.getDay();
+					if (_day2 === 0 || _day2 === 6 || _holidays2.indexOf(r.work_date) !== -1) {
+						status = '假日';
+					}
+				}
 			}
 
 			summaryData.push({
@@ -1762,7 +1781,7 @@ var summaryData = [];
 				'遲到分鐘': lateMin > 0 ? lateMin : '',
 				'請假假別': leaveType,
 				'備註': note,
-			'特休額度(天)': (await _getALB2(r.employee_id)).ad,
+			'特休額度(h)': (await _getALB2(r.employee_id)).ah,
 			'特休已用(h)': (await _getALB2(r.employee_id)).au,
 			'特休剩餘(h)': (await _getALB2(r.employee_id)).ar,
 			'婚假剩餘(h)': (await _getALB2(r.employee_id)).mr,
@@ -1770,7 +1789,7 @@ var summaryData = [];
 			});
 		}
 		var ws1 = XLSX.utils.json_to_sheet(summaryData, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註','特休額度(天)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws1, '出勤彙總');
 
@@ -1788,7 +1807,7 @@ var summaryData = [];
 				'姓名': cr.name || '-',
 				'部門': cr.department || '',
 				'類型': cr.type === 'check_in' ? '上班' : '下班',
-				'位置': (cr.address || '').substring(0, 80),
+				'位置': (cr.ahdress || '').substring(0, 80),
 				'GPS': cr.in_range === false ? '超出範圍' : '範圍內',
 				'備註': ''
 			});

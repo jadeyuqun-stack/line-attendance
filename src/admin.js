@@ -1623,7 +1623,17 @@ var data = [];
 				}
 			}
 
-			data.push({
+				var _lateLeaveH = '';
+				if (lateMin > 0) {
+					for (var _lx2 = 0; _lx2 < leaves.length; _lx2++) {
+						var _lvx2 = leaves[_lx2];
+						if (_lvx2.employee_id == r.employee_id && _lvx2.status === 'approved' && dateOverlaps(_lvx2.start_date, _lvx2.end_date, r.work_date)) {
+							_lateLeaveH = Math.max(0.5, Math.round((new Date(_lvx2.end_date) - new Date(_lvx2.start_date)) / 1800000) * 0.5) + 'h';
+							break;
+						}
+					}
+				}
+						data.push({
 				'日期': (r.work_date || '').substring(0, 10),
 				'員工編號': r.employee_no || '-',
 				'姓名': r.name || '-',
@@ -1635,7 +1645,7 @@ var data = [];
 				'是否<9h': under9h,
 				'考勤狀態': status,
 				'遲到分鐘': lateMin > 0 ? lateMin : '',
-				'遲到請假時數': (function(){if(lateMin>0&&leaveByEmp[r.employee_id]){for(var _xi=0;_xi<leaveByEmp[r.employee_id].length;_xi++){var _xv=leaveByEmp[r.employee_id][_xi];if(_xv.status==='approved'&&dateOverlaps(_xv.start_date,_xv.end_date,r.work_date)){return Math.max(0.5,Math.round((new Date(_xv.end_date)-new Date(_xv.start_date))/1800000)*0.5)+'h'}}}return '';})(),
+				'遲到請假時數': _lateLeaveH,
 								'請假假別': leaveType,
 				'備註': note,
 				'特休額度(h)': (await _getALB(r.employee_id)).ah,
@@ -1778,7 +1788,7 @@ var summaryData = [];
 					if (lateMin > 0) {
 						for (var _lx = 0; _lx < leaves.length; _lx++) {
 							var _lvx = leaves[_lx];
-							if (_lvx.employee_id === r.employee_id && _lvx.status === 'approved' && dateOverlaps(_lvx.start_date, _lvx.end_date, r.work_date)) {
+							if (_lvx.employee_id == r.employee_id && _lvx.status === 'approved' && dateOverlaps(_lvx.start_date, _lvx.end_date, r.work_date)) {
 								var _ld = (new Date(_lvx.end_date) - new Date(_lvx.start_date)) / 3600000;
 								var _lh = Math.round(_ld * 2) / 2;
 								if (_lh < 0.5) _lh = 0.5;
@@ -1799,7 +1809,7 @@ summaryData.push({
 				'是否<9h': under9h,
 				'考勤狀態': status,
 				'遲到分鐘': lateMin > 0 ? lateMin : '',
-				'遲到請假時數': (function(){if(lateMin>0&&leaveByEmp[r.employee_id]){for(var _xi=0;_xi<leaveByEmp[r.employee_id].length;_xi++){var _xv=leaveByEmp[r.employee_id][_xi];if(_xv.status==='approved'&&dateOverlaps(_xv.start_date,_xv.end_date,r.work_date)){return Math.max(0.5,Math.round((new Date(_xv.end_date)-new Date(_xv.start_date))/1800000)*0.5)+'h'}}}return '';})(),
+				'遲到請假時數': _llh,
 								'請假假別': leaveType,
 				'備註': note,
 			'特休額度(h)': (await _getALB2(r.employee_id)).ah,

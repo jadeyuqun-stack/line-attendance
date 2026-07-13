@@ -407,7 +407,7 @@ async function updateLeaveStatus(id, status, approvedBy, rejectReason) {
     var levelCol = currentLevel === 1 ? 'approver_id' : currentLevel === 2 ? 'approver2_id' : 'approver3_id';
     var designatedApprover = empRecord ? empRecord[levelCol] : null;
     var isDesignated = designatedApprover && designatedApprover === approvedBy;
-    if (designatedApprover && !isDesignated) {
+    if (approvedBy !== null && designatedApprover && !isDesignated) {
       console.log('[DB] 跳過：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人（指定為 ' + designatedApprover + '）');
       return { advanced: false, notYourTurn: true };
     }
@@ -592,7 +592,7 @@ async function updateOvertimeStatus(id, status, approvedBy, rejectReason) {
     var levelCol = currentLevel === 1 ? 'approver_id' : currentLevel === 2 ? 'approver2_id' : 'approver3_id';
     var designatedApprover = empRecord ? empRecord[levelCol] : null;
     var isDesignated = designatedApprover && designatedApprover === approvedBy;
-    if (designatedApprover && !isDesignated) {
+    if (approvedBy !== null && designatedApprover && !isDesignated) {
       console.log('[DB] 跳過加班：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人（指定為 ' + designatedApprover + '）');
       return { advanced: false, notYourTurn: true };
     }

@@ -912,7 +912,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
   // 
   // 入職日與年度請假統計
   try {
-    if (emp.hire_date) lines.push('\\n\U0001f4c5 入職日：' + emp.hire_date);
+    if (emp.hire_date) lines.splice(1, 0, '', '📅 入職日：' + emp.hire_date);
   } catch(_ex3) {}
   try {
     var _allLeaves3 = await db.getEmployeeLeaveRequests(emp.id, 'approved', 200);
@@ -928,7 +928,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
     var _ytdLines3 = [];
     if (_personalTotal3 > 0) _ytdLines3.push('事假 ' + _personalTotal3 + 'h');
     if (_sickTotal3 > 0) _ytdLines3.push('病假 ' + _sickTotal3 + 'h');
-    if (_ytdLines3.length > 0) lines.push('\\n\U0001f4ca 年度累計：' + _ytdLines3.join(' \\n'));
+    if (_ytdLines3.length > 0) lines.splice(1, 0, '📊 年度累計：' + _ytdLines3.join(' · '));
   } catch(_ex4) {}
   // 假別額度餘額顯示
   try {
@@ -966,7 +966,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
 }
 
 // ===== Leave flow (unchanged) =====
-const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official', '外出': 'outing', '其他': 'other' };
+const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official', '外出': 'outing', '其他': 'other', '婚假': 'marriage', '喪假': 'funeral' };
 
 function ceilHours(diffMs) { return Math.ceil(Math.max(0, diffMs) / 3600000); }
 // 請假時數：取整後，跨天每日最多 8 小時

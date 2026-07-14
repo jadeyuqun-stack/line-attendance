@@ -843,11 +843,13 @@ async function doQuery(emp, client, replyToken, _prefix) {
     }
     lateRecords.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: covered });
   }
-  if (lateRecords.length > 0) {
-    lines.push('\n⚠️ 遲到（' + lateRecords.length + ' 次）：');
-    for (var lr = 0; lr < lateRecords.length; lr++) {
-      var lr2 = lateRecords[lr];
-      lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分' + (lr2.covered ? ' 已請假' : ''));
+  var realLateRecords = [];
+  for (var lr3 = 0; lr3 < lateRecords.length; lr3++) { if (!lateRecords[lr3].covered) realLateRecords.push(lateRecords[lr3]); }
+  if (realLateRecords.length > 0) {
+    lines.push('\n⚠️ 遲到（' + realLateRecords.length + ' 次）：');
+    for (var lr = 0; lr < realLateRecords.length; lr++) {
+      var lr2 = realLateRecords[lr];
+      lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分');
     }
   } else {
     lines.push('\n⚠️ 遲到：無');
@@ -1827,14 +1829,16 @@ async function queryTodayAttendance(emp, client, replyToken) {
   }
 
   var lines = ['📋 今日考勤狀態（' + today.substring(5) + '）'];
-  if (lateList.length > 0) {
-    lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
-    for (var k = 0; k < lateList.length; k++) {
-      var le = lateList[k];
+  var realLateList = [];
+  for (var k2 = 0; k2 < lateList.length; k2++) { if (!lateList[k2].covered) realLateList.push(lateList[k2]); }
+  if (realLateList.length > 0) {
+    lines.push('\n⚠️ 遲到（' + realLateList.length + ' 人）：');
+    for (var k = 0; k < realLateList.length; k++) {
+      var le = realLateList[k];
       var e3 = await db.getEmployeeById(le.employee_id);
       var t = le.check_time;
       var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? ' 已請假' : ''));
+      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
     }
   }
   if (absentList.length > 0) {
@@ -2063,14 +2067,17 @@ async function queryMonthAttendance(emp, client, replyToken) {
     var totalLate = 0;
     for (var k = 0; k < lateKeys.length; k++) {
       var info = empLateMap[lateKeys[k]];
-      totalLate += info.count;
-      lines.push('  ' + info.name + '（' + info.no + '） 遲到 ' + info.count + ' 次');
-      for (var r = 0; r < info.records.length; r++) {
-        var rec = info.records[r];
-        lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? ' 已請假' : ''));
+      var realRecs = [];
+      for (var r2 = 0; r2 < info.records.length; r2++) { if (!info.records[r2].covered) realRecs.push(info.records[r2]); }
+      if (realRecs.length === 0) continue;
+      totalLate += realRecs.length;
+      lines.push('  ' + info.name + '（' + info.no + '） 遲到 ' + realRecs.length + ' 次');
+      for (var r = 0; r < realRecs.length; r++) {
+        var rec = realRecs[r];
+        lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）');
       }
     }
-    lines.push('  📊 遲到合計：' + totalLate + ' 次');
+    if (totalLate > 0) lines.push('  📊 遲到合計：' + totalLate + ' 次');
   }
 
   if (leaveKeys.length > 0) {
@@ -2561,16 +2568,18 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 	}
 
 	var lines = ['📋 今日公司考勤狀態'];
-	if (lateList.length > 0) {
-		lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
-		for (var k = 0; k < lateList.length; k++) {
-			var le = lateList[k];
-			var e3 = await db.getEmployeeById(le.employee_id);
-			var t = le.check_time;
-			var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-			lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? ' 已請假' : ''));
+		var realLateList2 = [];
+		for (var k4 = 0; k4 < lateList.length; k4++) { if (!lateList[k4].covered) realLateList2.push(lateList[k4]); }
+		if (realLateList2.length > 0) {
+			lines.push('\n⚠️ 遲到（' + realLateList2.length + ' 人）：');
+			for (var k = 0; k < realLateList2.length; k++) {
+				var le = realLateList2[k];
+				var e3 = await db.getEmployeeById(le.employee_id);
+				var t = le.check_time;
+				var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+				lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
+			}
 		}
-	}
 	if (absentList.length > 0) {
 		lines.push('\n❌ 曠職（' + absentList.length + ' 人）：');
 		for (var m = 0; m < absentList.length; m++) {
@@ -2711,18 +2720,21 @@ async function queryBossMonthLates(emp, client, replyToken) {
 
 	keys.sort(function(a, b) { return (empLateMap[a].no || '').localeCompare(empLateMap[b].no || ''); });
 
-	var lines = ['📋 本月遲到累計（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）'];
-	var totalCount = 0;
-	for (var k = 0; k < keys.length; k++) {
-		var info = empLateMap[keys[k]];
-		totalCount += info.count;
-		lines.push('\n👤 ' + info.name + '（' + info.no + '） 遲到 ' + info.count + ' 次');
-		for (var r = 0; r < info.records.length; r++) {
-			var rec = info.records[r];
-			lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? ' 已請假' : ''));
+			var lines = ['📋 本月遲到累計（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）'];
+		var totalCount = 0;
+		for (var k = 0; k < keys.length; k++) {
+			var info = empLateMap[keys[k]];
+			var realRecs2 = [];
+			for (var r5 = 0; r5 < info.records.length; r5++) { if (!info.records[r5].covered) realRecs2.push(info.records[r5]); }
+			if (realRecs2.length === 0) continue;
+			totalCount += realRecs2.length;
+			lines.push('\n👤 ' + info.name + '（' + info.no + '） 遲到 ' + realRecs2.length + ' 次');
+			for (var r = 0; r < realRecs2.length; r++) {
+				var rec = realRecs2[r];
+				lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）');
+			}
 		}
-	}
-	lines.push('\n📊 全公司本月遲到合計：' + totalCount + ' 次');
+		if (totalCount > 0) lines.push('\n📊 全公司本月遲到合計：' + totalCount + ' 次');
 
 	var titleB3 = lines[0];
 	return sendTableImage(client, replyToken, titleB3, lines.join('\n'));

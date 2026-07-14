@@ -2632,15 +2632,49 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 		empLeaveMap[l.employee_id].totalHours += hours;
 	}
 
+	// 全體員工本年度事假/病假統計
+	var yearStart = now.getFullYear() + '-01-01';
+	var allEmps = await db.listAttendanceEmployees();
+	var ytdMap = {}; // employee_id -> { name, no, personal, sick }
+	for (var ei = 0; ei < allEmps.length; ei++) {
+		var e2 = allEmps[ei];
+		ytdMap[e2.id] = { name: e2.name, no: e2.employee_no, personal: 0, sick: 0 };
+	}
+	for (var li = 0; li < allLeaves.length; li++) {
+		var lv2 = allLeaves[li];
+		if (lv2.start_date < yearStart) continue;
+		if (!ytdMap[lv2.employee_id]) continue;
+		if (lv2.leave_type === 'personal') ytdMap[lv2.employee_id].personal += leaveHours(lv2.start_date, lv2.end_date);
+		else if (lv2.leave_type === 'sick') ytdMap[lv2.employee_id].sick += leaveHours(lv2.start_date, lv2.end_date);
+	}
+	// 加上手動補登（後台設定）
+	for (var ei2 = 0; ei2 < allEmps.length; ei2++) {
+		var e3 = allEmps[ei2];
+		ytdMap[e3.id].personal += parseFloat(e3.personal_ytd_manual || 0);
+		ytdMap[e3.id].sick += parseFloat(e3.sick_ytd_manual || 0);
+	}
+
 	var keys = Object.keys(empLeaveMap);
-	if (keys.length === 0) {
+	var ytdKeys = Object.keys(ytdMap);
+
+	// 篩選出有 YTD 資料但沒有本月請假的員工
+	var ytdOnlyKeys = [];
+	for (var yk = 0; yk < ytdKeys.length; yk++) {
+		var eid = ytdKeys[yk];
+		if (!empLeaveMap[eid] && (ytdMap[eid].personal > 0 || ytdMap[eid].sick > 0)) {
+			ytdOnlyKeys.push(eid);
+		}
+	}
+
+	var lines = ['📋 本月請假累計（' + monthStart.substring(5) + ' ~ ' + monthEnd.substring(5) + '）'];
+
+	if (keys.length === 0 && ytdOnlyKeys.length === 0) {
 		return client.replyMessage(replyToken, [withMenu('📋 本月無請假記錄')]);
 	}
 
 	// 按員工編號排序
 	keys.sort(function(a, b) { return (empLeaveMap[a].no || '').localeCompare(empLeaveMap[b].no || ''); });
 
-	var lines = ['📋 本月請假累計（' + monthStart.substring(5) + ' ~ ' + monthEnd.substring(5) + '）'];
 	var totalAll = 0;
 	for (var k = 0; k < keys.length; k++) {
 		var info = empLeaveMap[keys[k]];
@@ -2650,8 +2684,32 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 			var rec = info.records[r];
 			lines.push('    ' + rec.start + ' ~ ' + rec.end + ' ' + rec.type + '（' + rec.hours + 'h）');
 		}
+		// 加上年度事假/病假統計
+		var ytd = ytdMap[keys[k]];
+		if (ytd) {
+			var ytdParts = [];
+			if (ytd.personal > 0) ytdParts.push('事假 ' + Math.round(ytd.personal * 10) / 10 + 'h');
+			if (ytd.sick > 0) ytdParts.push('病假 ' + Math.round(ytd.sick * 10) / 10 + 'h');
+			if (ytdParts.length > 0) lines.push('    📊 年度：' + ytdParts.join('、'));
+		}
 	}
-	lines.push('\n📊 全公司本月請假合計：' + totalAll + ' 小時');
+
+	// 顯示有年度事假/病假但本月無請假的人
+	if (ytdOnlyKeys.length > 0) {
+		ytdOnlyKeys.sort(function(a, b) { return (ytdMap[a].no || '').localeCompare(ytdMap[b].no || ''); });
+		lines.push('\n📊 年度事假/病假（本月無請假）：');
+		for (var yk2 = 0; yk2 < ytdOnlyKeys.length; yk2++) {
+			var ytd2 = ytdMap[ytdOnlyKeys[yk2]];
+			var ytdParts2 = [];
+			if (ytd2.personal > 0) ytdParts2.push('事假 ' + Math.round(ytd2.personal * 10) / 10 + 'h');
+			if (ytd2.sick > 0) ytdParts2.push('病假 ' + Math.round(ytd2.sick * 10) / 10 + 'h');
+			lines.push('  ' + ytd2.name + '（' + ytd2.no + '） ' + ytdParts2.join('、'));
+		}
+	}
+
+	if (totalAll > 0) {
+		lines.push('\n📊 全公司本月請假合計：' + totalAll + ' 小時');
+	}
 
 	var titleB2 = lines[0];
 	return sendTableImage(client, replyToken, titleB2, lines.join('\n'));

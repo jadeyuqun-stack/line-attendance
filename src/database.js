@@ -734,16 +734,18 @@ async function calculateAnnualLeaveEntitlement(hireDate, refDate) {
 }
 
 // 查當月特休額度有變動的人員（年資跨級距）
+// 比較「上月底」與「本月底」的額度差異，整個月都能顯示
 async function getAnnualLeaveChangesThisMonth() {
   var now = new Date();
-  var firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  var beforeMonth = new Date(now.getFullYear(), now.getMonth(), 0); // 上月底
+  var afterMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0); // 本月底
   var changes = [];
   var emps = await listAttendanceEmployees();
   for (var i = 0; i < emps.length; i++) {
     var e = emps[i];
     if (!e.hire_date) continue;
-    var oldCalc = await calculateAnnualLeaveEntitlement(e.hire_date, firstOfMonth);
-    var newCalc = await calculateAnnualLeaveEntitlement(e.hire_date, now);
+    var oldCalc = await calculateAnnualLeaveEntitlement(e.hire_date, beforeMonth);
+    var newCalc = await calculateAnnualLeaveEntitlement(e.hire_date, afterMonth);
     if (oldCalc.entitlement_days !== newCalc.entitlement_days) {
       var hireStr2 = e.hire_date.replace(/\//g, '-');
       var hireParts2 = hireStr2.split('-');

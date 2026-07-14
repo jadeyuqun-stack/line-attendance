@@ -681,15 +681,17 @@ async function calcPeriodHours(startStr, endStr) {
 // 規則: 半年3天、1年7天、2年10天、3年14天、5年15天、10年起+1/年 max30
 async function calculateAnnualLeaveEntitlement(hireDate) {
   if (!hireDate) return { entitlement_days: 0, entitlement_hours: 0 };
-  var hire = new Date(hireDate);
+  var hireParts = hireDate.split('-');
+  var hire = new Date(parseInt(hireParts[0]), parseInt(hireParts[1]) - 1, parseInt(hireParts[2]));
   if (isNaN(hire.getTime())) return { entitlement_days: 0, entitlement_hours: 0 };
 
   var now = new Date();
   var currentYear = now.getFullYear();
-  var thisJan1 = new Date(currentYear, 0, 1);
+  var hireAnniv = new Date(currentYear, hire.getMonth(), hire.getDate());
 
-  // 截至今年 1/1 的年資（年）
-  var yearsOfService = (thisJan1 - hire) / (365.25 * 86400000);
+  // 以最後一次入職紀念日計算年資（曆年制：過了入職日才算+1年）
+  var refDate = (now >= hireAnniv) ? hireAnniv : new Date(currentYear - 1, hire.getMonth(), hire.getDate());
+  var yearsOfService = (refDate - hire) / (365.25 * 86400000);
   var baseDays = 0;
 
   if (yearsOfService < 0.5) {
@@ -719,7 +721,7 @@ async function calculateAnnualLeaveEntitlement(hireDate) {
   } else if (yearsOfService < 10) {
     baseDays = 15;
   } else {
-    baseDays = Math.min(15 + Math.ceil(yearsOfService) - 9, 30);
+    baseDays = Math.min(15 + Math.floor(yearsOfService - 9), 30);
   }
   return { entitlement_days: baseDays, entitlement_hours: baseDays * 8 };
 }

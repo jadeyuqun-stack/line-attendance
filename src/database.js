@@ -792,6 +792,12 @@ async function getAnnualLeaveBalance(employeeId) {
   }
 
   var manualUsed = parseFloat(emp.annual_leave_used_manual) || 0;
+
+  // 自動歸零：若今年無任何已核准特休，代表是新年度首次查詢，清空去年手動補登
+  if (manualUsed > 0 && systemUsed === 0) {
+    await pool.query("UPDATE employees SET annual_leave_used_manual=0, updated_at=NOW() WHERE id=$1", [employeeId]);
+    manualUsed = 0;
+  }
   var totalUsed = systemUsed + manualUsed;
   var remaining = Math.max(0, entitlementHours - totalUsed);
 

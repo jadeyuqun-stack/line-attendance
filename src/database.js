@@ -690,24 +690,16 @@ async function calculateAnnualLeaveEntitlement(hireDate) {
   var currentYear = now.getFullYear();
   var hireAnniv = new Date(currentYear, hire.getMonth(), hire.getDate());
 
-  // 以最後一次入職紀念日計算年資（曆年制：過了入職日才算+1年）
-  var refDate = (now >= hireAnniv) ? hireAnniv : new Date(currentYear - 1, hire.getMonth(), hire.getDate());
-  var yearsOfService = (refDate - hire) / (365.25 * 86400000);
+  // 曆年制：已過今年入職紀念日 → 年資 = 今年 - 入職年；否則減 1
+  // refDate 與 hire 同月同日，直接整數相減無浮點誤差
+  var yearsOfService = (now >= hireAnniv) ? (currentYear - hire.getFullYear()) : (currentYear - 1 - hire.getFullYear());
   var baseDays = 0;
 
-  if (yearsOfService < 0.5) {
-    // 未滿半年，檢查是否已到職滿半年
+  if (yearsOfService < 1) {
+    // 未滿一年：以天數計算比例
     var sixMonthsAgo = new Date(now);
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    if (hire > sixMonthsAgo) return { entitlement_days: 0, entitlement_hours: 0 };
-    // 滿半年但未滿一年：3天按比例（入職日至年底 / 365）
-    var dec31 = new Date(currentYear, 11, 31);
-    var daysFromHire = Math.round((dec31 - hire) / 86400000) + 1;
-    if (daysFromHire < 1) return { entitlement_days: 0, entitlement_hours: 0 };
-    var prorated = Math.round(3 * Math.min(daysFromHire, 365) / 365);
-    return { entitlement_days: prorated, entitlement_hours: prorated * 8 };
-  } else if (yearsOfService < 1) {
-    // 滿半年未滿一年
+    if (hire > sixMonthsAgo) return { entitlement_days: 0, entitlement_hours: 0 }; // 未滿半年
     var dec31 = new Date(currentYear, 11, 31);
     var daysFromHire = Math.round((dec31 - hire) / 86400000) + 1;
     if (daysFromHire < 1) return { entitlement_days: 0, entitlement_hours: 0 };
@@ -722,7 +714,7 @@ async function calculateAnnualLeaveEntitlement(hireDate) {
   } else if (yearsOfService < 10) {
     baseDays = 15;
   } else {
-    baseDays = Math.min(15 + Math.floor(yearsOfService - 9), 30);
+    baseDays = Math.min(15 + (yearsOfService - 9), 30);
   }
   return { entitlement_days: baseDays, entitlement_hours: baseDays * 8 };
 }

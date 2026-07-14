@@ -681,7 +681,8 @@ async function calcPeriodHours(startStr, endStr) {
 // 規則: 半年3天、1年7天、2年10天、3年14天、5年15天、10年起+1/年 max30
 async function calculateAnnualLeaveEntitlement(hireDate) {
   if (!hireDate) return { entitlement_days: 0, entitlement_hours: 0 };
-  var hireParts = hireDate.split('-');
+  var hireStr = hireDate.replace(/\//g, '-');
+  var hireParts = hireStr.split('-');
   var hire = new Date(parseInt(hireParts[0]), parseInt(hireParts[1]) - 1, parseInt(hireParts[2]));
   if (isNaN(hire.getTime())) return { entitlement_days: 0, entitlement_hours: 0 };
 

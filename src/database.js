@@ -719,7 +719,7 @@ async function calculateAnnualLeaveEntitlement(hireDate) {
   } else if (yearsOfService < 10) {
     baseDays = 15;
   } else {
-    baseDays = Math.min(15 + Math.floor(yearsOfService - 9), 30);
+    baseDays = Math.min(15 + Math.ceil(yearsOfService) - 9, 30);
   }
   return { entitlement_days: baseDays, entitlement_hours: baseDays * 8 };
 }

@@ -847,7 +847,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
     lines.push('\n⚠️ 遲到（' + lateRecords.length + ' 次）：');
     for (var lr = 0; lr < lateRecords.length; lr++) {
       var lr2 = lateRecords[lr];
-      lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分' + (lr2.covered ? '' : ' ⚠️未請假'));
+      lines.push((lr2.covered ? '  ' : '  ⚠️未請假 ') + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分');
     }
   } else {
     lines.push('\n⚠️ 遲到：無');
@@ -1837,7 +1837,7 @@ async function queryTodayAttendance(emp, client, replyToken) {
       var e3 = await db.getEmployeeById(le.employee_id);
       var t = le.check_time;
       var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' ⚠️未請假'));
+      lines.push((le.covered ? '  ' : '  ⚠️未請假 ') + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
     }
   }
   if (absentList.length > 0) {
@@ -2070,7 +2070,7 @@ async function queryMonthAttendance(emp, client, replyToken) {
       lines.push('  ' + info.name + '（' + info.no + '） 遲到 ' + info.records.length + ' 次');
       for (var r = 0; r < info.records.length; r++) {
         var rec = info.records[r];
-        lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' ⚠️未請假'));
+        lines.push((rec.covered ? '      ' : '      ⚠️未請假 ') + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）');
       }
     }
     if (totalLate > 0) lines.push('  📊 遲到合計：' + totalLate + ' 次');
@@ -2571,7 +2571,7 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 				var e3 = await db.getEmployeeById(le.employee_id);
 				var t = le.check_time;
 				var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-				lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' ⚠️未請假'));
+				lines.push((le.covered ? '  ' : '  ⚠️未請假 ') + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
 			}
 		}
 	if (absentList.length > 0) {
@@ -2722,7 +2722,7 @@ async function queryBossMonthLates(emp, client, replyToken) {
 			lines.push('\n👤 ' + info.name + '（' + info.no + '） 遲到 ' + info.records.length + ' 次');
 			for (var r = 0; r < info.records.length; r++) {
 				var rec = info.records[r];
-				lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' ⚠️未請假'));
+				lines.push((rec.covered ? '    ' : '    ⚠️未請假 ') + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）');
 			}
 		}
 		if (totalCount > 0) lines.push('\n📊 全公司本月遲到合計：' + totalCount + ' 次');
@@ -2854,6 +2854,7 @@ function textToImage(title, bodyText) {
 
   // 替換 emoji 為標記字元（後續用 emoji 圖片取代）
   var emojiMap = {
+    '⚠️未請假': 'W ',
     '⚠️': '! ', '⚠': '! ',
     '❌': 'X ',
     '✅': 'V ',
@@ -2876,14 +2877,16 @@ function textToImage(title, bodyText) {
     '!': '⚠', 'X': '❌', 'V': '✅', '@': '📍',
     '~': '🏖', 'O': '🕐', '=': '📊', '*': '👤',
     '+': '🔵', '-': '🔴',
-    'R': '💍', 'F': '💐', 'C': '⏰'
+    'R': '💍', 'F': '💐', 'C': '⏰',
+    'W': '⚠'
   };
   // 標記對應的顏色（emoji 圖片載入失敗時降級用）
   var iconColors = {
     '!': '#f59e0b', 'X': '#ef4444', 'V': '#22c55e', '@': '#3b82f6',
     '~': '#eab308', 'O': '#a855f7', '=': '#10b981', '*': '#6b7280',
     '+': '#3b82f6', '-': '#ef4444',
-    'R': '#e91e63', 'F': '#9c27b0', 'C': '#ff9800'
+    'R': '#e91e63', 'F': '#9c27b0', 'C': '#ff9800',
+    'W': '#ef4444'
   };
   var emojiKeys = Object.keys(emojiMap);
   for (var ei = 0; ei < emojiKeys.length; ei++) {
@@ -2952,6 +2955,7 @@ function textToImage(title, bodyText) {
     } else if (hasMarker) {
       // 有標記 → 繪製 emoji 圖片 + 文字
       var isSection = (marker === '!' || marker === 'X' || marker === '@' || marker === '~' || marker === 'O');
+	      var isWarning = (marker === 'W');
       var isTotal = (marker === '=');
       var textX = paddingX + indent * 10;
       var emojiSize = 30; // emoji 圖片大小
@@ -2979,8 +2983,8 @@ function textToImage(title, bodyText) {
 
       // 文字（emoji 後留空間）
       var textOffsetX = emojiImg ? (emojiSize + 6) : (iconR * 2 + 10);
-      ctx.fillStyle = isTotal ? '#06c755' : (isSection ? '#333333' : '#555555');
-      ctx.font = (isSection || isTotal ? 'bold ' : '') + fontSize + 'px ' + fontFamily;
+      ctx.fillStyle = isTotal ? '#06c755' : isWarning ? '#ef4444' : (isSection ? '#333333' : '#555555');
+      ctx.font = (isSection || isTotal || isWarning ? 'bold ' : '') + fontSize + 'px ' + fontFamily;
       ctx.fillText(displayText, textX + textOffsetX, y);
     } else if (line.indexOf('  ') === 0) {
       // 縮排明細

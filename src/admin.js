@@ -113,6 +113,7 @@ function sidebar(active) {
     ['/admin/leave-balances', '🎯', '假期設定'],
     ['/admin/salary', '💵', '薪資發送'],
     ['/admin/data', '📦', '資料彙整'],
+    ['/admin/backup', '💾', '備份還原'],
     ['/admin/settings', '⚙️', '系統設定'],
   ];
   var html = '';
@@ -1256,6 +1257,125 @@ router.get('/data', auth, async function(_, res) {
 	body += '</script>';
 
 	res.send(layout('資料彙整', '資料彙整', body));
+});
+
+// ===== 備份還原 =====
+router.get('/backup', auth, async function(_, res) {
+	var body = '<div style="max-width:800px">';
+
+	// 匯出區
+	body += '<div class="card">';
+	body += '<h3>💾 備份資料</h3>';
+	body += '<p style="color:#666;font-size:13px;margin-bottom:8px">匯出所有資料為 JSON 檔案，包含員工、打卡、請假、加班、補打卡、薪資、設定等全部記錄。</p>';
+	body += '<p style="color:#999;font-size:12px;margin-bottom:16px">備份檔案可存放於本機，需要時透過下方「還原」功能恢復。</p>';
+	body += '<a href="/admin/backup/export" class="btn" style="display:inline-flex">📥 下載備份檔</a>';
+	body += '</div>';
+
+	// 還原區
+	body += '<div class="card" style="margin-top:20px">';
+	body += '<h3>🔄 還原資料</h3>';
+	body += '<p style="color:#e74c3c;font-size:13px;font-weight:600;margin-bottom:8px">⚠️ 還原會覆蓋所有現有資料！操作前建議先下載備份。</p>';
+	body += '<p style="color:#666;font-size:13px;margin-bottom:16px">上傳之前匯出的 JSON 備份檔，系統將清空所有現有記錄並以備份內容取代。</p>';
+	body += '<div style="border:2px dashed #ddd;border-radius:10px;padding:32px;text-align:center">';
+	body += '<div style="font-size:40px;margin-bottom:12px">📂</div>';
+	body += '<p style="color:#999;margin-bottom:16px;font-size:14px">選擇 .json 備份檔案</p>';
+	body += '<input type="file" id="backupFile" accept=".json" style="display:none" onchange="previewRestore()">';
+	body += '<button onclick="document.getElementById(\'backupFile\').click()" class="btn btn-outline">選擇檔案</button>';
+	body += '<div id="restorePreview" style="margin-top:16px;display:none"></div>';
+	body += '</div>';
+	body += '</div>';
+
+	body += '<script>';
+	body += 'async function previewRestore() {';
+	body += '  var f = document.getElementById("backupFile").files[0];';
+	body += '  if (!f) return;';
+	body += '  var reader = new FileReader();';
+	body += '  reader.onload = function(e) {';
+	body += '    try {';
+	body += '      var data = JSON.parse(e.target.result);';
+	body += '      var tables = [';
+	body += '        { key: "employees", label: "👥 員工資料", count: (data.employees||[]).length },';
+	body += '        { key: "checkins", label: "📋 打卡記錄", count: (data.checkins||[]).length },';
+	body += '        { key: "leave_requests", label: "🏖 請假記錄", count: (data.leave_requests||[]).length },';
+	body += '        { key: "overtime_requests", label: "🕐 加班記錄", count: (data.overtime_requests||[]).length },';
+	body += '        { key: "missed_punch", label: "📝 補打卡", count: (data.missed_punch||[]).length },';
+	body += '        { key: "salary_records", label: "💵 薪資記錄", count: (data.salary_records||[]).length },';
+	body += '        { key: "settings", label: "⚙️ 系統設定", count: (data.settings||[]).length },';
+	body += '        { key: "pending_notifications", label: "🔔 待辦通知", count: (data.pending_notifications||[]).length }';
+	body += '      ];';
+	body += '      var total = tables.reduce(function(s, t) { return s + t.count; }, 0);';
+	body += '      var html = \'<div style="background:#f8fcf9;border-radius:8px;padding:16px;text-align:left">\';';
+	body += '      html += \'<div style="font-weight:600;margin-bottom:8px;color:#059669">✅ 備份檔案驗證成功（共 \' + total + \' 筆記錄）</div>\';';
+	body += '      html += \'<table style="font-size:13px;width:100%"><tr><th style="padding:4px 8px">資料表</th><th style="padding:4px 8px;text-align:right">筆數</th></tr>\';';
+	body += '      for (var i = 0; i < tables.length; i++) {';
+	body += '        html += \'<tr><td style="padding:4px 8px">\' + tables[i].label + \'</td><td style="padding:4px 8px;text-align:right">\' + tables[i].count + \'</td></tr>\';';
+	body += '      }';
+	body += '      html += \'<tr><td style="padding:4px 8px;font-weight:600;border-top:2px solid #ddd">合計</td><td style="padding:4px 8px;text-align:right;font-weight:600;border-top:2px solid #ddd">\' + total + \'</td></tr>\';';
+	body += '      html += \'</table>\';';
+	body += '      html += \'<div style="margin-top:12px;padding:12px;background:#fef5e7;border-radius:6px;color:#e67e22;font-size:13px">\';';
+	body += '      html += \'⚠️ <b>即將覆蓋所有現有資料</b>，此操作不可復原。<br>還原後需<button onclick="doRestore()" class="btn btn-sm" style="margin-top:8px;background:#e74c3c">確認還原</button>\';';
+	body += '      html += \'</div>\';';
+	body += '      html += \'</div>\';';
+	body += '      document.getElementById("restorePreview").innerHTML = html;';
+	body += '      document.getElementById("restorePreview").style.display = "block";';
+	body += '      window._backupData = data;';
+	body += '    } catch(ex) {';
+	body += '      document.getElementById("restorePreview").innerHTML = \'<div style="background:#fdecea;border-radius:8px;padding:16px;color:#e74c3c">❌ 檔案格式錯誤：不正確的 JSON 檔案</div>\';';
+	body += '      document.getElementById("restorePreview").style.display = "block";';
+	body += '    }';
+	body += '  };';
+	body += '  reader.readAsText(f);';
+	body += '}';
+
+	body += 'async function doRestore() {';
+	body += '  if (!window._backupData) return;';
+	body += '  if (!confirm("⚠️⚠️⚠️ 最終確認！\\n\\n還原將「覆蓋所有資料」為備份狀態，此操作不可復原！\\n\\n確定要繼續嗎？")) return;';
+	body += '  var btn = document.querySelector(\'button[onclick*="doRestore"]\');';
+	body += '  if (btn) { btn.disabled = true; btn.textContent = "還原中..."; btn.style.background = "#999"; }';
+	body += '  try {';
+	body += '    var r = await fetch("/admin/backup/import", {';
+	body += '      method: "POST",';
+	body += '      headers: { "Content-Type": "application/json" },';
+	body += '      body: JSON.stringify(window._backupData)';
+	body += '    });';
+	body += '    var result = await r.json();';
+	body += '    if (result.success) {';
+	body += '      document.getElementById("restorePreview").innerHTML = \'<div style="background:#e6f9ee;border-radius:8px;padding:16px;color:#059669">✅ 還原完成！共還原 \' + (result.counts ? Object.values(result.counts).reduce(function(a,b){return a+b}) : 0) + \' 筆記錄</div>\';';
+	body += '    } else {';
+	body += '      document.getElementById("restorePreview").innerHTML = \'<div style="background:#fdecea;border-radius:8px;padding:16px;color:#e74c3c">❌ 還原失敗：\' + (result.error||"未知錯誤") + \'</div>\';';
+	body += '    }';
+	body += '  } catch(ex) {';
+	body += '    document.getElementById("restorePreview").innerHTML = \'<div style="background:#fdecea;border-radius:8px;padding:16px;color:#e74c3c">❌ 還原失敗：\' + ex.message + \'</div>\';';
+	body += '  }';
+	body += '  if (btn) { btn.disabled = false; btn.textContent = "確認還原"; btn.style.background = ""; }';
+	body += '}';
+
+	body += '</script>';
+	body += '</div>';
+
+	res.send(layout('備份還原', '備份還原', body));
+});
+
+// 匯出備份檔
+router.get('/backup/export', auth, async function(req, res) {
+	try {
+		var data = await db.exportAllData();
+		res.setHeader('Content-Type', 'application/json');
+		res.setHeader('Content-Disposition', 'attachment; filename=attendance_backup_' + new Date().toISOString().split('T')[0] + '.json');
+		res.json(data);
+	} catch (e) {
+		res.status(500).json({ error: e.message });
+	}
+});
+
+// 匯入還原
+router.post('/backup/import', auth, express.json({ limit: '100mb' }), async function(req, res) {
+	try {
+		var result = await db.importAllData(req.body);
+		res.json(result);
+	} catch (e) {
+		res.status(500).json({ success: false, error: e.message });
+	}
 });
 
 // ===== Excel 匯出 =====

@@ -1,9 +1,9 @@
 /**
- * 每日出勤報表 — setTimeout 精確定時 + Keep-Alive 防止休眠
+ * 每日出勤報表 — setTimeout 精確定時 + 事件驅動
  *
  * 策略：
  *   1. setTimeout 排定每日推播時間（精確到分鐘）
- *   2. setInterval 每 10 分鐘自 ping 一次，防止 Render 15 分鐘休眠
+ *   2. UptimeRobot 每 5 分鐘監控 /health（取代舊版自 ping，防止 Render 休眠）
  *   3. 每次 webhook 事件也檢查 trySendReport（雙重保障）
  *   4. last_report_date 記錄避免重複發送
  *
@@ -11,28 +11,9 @@
  */
 const db = require('./database');
 const bot = require('./bot');
-const http = require('http');
 
 var scheduleTimeout = null;
-var keepAliveInterval = null;
 var clientRef = null;
-
-/**
- * 啟動 Keep-Alive：每 10 分鐘對自己發一個 HTTP 請求，防止 Render 休眠
- * 只要有人觸發過一次 webhook，伺服器就會持續清醒
- */
-function startKeepAlive() {
-  if (keepAliveInterval) clearInterval(keepAliveInterval);
-  var port = process.env.PORT || 3000;
-  keepAliveInterval = setInterval(function() {
-    http.get('http://0.0.0.0:' + port + '/health', function(res) {
-      res.resume();
-    }).on('error', function() {
-      // 忽略自 ping 錯誤
-    });
-  }, 10 * 60 * 1000); // 每 10 分鐘（低於 Render 15 分鐘休眠門檻）
-  console.log('[Report] Keep-Alive 已啟動（每 10 分鐘自 ping）');
-}
 
 /**
  * 嘗試發送今日日報（多個觸發點呼叫，只會在條件符合時發送一次）
@@ -40,9 +21,6 @@ function startKeepAlive() {
  */
 async function trySendReport(client) {
   try {
-    // 確保 keep-alive 運行中
-    if (!keepAliveInterval) startKeepAlive();
-
     // 檢查是否啟用
     var enabled = await db.getSetting('report_enabled');
     if (enabled !== 'true' && enabled !== '1') return;
@@ -246,10 +224,8 @@ function scheduleNext() {
 
 function startScheduler(client) {
   clientRef = client;
-  startKeepAlive();   // 防休眠
   scheduleNext();      // 精確排程
-  // 簽核提醒已移至 bot.js 互動式提醒
-  console.log('[Report] 排程已啟動（Keep-Alive + setTimeout + 事件驅動 ）');
+  console.log('[Report] 排程已啟動（setTimeout + 事件驅動，UptimeRobot 監控中）');
 }
 
 var sendDailyReport = doSendReport;

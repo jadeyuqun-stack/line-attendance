@@ -172,6 +172,18 @@ async function initDatabase() {
   for (const [k, v] of defaults) {
     await pool.query("INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT DO NOTHING", [k, v]);
   }
+
+  // 效能索引（資料成長後避免全表掃描）
+  var indexes = [
+    'CREATE INDEX IF NOT EXISTS idx_checkins_employee_date ON checkins(employee_id, check_time)',
+    'CREATE INDEX IF NOT EXISTS idx_leaves_employee_status ON leave_requests(employee_id, status)',
+    'CREATE INDEX IF NOT EXISTS idx_leaves_type_status ON leave_requests(leave_type, status)',
+    'CREATE INDEX IF NOT EXISTS idx_overtime_employee_status ON overtime_requests(employee_id, status)',
+    'CREATE INDEX IF NOT EXISTS idx_missed_employee_status ON missed_punch(employee_id, status)',
+  ];
+  for (var idxSql of indexes) {
+    try { await pool.query(idxSql); } catch (e) { /* 索引可能已存在 */ }
+  }
   console.log('[DB] PostgreSQL 初始化完成');
 }
 
@@ -827,6 +839,169 @@ async function clearPendingNotifications(employeeId) {
   if (!employeeId) return;
   await pool.query('DELETE FROM pending_notifications WHERE employee_id=$1', [employeeId]);
 }
+// =========== 備份 / 還原（管理員匯入匯出） ===========
+async function exportAllData() {
+  var result = {};
+  result.settings = (await pool.query('SELECT * FROM settings ORDER BY key')).rows;
+  result.employees = (await pool.query('SELECT * FROM employees ORDER BY id')).rows;
+  result.checkins = (await pool.query('SELECT * FROM checkins ORDER BY id')).rows;
+  result.leave_requests = (await pool.query('SELECT * FROM leave_requests ORDER BY id')).rows;
+  result.overtime_requests = (await pool.query('SELECT * FROM overtime_requests ORDER BY id')).rows;
+  result.missed_punch = (await pool.query('SELECT * FROM missed_punch ORDER BY id')).rows;
+  result.salary_records = (await pool.query('SELECT * FROM salary_records ORDER BY id')).rows;
+  result.pending_notifications = (await pool.query('SELECT * FROM pending_notifications ORDER BY id')).rows;
+  result._exported_at = new Date().toISOString();
+  result._version = '1.0';
+  return result;
+}
+
+async function importAllData(data) {
+  if (!data || !data.employees) throw new Error('無效的備份檔案：缺少 employees 資料');
+
+  // 在交易中執行：先清空再寫入（FK 順序：無依賴 → 有依賴）
+  var client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. 停用 FK 檢查（加速 + 避免順序問題）
+    await client.query('SET session_replication_role = replica');
+
+    // 2. 清空所有表（由內而外）
+    await client.query('DELETE FROM pending_notifications');
+    await client.query('DELETE FROM salary_records');
+    await client.query('DELETE FROM missed_punch');
+    await client.query('DELETE FROM overtime_requests');
+    await client.query('DELETE FROM leave_requests');
+    await client.query('DELETE FROM checkins');
+    await client.query('DELETE FROM employees');
+    await client.query('DELETE FROM settings');
+
+    // 3. 重設序列
+    await client.query("ALTER SEQUENCE employees_id_seq RESTART WITH 1");
+    await client.query("ALTER SEQUENCE checkins_id_seq RESTART WITH 1");
+    await client.query("ALTER SEQUENCE leave_requests_id_seq RESTART WITH 1");
+    await client.query("ALTER SEQUENCE overtime_requests_id_seq RESTART WITH 1");
+    await client.query("ALTER SEQUENCE missed_punch_id_seq RESTART WITH 1");
+    await client.query("ALTER SEQUENCE salary_records_id_seq RESTART WITH 1");
+    await client.query("ALTER SEQUENCE pending_notifications_id_seq RESTART WITH 1");
+
+    // 4. 寫入（無 FK 依賴的先）
+    if (data.settings && data.settings.length > 0) {
+      for (var s of data.settings) {
+        await client.query('INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value=$2', [s.key, s.value]);
+      }
+    }
+    if (data.employees && data.employees.length > 0) {
+      for (var e of data.employees) {
+        await client.query(
+          `INSERT INTO employees (id, employee_no, name, department, line_user_id, role, can_approve, status, created_at, updated_at, approver_id, approver2_id, approver3_id, hire_date, annual_leave_used_manual, marriage_leave_total, funeral_leave_total, comp_leave_total, personal_ytd_manual, sick_ytd_manual, manager_mode)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+           ON CONFLICT (id) DO UPDATE SET name=$3, department=$4, role=$6, can_approve=$7, status=$8, hire_date=$14`,
+          [e.id, e.employee_no, e.name, e.department||'', e.line_user_id, e.role||'員工', e.can_approve||false, e.status||'active', e.created_at, e.updated_at,
+           e.approver_id, e.approver2_id, e.approver3_id, e.hire_date||'', e.annual_leave_used_manual||0, e.marriage_leave_total||0, e.funeral_leave_total||0,
+           e.comp_leave_total||0, e.personal_ytd_manual||0, e.sick_ytd_manual||0, e.manager_mode||'normal']
+        );
+      }
+    }
+    // 更新序列到最大值
+    if (data.employees.length > 0) {
+      var maxEmp = data.employees.reduce(function(m, e) { return e.id > m ? e.id : m; }, 0);
+      await client.query("SELECT setval('employees_id_seq', $1)", [maxEmp]);
+    }
+
+    if (data.checkins && data.checkins.length > 0) {
+      for (var c of data.checkins) {
+        await client.query(
+          `INSERT INTO checkins (id, employee_id, type, latitude, longitude, address, photo_url, in_range, distance_meters, check_time, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (id) DO NOTHING`,
+          [c.id, c.employee_id, c.type, c.latitude, c.longitude, c.address||'', c.photo_url||'', c.in_range!==false, c.distance_meters||0, c.check_time, c.created_at]
+        );
+      }
+      var maxCk = data.checkins.reduce(function(m, c) { return c.id > m ? c.id : m; }, 0);
+      await client.query("SELECT setval('checkins_id_seq', $1)", [maxCk]);
+    }
+
+    if (data.leave_requests && data.leave_requests.length > 0) {
+      for (var lr of data.leave_requests) {
+        await client.query(
+          `INSERT INTO leave_requests (id, employee_id, leave_type, start_date, end_date, reason, status, approved_by, approved_at, created_at, approval_level, reject_reason)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO NOTHING`,
+          [lr.id, lr.employee_id, lr.leave_type, lr.start_date, lr.end_date, lr.reason||'', lr.status||'pending', lr.approved_by, lr.approved_at, lr.created_at, lr.approval_level||1, lr.reject_reason||'']
+        );
+      }
+      var maxLr = data.leave_requests.reduce(function(m, l) { return l.id > m ? l.id : m; }, 0);
+      await client.query("SELECT setval('leave_requests_id_seq', $1)", [maxLr]);
+    }
+
+    if (data.overtime_requests && data.overtime_requests.length > 0) {
+      for (var ot of data.overtime_requests) {
+        await client.query(
+          `INSERT INTO overtime_requests (id, employee_id, start_time, end_time, reason, status, approved_by, approved_at, created_at, approval_level, reject_reason)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (id) DO NOTHING`,
+          [ot.id, ot.employee_id, ot.start_time, ot.end_time, ot.reason||'', ot.status||'pending', ot.approved_by, ot.approved_at, ot.created_at, ot.approval_level||1, ot.reject_reason||'']
+        );
+      }
+      var maxOt = data.overtime_requests.reduce(function(m, o) { return o.id > m ? o.id : m; }, 0);
+      await client.query("SELECT setval('overtime_requests_id_seq', $1)", [maxOt]);
+    }
+
+    if (data.missed_punch && data.missed_punch.length > 0) {
+      for (var mp of data.missed_punch) {
+        await client.query(
+          `INSERT INTO missed_punch (id, employee_id, punch_type, punch_date, punch_time, reason, status, approved_by, approved_at, created_at, reject_reason)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (id) DO NOTHING`,
+          [mp.id, mp.employee_id, mp.punch_type, mp.punch_date, mp.punch_time, mp.reason||'', mp.status||'pending', mp.approved_by, mp.approved_at, mp.created_at, mp.reject_reason||'']
+        );
+      }
+      var maxMp = data.missed_punch.reduce(function(m, p) { return p.id > m ? p.id : m; }, 0);
+      await client.query("SELECT setval('missed_punch_id_seq', $1)", [maxMp]);
+    }
+
+    if (data.salary_records && data.salary_records.length > 0) {
+      for (var sr of data.salary_records) {
+        await client.query(
+          `INSERT INTO salary_records (id, employee_id, content, has_image, month_label, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+          [sr.id, sr.employee_id, sr.content||'', sr.has_image||false, sr.month_label||'', sr.created_at]
+        );
+      }
+      var maxSr = data.salary_records.reduce(function(m, r) { return r.id > m ? r.id : m; }, 0);
+      await client.query("SELECT setval('salary_records_id_seq', $1)", [maxSr]);
+    }
+
+    if (data.pending_notifications && data.pending_notifications.length > 0) {
+      for (var pn of data.pending_notifications) {
+        await client.query(
+          'INSERT INTO pending_notifications (id, employee_id, message, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING',
+          [pn.id, pn.employee_id, pn.message, pn.created_at]
+        );
+      }
+      var maxPn = data.pending_notifications.reduce(function(m, n) { return n.id > m ? n.id : m; }, 0);
+      await client.query("SELECT setval('pending_notifications_id_seq', $1)", [maxPn]);
+    }
+
+    // 5. 恢復 FK 檢查
+    await client.query('SET session_replication_role = DEFAULT');
+
+    await client.query('COMMIT');
+    return { success: true, counts: {
+      settings: data.settings ? data.settings.length : 0,
+      employees: data.employees ? data.employees.length : 0,
+      checkins: data.checkins ? data.checkins.length : 0,
+      leave_requests: data.leave_requests ? data.leave_requests.length : 0,
+      overtime_requests: data.overtime_requests ? data.overtime_requests.length : 0,
+      missed_punch: data.missed_punch ? data.missed_punch.length : 0,
+      salary_records: data.salary_records ? data.salary_records.length : 0,
+      pending_notifications: data.pending_notifications ? data.pending_notifications.length : 0,
+    }};
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
@@ -839,4 +1014,5 @@ module.exports = {
   createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus,
   addPendingNotification, getPendingNotifications, clearPendingNotifications,
   calcPeriodHours, calculateAnnualLeaveEntitlement, getAnnualLeaveBalance, getMarriageLeaveBalance, getFuneralLeaveBalance, getCompLeaveBalance,
+  exportAllData, importAllData,
 };

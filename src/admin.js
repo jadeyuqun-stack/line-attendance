@@ -818,7 +818,24 @@ router.post('/api/employees', auth, express.json(), async (req, res) => {
   r.success ? res.json(r) : res.status(400).json(r);
 });
 router.put('/api/employees/:id', auth, express.json(), async (req, res) => {
-  await db.updateEmployee(parseInt(req.params.id), req.body); res.json({ success: true });
+  // 若管理員手動設定特休補登，一併更新 reset_period 避免被自動歸零
+  var body = req.body;
+  if (body.annual_leave_used_manual !== undefined) {
+    // 查員工入職日，算出目前週期
+    var emp2 = await db.getEmployeeById(parseInt(req.params.id));
+    if (emp2 && emp2.hire_date) {
+      var _h = emp2.hire_date.replace(/\//g, '-').split('-');
+      var _hireD = new Date(parseInt(_h[0]), parseInt(_h[1]) - 1, parseInt(_h[2]));
+      if (!isNaN(_hireD.getTime())) {
+        var _now = new Date();
+        var _anniv = new Date(_now.getFullYear(), _hireD.getMonth(), _hireD.getDate());
+        var _ps = _now >= _anniv ? _anniv : new Date(_now.getFullYear() - 1, _hireD.getMonth(), _hireD.getDate());
+        var _periodStr = _ps.getFullYear() + '-' + String(_ps.getMonth()+1).padStart(2,'0') + '-' + String(_ps.getDate()).padStart(2,'0');
+        body.annual_leave_manual_reset_period = _periodStr;
+      }
+    }
+  }
+  await db.updateEmployee(parseInt(req.params.id), body); res.json({ success: true });
 });
 router.put('/api/employees/:id/lineid', auth, express.json(), async (req, res) => {
   var ok = await db.updateLineUserId(parseInt(req.params.id), req.body.line_user_id || null);

@@ -50,6 +50,7 @@ async function initDatabase() {
   try { await pool.query("ALTER TABLE employees ADD COLUMN personal_ytd_manual NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN sick_ytd_manual NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN manager_mode TEXT DEFAULT 'normal'"); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN annual_leave_manual_reset_period TEXT DEFAULT ''"); } catch(e) {}
 
   // 簽核層級欄位
   try { await pool.query("ALTER TABLE leave_requests ADD COLUMN approval_level INTEGER DEFAULT 1"); } catch(e) {}
@@ -286,7 +287,7 @@ async function listInactiveEmployees() {
   return rows;
 }
 async function updateEmployee(id, fields) {
-  const allowed = ['name', 'department', 'role', 'can_approve', 'hire_date', 'annual_leave_used_manual', 'marriage_leave_total', 'funeral_leave_total', 'comp_leave_total', 'manager_mode', 'personal_ytd_manual', 'sick_ytd_manual'];
+  const allowed = ['name', 'department', 'role', 'can_approve', 'hire_date', 'annual_leave_used_manual', 'marriage_leave_total', 'funeral_leave_total', 'comp_leave_total', 'manager_mode', 'personal_ytd_manual', 'sick_ytd_manual', 'annual_leave_manual_reset_period'];
   const sets = [];
   const vals = [];
   let i = 1;
@@ -817,9 +818,10 @@ async function getAnnualLeaveBalance(employeeId) {
 
   var manualUsed = parseFloat(emp.annual_leave_used_manual) || 0;
 
-  // 自動歸零：新週期首次查詢時清空手動補登
-  if (manualUsed > 0 && systemUsed === 0) {
-    await pool.query("UPDATE employees SET annual_leave_used_manual=0, updated_at=NOW() WHERE id=$1", [employeeId]);
+  // 自動歸零：新週期首次查詢時清空手動補登（透過 reset_period 避免重複清）
+  var resetPeriod = emp.annual_leave_manual_reset_period || '';
+  if (manualUsed > 0 && systemUsed === 0 && resetPeriod !== startStr) {
+    await pool.query("UPDATE employees SET annual_leave_used_manual=0, annual_leave_manual_reset_period=$1, updated_at=NOW() WHERE id=$2", [startStr, employeeId]);
     manualUsed = 0;
   }
   var totalUsed = systemUsed + manualUsed;

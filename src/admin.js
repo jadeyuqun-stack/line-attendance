@@ -1962,6 +1962,42 @@ summaryData.push({
 });
 
 // ===== 除錯：遲到請假時數 =====
+// 除錯：檢查特休計算
+router.get('/debug-annual-leave', auth, async function(req, res) {
+  try {
+    var emps = await db.listActiveEmployees();
+    var eid = req.query.eid ? parseInt(req.query.eid) : null;
+    var html = '<h2>🔍 特休計算除錯</h2><pre style="font-size:12px;line-height:1.5">';
+    html += 'today: ' + new Date().toString() + '\n\n';
+    for (var ei = 0; ei < emps.length; ei++) {
+      var e = emps[ei];
+      if (eid && e.id !== eid) continue;
+      html += '[' + e.employee_no + '] ' + e.name + '\n';
+      html += '  hire_date: ' + JSON.stringify(e.hire_date) + ' (typeof=' + (typeof e.hire_date) + ', len=' + (e.hire_date ? e.hire_date.length : 0) + ')\n';
+      html += '  created_at: ' + JSON.stringify(e.created_at) + '\n';
+      try {
+        var _hd = e.hire_date;
+        if (!_hd && e.created_at) {
+          var _cd2 = new Date(e.created_at);
+          _hd = _cd2.getFullYear() + '-' + ('0' + (_cd2.getMonth() + 1)).slice(-2) + '-' + ('0' + _cd2.getDate()).slice(-2);
+          html += '  → 改用 created_at: ' + _hd + '\n';
+        }
+        var calc = await db.calculateAnnualLeaveEntitlement(_hd);
+        html += '  calculateAnnualLeaveEntitlement → ' + JSON.stringify(calc) + '\n';
+        var bal = await db.getAnnualLeaveBalance(e.id);
+        html += '  getAnnualLeaveBalance → ' + JSON.stringify(bal) + '\n';
+      } catch (ex2) {
+        html += '  ❌ ERROR: ' + (ex2.message || ex2) + '\n';
+      }
+      html += '\n';
+    }
+    html += '</pre>';
+    res.send(html);
+  } catch (ex) {
+    res.status(500).send('Error: ' + (ex.message || ex));
+  }
+});
+
 router.get('/debug-late-hours', auth, async function(req, res) {
 	try {
 		var start = '2026-07-01', end = '2026-07-31';

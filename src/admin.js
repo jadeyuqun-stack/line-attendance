@@ -208,6 +208,19 @@ router.get('/records', auth, async (req, res) => {
   var emps = await db.listAttendanceEmployees();
   var leaves = await db.getLeaveRequests('approved', 500);
   var missedPunches = await db.getMissedPunches('approved', 500);
+  // 建立請假/補打卡查詢 Map（加速用）
+  var leaveMap = {};
+  for (var _lm = 0; _lm < leaves.length; _lm++) {
+    var _lv = leaves[_lm];
+    if (!leaveMap[_lv.employee_id]) leaveMap[_lv.employee_id] = [];
+    leaveMap[_lv.employee_id].push(_lv);
+  }
+  var missedMap = {};
+  for (var _mm = 0; _mm < missedPunches.length; _mm++) {
+    var _mp = missedPunches[_mm];
+    if (!missedMap[_mp.employee_id]) missedMap[_mp.employee_id] = [];
+    missedMap[_mp.employee_id].push(_mp);
+  }
   var empMap = {};
   // 建立員工對照表
   for (var i = 0; i < emps.length; i++) { empMap[emps[i].id] = { emp: emps[i], checkIn: null, checkOut: null, status: '' }; }
@@ -239,17 +252,19 @@ router.get('/records', auth, async (req, res) => {
       if (!isHoliday2 && _holidaysArr.indexOf(ciDateStr) !== -1) isHoliday2 = true;
       d2.status = (!isHoliday2 && ciH*60+ciM > _startH*60+_buf) ? '⚠️遲到' : '✅出勤';
     } else {
-      // 檢查當天是否有核准的請假
+      // 檢查當天是否有核准的請假（使用 map 加速）
+      var _leaveIds = leaveMap[e.id] || [];
       var hasLeave = false;
-      for (var li = 0; li < leaves.length; li++) {
-        if (leaves[li].employee_id == e.id && dateOverlaps(leaves[li].start_date, leaves[li].end_date, d)) {
+      for (var _li2 = 0; _li2 < _leaveIds.length; _li2++) {
+        if (dateOverlaps(_leaveIds[_li2].start_date, _leaveIds[_li2].end_date, d)) {
           hasLeave = true; break;
         }
       }
-      // 檢查是否有核准的補打卡
+      // 檢查是否有核准的補打卡（使用 map 加速）
+      var _missedIds = missedMap[e.id] || [];
       var hasMissed = false;
-      for (var mi = 0; mi < missedPunches.length; mi++) {
-        if (missedPunches[mi].employee_id == e.id && missedPunches[mi].punch_date == d) {
+      for (var _mi2 = 0; _mi2 < _missedIds.length; _mi2++) {
+        if (_missedIds[_mi2].punch_date == d) {
           hasMissed = true; break;
         }
       }
@@ -440,26 +455,31 @@ router.get('/leave-balances', auth, async (req, res) => {
     var e = emps[i];
     var nameEsc = esc(e.name);
     // 查詢各項額度餘額
+    // 查詢各項額度餘額（並行加速）
     var _al = { entitlement_days: 0, used_hours: 0, remaining_hours: 0 };
     var _ml = { total_hours: 0, used_hours: 0, remaining_hours: 0 };
     var _fl = { total_hours: 0, used_hours: 0, remaining_hours: 0 };
-    try { _al = await db.getAnnualLeaveBalance(e.id); } catch(ex) {}
-    try { _ml = await db.getMarriageLeaveBalance(e.id); } catch(ex) {}
-    try { _fl = await db.getFuneralLeaveBalance(e.id); } catch(ex) {}
-    var _cl = { total_hours: 0, used_hours: 0, remaining_hours: 0 };
-    try { _cl = await db.getCompLeaveBalance(e.id); } catch(ex) {}
-    // 年度事假/病假累計
     var _personalYTD = 0, _sickYTD = 0;
     try {
-      var _leaves = await db.getEmployeeLeaveRequests(e.id, 'approved', 200);
-      var _ys = new Date().getFullYear() + '-01-01';
-      for (var _li = 0; _li < _leaves.length; _li++) {
-        var _lv = _leaves[_li];
-        if (_lv.start_date < _ys) continue;
+      var _balRes = await Promise.all([
+        db.getAnnualLeaveBalance(e.id),
+        db.getMarriageLeaveBalance(e.id),
+        db.getFuneralLeaveBalance(e.id),
+        db.getEmployeeLeaveRequests(e.id, 'approved', 200)
+      ]);
+      _al = _balRes[0]; _ml = _balRes[1]; _fl = _balRes[2];
+      var _leaves2 = _balRes[3];
+      var _ys2 = new Date().getFullYear() + '-01-01';
+      for (var _li = 0; _li < _leaves2.length; _li++) {
+        var _lv = _leaves2[_li];
+        if (_lv.start_date < _ys2) continue;
         var _h = await db.calcPeriodHours(_lv.start_date, _lv.end_date);
         if (_lv.leave_type === 'personal') _personalYTD += _h;
         else if (_lv.leave_type === 'sick') _sickYTD += _h;
       }
+      // 加上手動補登
+      _personalYTD += parseFloat(e.personal_ytd_manual || 0);
+      _sickYTD += parseFloat(e.sick_ytd_manual || 0);
     } catch(ex) {}
     rows += '<tr>'
       + '<td>'+h(e.employee_no)+'</td>'
@@ -472,20 +492,18 @@ router.get('/leave-balances', auth, async (req, res) => {
       + '<td>' + _ml.remaining_hours + 'h</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'funeral_leave_total\',\''+esc(e.funeral_leave_total||'0')+'\')">'+(e.funeral_leave_total||'0')+'</span></td>'
       + '<td>' + _fl.remaining_hours + 'h</td>'
-	      + '<td><span class="editable" onclick="editField('+e.id+',\'comp_leave_total\',\''+esc(e.comp_leave_total||'0')+'\')">'+(e.comp_leave_total||'0')+'</span></td>'
-	      + '<td>' + (_cl ? _cl.remaining_hours : 0) + 'h</td>'
-      + '<td>' + _personalYTD + 'h</td>'
-      + '<td>' + _sickYTD + 'h</td>'
+      + '<td><span class="editable" onclick="editField('+e.id+',\'personal_ytd_manual\',\''+esc(e.personal_ytd_manual||'0')+'\')">' + (_personalYTD||'0') + 'h</span></td>'
+      + '<td><span class="editable" onclick="editField('+e.id+',\'sick_ytd_manual\',\''+esc(e.sick_ytd_manual||'0')+'\')">' + (_sickYTD||'0') + 'h</span></td>'
       + '</tr>';
   }
-  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假總額度、喪假總額度。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'
-    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>補休總額(h)</th><th>補休剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
-    + (rows||'<tr><td colspan="14">尚無員工</td></tr>')
+  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假總額度、喪假總額度、年度事假/病假手動補登。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'
+    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
+    + (rows||'<tr><td colspan="12">尚無員工</td></tr>')
     + '</table></div>'
     + '<div class="card"><h3>📖 說明</h3><ul style="font-size:13px;color:#666;line-height:2">'
     + '<li>特休：依入職日與勞基法年資自動計算額度。手動補登僅用於系統上線前已使用的時數。</li>'
     + '<li>婚假/喪假：管理員設定總額度，員工於 LINE 申請時自動扣減剩餘。</li>'
-    + '<li>本年度事假/病假為當年度已核准的累計時數（僅供參考，不影響額度）。</li>'
+    + '<li>本年度事假/病假：系統自動計算已核准時數，可手動補登調整。</li>'
     + '</ul></div>';
 	  + modalHtml();
   body += '<script>'+jsLib()+'</script>';

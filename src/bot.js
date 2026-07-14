@@ -1576,7 +1576,7 @@ function makePng() {
 		ctx.fillStyle = '#ffffff';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
-		ctx.font = 'bold 100px ' + fontFamily;
+		ctx.font = 'bold 150px ' + fontFamily;
 		ctx.fillText(a.label, cx, a.y + a.h * 0.48);
 
 		// 簡約底部線條圖示
@@ -2197,18 +2197,18 @@ function makePng8() {
     var label = a.label;
     if (label.indexOf('\n') !== -1) {
       var parts = label.split('\n');
-      ctx.font = 'bold 48px ' + fontFamily;
+      ctx.font = 'bold 72px ' + fontFamily;
       ctx.fillText(parts[0], cx, a.y + a.h * 0.42);
       ctx.fillText(parts[1], cx, a.y + a.h * 0.62);
     } else {
       if (label.length <= 2) {
-        ctx.font = 'bold 70px ' + fontFamily;
+        ctx.font = 'bold 105px ' + fontFamily;
       } else if (label.length <= 3) {
-        ctx.font = 'bold 60px ' + fontFamily;
+        ctx.font = 'bold 90px ' + fontFamily;
       } else if (label.length <= 4) {
-        ctx.font = 'bold 50px ' + fontFamily;
+        ctx.font = 'bold 75px ' + fontFamily;
       } else {
-        ctx.font = 'bold 44px ' + fontFamily;
+        ctx.font = 'bold 66px ' + fontFamily;
       }
       ctx.fillText(label, cx, a.y + a.h * 0.50);
     }
@@ -2378,7 +2378,7 @@ function makePngBoss() {
 		ctx.textBaseline = 'middle';
 
 		var label = a.label;
-		ctx.font = 'bold 80px ' + fontFamily;
+		ctx.font = 'bold 120px ' + fontFamily;
 		ctx.fillText(label, cx, a.y + a.h * 0.54);
 
 		// 底部簡約圖示

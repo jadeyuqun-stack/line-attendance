@@ -47,6 +47,8 @@ async function initDatabase() {
   try { await pool.query("ALTER TABLE employees ADD COLUMN marriage_leave_total NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN funeral_leave_total NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN comp_leave_total NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN personal_ytd_manual NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN sick_ytd_manual NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN manager_mode TEXT DEFAULT 'normal'"); } catch(e) {}
 
   // 簽核層級欄位
@@ -272,7 +274,7 @@ async function listInactiveEmployees() {
   return rows;
 }
 async function updateEmployee(id, fields) {
-  const allowed = ['name', 'department', 'role', 'can_approve', 'hire_date', 'annual_leave_used_manual', 'marriage_leave_total', 'funeral_leave_total', 'comp_leave_total', 'manager_mode'];
+  const allowed = ['name', 'department', 'role', 'can_approve', 'hire_date', 'annual_leave_used_manual', 'marriage_leave_total', 'funeral_leave_total', 'comp_leave_total', 'manager_mode', 'personal_ytd_manual', 'sick_ytd_manual'];
   const sets = [];
   const vals = [];
   let i = 1;

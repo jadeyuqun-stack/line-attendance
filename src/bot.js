@@ -847,7 +847,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
     lines.push('\n⚠️ 遲到（' + lateRecords.length + ' 次）：');
     for (var lr = 0; lr < lateRecords.length; lr++) {
       var lr2 = lateRecords[lr];
-      lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分' + (lr2.covered ? '' : ' ⚠️尚未請假'));
+      lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分' + (lr2.covered ? '' : ' （尚未請假）'));
     }
   } else {
     lines.push('\n⚠️ 遲到：無');
@@ -1837,7 +1837,7 @@ async function queryTodayAttendance(emp, client, replyToken) {
       var e3 = await db.getEmployeeById(le.employee_id);
       var t = le.check_time;
       var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' ⚠️尚未請假'));
+      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' （尚未請假）'));
     }
   }
   if (absentList.length > 0) {
@@ -2070,7 +2070,7 @@ async function queryMonthAttendance(emp, client, replyToken) {
       lines.push('  ' + info.name + '（' + info.no + '） 遲到 ' + info.records.length + ' 次');
       for (var r = 0; r < info.records.length; r++) {
         var rec = info.records[r];
-        lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' ⚠️尚未請假'));
+        lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' （尚未請假）'));
       }
     }
     if (totalLate > 0) lines.push('  📊 遲到合計：' + totalLate + ' 次');
@@ -2571,7 +2571,7 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 				var e3 = await db.getEmployeeById(le.employee_id);
 				var t = le.check_time;
 				var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-				lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' ⚠️尚未請假'));
+				lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' （尚未請假）'));
 			}
 		}
 	if (absentList.length > 0) {
@@ -2722,7 +2722,7 @@ async function queryBossMonthLates(emp, client, replyToken) {
 			lines.push('\n👤 ' + info.name + '（' + info.no + '） 遲到 ' + info.records.length + ' 次');
 			for (var r = 0; r < info.records.length; r++) {
 				var rec = info.records[r];
-				lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' ⚠️尚未請假'));
+				lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' （尚未請假）'));
 			}
 		}
 		if (totalCount > 0) lines.push('\n📊 全公司本月遲到合計：' + totalCount + ' 次');

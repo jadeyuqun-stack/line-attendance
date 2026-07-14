@@ -691,14 +691,15 @@ async function calcPeriodHours(startStr, endStr) {
 // 依勞基法計算特休額度
 // 年資 = 截至今年 1/1 的服務年數
 // 規則: 半年3天、1年7天、2年10天、3年14天、5年15天、10年起+1/年 max30
-async function calculateAnnualLeaveEntitlement(hireDate) {
+// refDate 可選，不傳則用當下時間
+async function calculateAnnualLeaveEntitlement(hireDate, refDate) {
   if (!hireDate) return { entitlement_days: 0, entitlement_hours: 0 };
   var hireStr = hireDate.replace(/\//g, '-');
   var hireParts = hireStr.split('-');
   var hire = new Date(parseInt(hireParts[0]), parseInt(hireParts[1]) - 1, parseInt(hireParts[2]));
   if (isNaN(hire.getTime())) return { entitlement_days: 0, entitlement_hours: 0 };
 
-  var now = new Date();
+  var now = refDate || new Date();
   var currentYear = now.getFullYear();
   var hireAnniv = new Date(currentYear, hire.getMonth(), hire.getDate());
 
@@ -729,6 +730,38 @@ async function calculateAnnualLeaveEntitlement(hireDate) {
     baseDays = Math.min(15 + (yearsOfService - 9), 30);
   }
   return { entitlement_days: baseDays, entitlement_hours: baseDays * 8 };
+}
+
+// 查當月特休額度有變動的人員（年資跨級距）
+async function getAnnualLeaveChangesThisMonth() {
+  var now = new Date();
+  var firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  var changes = [];
+  var emps = await listAttendanceEmployees();
+  for (var i = 0; i < emps.length; i++) {
+    var e = emps[i];
+    if (!e.hire_date) continue;
+    var oldCalc = await calculateAnnualLeaveEntitlement(e.hire_date, firstOfMonth);
+    var newCalc = await calculateAnnualLeaveEntitlement(e.hire_date, now);
+    if (oldCalc.entitlement_days !== newCalc.entitlement_days) {
+      var hireStr2 = e.hire_date.replace(/\//g, '-');
+      var hireParts2 = hireStr2.split('-');
+      var hireDate2 = new Date(parseInt(hireParts2[0]), parseInt(hireParts2[1]) - 1, parseInt(hireParts2[2]));
+      var effDate = new Date(now.getFullYear(), hireDate2.getMonth(), hireDate2.getDate());
+      var effStr = effDate.getFullYear() + '-' + String(effDate.getMonth()+1).padStart(2,'0') + '-' + String(effDate.getDate()).padStart(2,'0');
+      changes.push({
+        name: e.name,
+        employee_no: e.employee_no,
+        hire_date: e.hire_date,
+        effective_date: effStr,
+        old_days: oldCalc.entitlement_days,
+        old_hours: oldCalc.entitlement_hours,
+        new_days: newCalc.entitlement_days,
+        new_hours: newCalc.entitlement_hours,
+      });
+    }
+  }
+  return changes;
 }
 
 // 查特休餘額（年度重置）
@@ -1013,6 +1046,6 @@ module.exports = {
   createOvertimeRequest, getOvertimeRequests, getOvertimeById, deleteOvertimeRequest, updateOvertimeStatus, getEmployeeOvertimeRequests,
   createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus,
   addPendingNotification, getPendingNotifications, clearPendingNotifications,
-  calcPeriodHours, calculateAnnualLeaveEntitlement, getAnnualLeaveBalance, getMarriageLeaveBalance, getFuneralLeaveBalance, getCompLeaveBalance,
+  calcPeriodHours, calculateAnnualLeaveEntitlement, getAnnualLeaveBalance, getMarriageLeaveBalance, getFuneralLeaveBalance, getCompLeaveBalance, getAnnualLeaveChangesThisMonth,
   exportAllData, importAllData,
 };

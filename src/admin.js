@@ -177,6 +177,7 @@ router.get('/', auth, async (_, res) => {
   }
   var leaveCount = todayLeaves.length;
   var leavePct = s.total_employees > 0 ? Math.round(leaveCount / s.total_employees * 100) : 0;
+  var _alc = await db.getAnnualLeaveChangesThisMonth();
 
   var body = '<div class="stats">'
     + '<div class="stat"><div class="icon green">👥</div><div class="info"><div class="num">'+s.total_employees+'</div><div class="lbl">總員工人數</div></div></div>'
@@ -187,6 +188,25 @@ router.get('/', auth, async (_, res) => {
     + '</div>'
     + '<div class="card"><h3>今日出勤率</h3><div style="font-size:36px;font-weight:700;color:#06c755;margin:8px 0">'+pct+'%</div><div class="progress"><div style="width:'+pct+'%"></div></div><p style="color:#999;font-size:12px;margin-top:4px">'+s.checked_in+' / '+s.total_employees+' 人已打卡</p></div>'
     + '<div class="card"><h3>🏖 今日請假狀況</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期</th></tr>'+(leaveRows||'<tr><td colspan="5">🎉 今日無人請假</td></tr>')+'</table></div>'
+    + (function(){
+      var _alcHtml = '';
+      if (_alc && _alc.length > 0) {
+        _alcHtml += '<div class="card"><h3>📈 本月特休時數更新</h3>'
+          + '<p style="color:#666;font-size:13px;margin-bottom:12px">以下人員因年資跨級距，本月特休額度已更新。未休完時數將轉為薪資。</p>'
+          + '<table><tr><th>姓名</th><th>入職日</th><th>生效日期</th><th>原特休</th><th>新特休</th><th>增加</th></tr>';
+        for (var _ai = 0; _ai < _alc.length; _ai++) {
+          var _a = _alc[_ai];
+          _alcHtml += '<tr><td>'+h(_a.name)+'（'+h(_a.employee_no)+'）</td>'
+            + '<td>'+h(_a.hire_date)+'</td>'
+            + '<td>'+_a.effective_date+'</td>'
+            + '<td>'+_a.old_days+'天（'+_a.old_hours+'h）</td>'
+            + '<td>'+_a.new_days+'天（'+_a.new_hours+'h）</td>'
+            + '<td style="color:#059669;font-weight:bold">+' + (_a.new_hours - _a.old_hours) + 'h</td></tr>';
+        }
+        _alcHtml += '</table></div>';
+      }
+      return _alcHtml;
+    })()
     + '<div class="card"><h3>最近打卡</h3><table><tr><th>編號</th><th>姓名</th><th>類型</th><th>時間</th><th>GPS</th></tr>'+(recentRows||'<tr><td colspan="5">尚無記錄</td></tr>')+'</table></div>';
   res.send(layout('儀表板', '儀表板', body));
 });

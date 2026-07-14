@@ -731,7 +731,13 @@ async function getAnnualLeaveBalance(employeeId) {
   var emp = await getEmployeeById(employeeId);
   if (!emp) return { entitlement_days: 0, entitlement_hours: 0, used_hours: 0, remaining_hours: 0 };
 
-  var calc = await calculateAnnualLeaveEntitlement(emp.hire_date);
+  // 若無 hire_date 則以 created_at 代替（既有員工相容）
+  var _hireDate = emp.hire_date;
+  if (!_hireDate && emp.created_at) {
+    var _cd = new Date(emp.created_at);
+    _hireDate = _cd.getFullYear() + '-' + ('0' + (_cd.getMonth() + 1)).slice(-2) + '-' + ('0' + _cd.getDate()).slice(-2);
+  }
+  var calc = await calculateAnnualLeaveEntitlement(_hireDate);
   var entitlementHours = calc.entitlement_hours;
 
   // 今年已核准特休

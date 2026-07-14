@@ -492,8 +492,8 @@ router.get('/leave-balances', auth, async (req, res) => {
       + '<td>' + _ml.remaining_hours + 'h</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'funeral_leave_total\',\''+esc(e.funeral_leave_total||'0')+'\')">'+(e.funeral_leave_total||'0')+'</span></td>'
       + '<td>' + _fl.remaining_hours + 'h</td>'
-      + '<td><span class="editable" onclick="editField('+e.id+',\'personal_ytd_manual\',\''+esc(e.personal_ytd_manual||'0')+'\')">' + (_personalYTD||'0') + 'h</span></td>'
-      + '<td><span class="editable" onclick="editField('+e.id+',\'sick_ytd_manual\',\''+esc(e.sick_ytd_manual||'0')+'\')">' + (_sickYTD||'0') + 'h</span></td>'
+      + '<td><span class="editable" style="' + (_personalYTD > 0 ? 'color:#e67e22;font-weight:bold' : '') + '" onclick="editField('+e.id+',\'personal_ytd_manual\',\''+esc(e.personal_ytd_manual||'0')+'\')">' + (_personalYTD||'0') + 'h</span></td>'
+      + '<td><span class="editable" style="' + (_sickYTD > 0 ? 'color:#e67e22;font-weight:bold' : '') + '" onclick="editField('+e.id+',\'sick_ytd_manual\',\''+esc(e.sick_ytd_manual||'0')+'\')">' + (_sickYTD||'0') + 'h</span></td>'
       + '</tr>';
   }
   var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假總額度、喪假總額度、年度事假/病假手動補登。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'

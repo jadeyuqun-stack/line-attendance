@@ -317,7 +317,7 @@ async function handleText(text, uid, client, replyToken) {
 // 請假類型對照
 var _leaveTypeLabels = {
   'annual': '特休', 'personal': '事假', 'sick': '病假',
-  'official': '公假', 'outing': '外出', 'other': '其他', 'marriage': '婚假', 'funeral': '喪假', 'comp': '補休'
+  'official': '公假', 'outing': '外出', 'other': '其他', 'marriage': '婚假(陪產假)', 'funeral': '喪假', 'comp': '補休'
 };
 function leaveTypeLabel(t) { return _leaveTypeLabels[t] || t || '請假'; }
 
@@ -843,13 +843,11 @@ async function doQuery(emp, client, replyToken, _prefix) {
     }
     lateRecords.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: covered });
   }
-  var realLateRecords = [];
-  for (var lr3 = 0; lr3 < lateRecords.length; lr3++) { if (!lateRecords[lr3].covered) realLateRecords.push(lateRecords[lr3]); }
-  if (realLateRecords.length > 0) {
-    lines.push('\n⚠️ 遲到（' + realLateRecords.length + ' 次）：');
-    for (var lr = 0; lr < realLateRecords.length; lr++) {
-      var lr2 = realLateRecords[lr];
-      lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分');
+  if (lateRecords.length > 0) {
+    lines.push('\n⚠️ 遲到（' + lateRecords.length + ' 次）：');
+    for (var lr = 0; lr < lateRecords.length; lr++) {
+      var lr2 = lateRecords[lr];
+      lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分' + (lr2.covered ? '' : ' ⚠️未請假'));
     }
   } else {
     lines.push('\n⚠️ 遲到：無');
@@ -928,6 +926,9 @@ async function doQuery(emp, client, replyToken, _prefix) {
       if (_lv3.leave_type === 'personal') _personalTotal3 += _h3;
       else if (_lv3.leave_type === 'sick') _sickTotal3 += _h3;
     }
+    // 加上手動補登（後台設定）
+    _personalTotal3 += parseFloat(emp.personal_ytd_manual || 0);
+    _sickTotal3 += parseFloat(emp.sick_ytd_manual || 0);
     var _ytdLines3 = [];
     if (_personalTotal3 > 0) _ytdLines3.push('事假 ' + _personalTotal3 + 'h');
     if (_sickTotal3 > 0) _ytdLines3.push('病假 ' + _sickTotal3 + 'h');
@@ -940,7 +941,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
     var _compBal2 = await db.getCompLeaveBalance(emp.id);
     var _balLines2 = [];
     _balLines2.push('🏖 特休：' + _annBal2.remaining_hours + '/' + _annBal2.entitlement_hours + 'h');
-    if (_marBal2.total_hours > 0) _balLines2.push('💍 婚假：' + _marBal2.remaining_hours + '/' + _marBal2.total_hours + 'h');
+    if (_marBal2.total_hours > 0) _balLines2.push('💍 婚假(陪產假)：' + _marBal2.remaining_hours + '/' + _marBal2.total_hours + 'h');
     if (_funBal2.total_hours > 0) _balLines2.push('💐 喪假：' + _funBal2.remaining_hours + '/' + _funBal2.total_hours + 'h');
     if (_compBal2.total_hours > 0) _balLines2.push('⏰ 補休：' + _compBal2.remaining_hours + '/' + _compBal2.total_hours + 'h');
     lines.push('\n📊 剩餘/累計假期');
@@ -974,7 +975,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
 }
 
 // ===== Leave flow (unchanged) =====
-const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official', '外出': 'outing', '其他': 'other', '婚假': 'marriage', '喪假': 'funeral', '補休': 'comp' };
+const LEAVE_TYPES = { '特休': 'annual', '事假': 'personal', '病假': 'sick', '公假': 'official', '外出': 'outing', '其他': 'other', '婚假': 'marriage', '婚假(陪產假)': 'marriage', '喪假': 'funeral', '補休': 'comp' };
 
 function ceilHours(diffMs) { return Math.ceil(Math.max(0, diffMs) / 3600000); }
 // 請假時數：取整後，跨天每日最多 8 小時
@@ -1045,7 +1046,7 @@ async function startLeaveFlow(uid, client, replyToken, _prefix) {
         { type: 'action', action: { type: 'message', label: '事假', text: '事假' } },
         { type: 'action', action: { type: 'message', label: '補休', text: '補休' } },
         { type: 'action', action: { type: 'message', label: '公假', text: '公假' } },
-        { type: 'action', action: { type: 'message', label: '婚假', text: '婚假' } },
+        { type: 'action', action: { type: 'message', label: '婚假(陪產假)', text: '婚假(陪產假)' } },
         { type: 'action', action: { type: 'message', label: '喪假', text: '喪假' } },
         { type: 'action', action: { type: 'message', label: '其他', text: '其他' } },
         { type: 'action', action: { type: 'message', label: '取消', text: '取消' } },
@@ -1102,7 +1103,7 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
     if (type === 'annual') {
       try { var _annBal = await db.getAnnualLeaveBalance(emp.id); if (_annBal.entitlement_hours > 0) _balText = '\n🏖 特休餘額：' + _annBal.remaining_hours + 'h / ' + _annBal.entitlement_hours + 'h，已用' + _annBal.used_hours + 'h'; } catch(_ex) {}
     } else if (type === 'marriage') {
-      try { var _marBal = await db.getMarriageLeaveBalance(emp.id); if (_marBal.total_hours > 0) _balText = '\n💒 婚假額度：' + _marBal.remaining_hours + 'h / ' + _marBal.total_hours + 'h'; } catch(_ex) {}
+      try { var _marBal = await db.getMarriageLeaveBalance(emp.id); if (_marBal.total_hours > 0) _balText = '\n💒 婚假(陪產假)額度：' + _marBal.remaining_hours + 'h / ' + _marBal.total_hours + 'h'; } catch(_ex) {}
     } else if (type === 'funeral') {
       try { var _funBal = await db.getFuneralLeaveBalance(emp.id); if (_funBal.total_hours > 0) _balText = '\n🕊 喪假額度：' + _funBal.remaining_hours + 'h / ' + _funBal.total_hours + 'h'; } catch(_ex) {}
     } else if (type === 'comp') {
@@ -1134,12 +1135,12 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
           // 婚假/喪假最低 8 小時
           if ((state.type === "marriage" || state.type === "funeral") && reqHours < 8) {
             states.delete(uid);
-            var _minLabel = state.type === "marriage" ? "婚假" : "喪假";
+            var _minLabel = state.type === "marriage" ? "婚假(陪產假)" : "喪假";
             return client.replyMessage(replyToken, _prefix ? [{ type: "text", text: _prefix }, withMenu("❌ " + _minLabel + "最少需申請 8 小時（1 天）\n請將時間調整為至少 8 小時。")] : [withMenu("❌ " + _minLabel + "最少需申請 8 小時（1 天）\n請將時間調整為至少 8 小時。")]);
           }
           if (_balCheck && reqHours > _balCheck.remaining_hours) {
             states.delete(uid);
-            var _typeLabel2 = state.type === 'annual' ? '特休' : state.type === 'marriage' ? '婚假' : state.type === 'funeral' ? '喪假' : '補休';
+            var _typeLabel2 = state.type === 'annual' ? '特休' : state.type === 'marriage' ? '婚假(陪產假)' : state.type === 'funeral' ? '喪假' : '補休';
             return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ ' + _typeLabel2 + '餘額不足\n\n額度：' + (_balCheck.entitlement_hours || _balCheck.total_hours || 0) + 'h\n已用：' + _balCheck.used_hours + 'h\n剩餘：' + _balCheck.remaining_hours + 'h\n本次需：' + reqHours + 'h\n\n請選擇其他假別或縮短時間。')] : [withMenu('❌ ' + _typeLabel2 + '餘額不足\n\n額度：' + (_balCheck.entitlement_hours || _balCheck.total_hours || 0) + 'h\n已用：' + _balCheck.used_hours + 'h\n剩餘：' + _balCheck.remaining_hours + 'h\n本次需：' + reqHours + 'h\n\n請選擇其他假別或縮短時間。')]);
           }
         }
@@ -1829,16 +1830,14 @@ async function queryTodayAttendance(emp, client, replyToken) {
   }
 
   var lines = ['📋 今日考勤狀態（' + today.substring(5) + '）'];
-  var realLateList = [];
-  for (var k2 = 0; k2 < lateList.length; k2++) { if (!lateList[k2].covered) realLateList.push(lateList[k2]); }
-  if (realLateList.length > 0) {
-    lines.push('\n⚠️ 遲到（' + realLateList.length + ' 人）：');
-    for (var k = 0; k < realLateList.length; k++) {
-      var le = realLateList[k];
+  if (lateList.length > 0) {
+    lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
+    for (var k = 0; k < lateList.length; k++) {
+      var le = lateList[k];
       var e3 = await db.getEmployeeById(le.employee_id);
       var t = le.check_time;
       var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
+      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' ⚠️未請假'));
     }
   }
   if (absentList.length > 0) {
@@ -2067,14 +2066,11 @@ async function queryMonthAttendance(emp, client, replyToken) {
     var totalLate = 0;
     for (var k = 0; k < lateKeys.length; k++) {
       var info = empLateMap[lateKeys[k]];
-      var realRecs = [];
-      for (var r2 = 0; r2 < info.records.length; r2++) { if (!info.records[r2].covered) realRecs.push(info.records[r2]); }
-      if (realRecs.length === 0) continue;
-      totalLate += realRecs.length;
-      lines.push('  ' + info.name + '（' + info.no + '） 遲到 ' + realRecs.length + ' 次');
-      for (var r = 0; r < realRecs.length; r++) {
-        var rec = realRecs[r];
-        lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）');
+      totalLate += info.records.length;
+      lines.push('  ' + info.name + '（' + info.no + '） 遲到 ' + info.records.length + ' 次');
+      for (var r = 0; r < info.records.length; r++) {
+        var rec = info.records[r];
+        lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' ⚠️未請假'));
       }
     }
     if (totalLate > 0) lines.push('  📊 遲到合計：' + totalLate + ' 次');
@@ -2568,16 +2564,14 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 	}
 
 	var lines = ['📋 今日公司考勤狀態'];
-		var realLateList2 = [];
-		for (var k4 = 0; k4 < lateList.length; k4++) { if (!lateList[k4].covered) realLateList2.push(lateList[k4]); }
-		if (realLateList2.length > 0) {
-			lines.push('\n⚠️ 遲到（' + realLateList2.length + ' 人）：');
-			for (var k = 0; k < realLateList2.length; k++) {
-				var le = realLateList2[k];
+		if (lateList.length > 0) {
+			lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
+			for (var k = 0; k < lateList.length; k++) {
+				var le = lateList[k];
 				var e3 = await db.getEmployeeById(le.employee_id);
 				var t = le.check_time;
 				var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-				lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分');
+				lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' ⚠️未請假'));
 			}
 		}
 	if (absentList.length > 0) {
@@ -2724,14 +2718,11 @@ async function queryBossMonthLates(emp, client, replyToken) {
 		var totalCount = 0;
 		for (var k = 0; k < keys.length; k++) {
 			var info = empLateMap[keys[k]];
-			var realRecs2 = [];
-			for (var r5 = 0; r5 < info.records.length; r5++) { if (!info.records[r5].covered) realRecs2.push(info.records[r5]); }
-			if (realRecs2.length === 0) continue;
-			totalCount += realRecs2.length;
-			lines.push('\n👤 ' + info.name + '（' + info.no + '） 遲到 ' + realRecs2.length + ' 次');
-			for (var r = 0; r < realRecs2.length; r++) {
-				var rec = realRecs2[r];
-				lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）');
+			totalCount += info.records.length;
+			lines.push('\n👤 ' + info.name + '（' + info.no + '） 遲到 ' + info.records.length + ' 次');
+			for (var r = 0; r < info.records.length; r++) {
+				var rec = info.records[r];
+				lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' ⚠️未請假'));
 			}
 		}
 		if (totalCount > 0) lines.push('\n📊 全公司本月遲到合計：' + totalCount + ' 次');

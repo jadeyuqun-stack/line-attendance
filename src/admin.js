@@ -163,7 +163,7 @@ router.get('/', auth, async (_, res) => {
     if (lStart <= todayStr && lEnd >= todayStr) {
       if (!leaveEmpIds[l.employee_id]) {
         leaveEmpIds[l.employee_id] = true;
-        var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type === 'marriage' ? '婚假' : l.leave_type === 'funeral' ? '喪假' : l.leave_type === 'comp' ? '補休' : l.leave_type;
+        var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type === 'marriage' ? '婚假(陪產假)' : l.leave_type === 'funeral' ? '喪假' : l.leave_type === 'comp' ? '補休' : l.leave_type;
         todayLeaves.push({ name: l.name, no: l.employee_no, dept: l.department, type: leaveLabel, start: lStart, end: lEnd });
       }
     }
@@ -496,13 +496,13 @@ router.get('/leave-balances', auth, async (req, res) => {
       + '<td><span class="editable" style="' + (_sickYTD > 0 ? 'color:#e67e22;font-weight:bold' : '') + '" onclick="editField('+e.id+',\'sick_ytd_manual\',\''+esc(e.sick_ytd_manual||'0')+'\')">' + (_sickYTD||'0') + 'h</span></td>'
       + '</tr>';
   }
-  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假總額度、喪假總額度、年度事假/病假手動補登。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'
-    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
+  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假(陪產假)總額度、喪假總額度、年度事假/病假手動補登。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'
+    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假(陪產假)總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
     + (rows||'<tr><td colspan="12">尚無員工</td></tr>')
     + '</table></div>'
     + '<div class="card"><h3>📖 說明</h3><ul style="font-size:13px;color:#666;line-height:2">'
     + '<li>特休：依入職日與勞基法年資自動計算額度。手動補登僅用於系統上線前已使用的時數。</li>'
-    + '<li>婚假/喪假：管理員設定總額度，員工於 LINE 申請時自動扣減剩餘。</li>'
+    + '<li>婚假(陪產假)/喪假：管理員設定總額度，員工於 LINE 申請時自動扣減剩餘。</li>'
     + '<li>本年度事假/病假：系統自動計算已核准時數，可手動補登調整。</li>'
     + '</ul></div>';
 	  + modalHtml();
@@ -519,7 +519,7 @@ router.get('/leaves', auth, async (req, res) => {
   var now = new Date();
   var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var rows = '';
-  var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
+  var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
   var empMap = {};
   for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
   function getOtApprover(rec) {
@@ -1051,7 +1051,7 @@ router.post('/salary/preview', auth, upload.any(), async function(req, res) {
       var content = (req.body[key] || '').trim();
       var hasImg = !!salaryImages[id];
       if ((content || hasImg) && empMap[id] && empMap[id].line_user_id) {
-                var _llh = ''; if (lateMin > 0) { for (var _li=0;_li<leaves.length;_li++) { var _lv=leaves[_li]; if (_lv.employee_id===r.employee_id && _lv.status==='approved' && dateOverlaps(_lv.start_date,_lv.end_date,r.work_date)) { _llh = _lv.leave_type==='annual'?'特休':_lv.leave_type==='personal'?'事假':_lv.leave_type==='sick'?'病假':_lv.leave_type==='official'?'公假':_lv.leave_type==='outing'?'外出':_lv.leave_type==='marriage'?'婚假':_lv.leave_type==='funeral'?'喪假':_lv.leave_type==='comp'?'補休':_lv.leave_type; break; } } }
+                var _llh = ''; if (lateMin > 0) { for (var _li=0;_li<leaves.length;_li++) { var _lv=leaves[_li]; if (_lv.employee_id===r.employee_id && _lv.status==='approved' && dateOverlaps(_lv.start_date,_lv.end_date,r.work_date)) { _llh = _lv.leave_type==='annual'?'特休':_lv.leave_type==='personal'?'事假':_lv.leave_type==='sick'?'病假':_lv.leave_type==='official'?'公假':_lv.leave_type==='outing'?'外出':_lv.leave_type==='marriage'?'婚假(陪產假)':_lv.leave_type==='funeral'?'喪假':_lv.leave_type==='comp'?'補休':_lv.leave_type; break; } } }
 data.push({ id: id, emp: empMap[id], content: content, hasImg: hasImg });
       }
     }
@@ -1405,7 +1405,7 @@ router.get('/export/leaves', auth, async function(req, res) {
     var all = await db.getLeaveRequests('', 2000);
     var data = [];
     var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-    var typeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
+    var typeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
     for (var i = 0; i < all.length; i++) {
       var l = all[i];
       var lStart = typeof l.start_date === 'string' ? (l.start_date.indexOf(' ')!==-1 ? l.start_date.split(' ')[0] : l.start_date.split('T')[0]) : '';
@@ -1536,7 +1536,7 @@ router.get('/export/summary', auth, async function(req, res) {
 		}
 
 		// 假別標籤
-		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
+		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
 			var _holidays2 = [];
 			try { _holidays2 = JSON.parse(await db.getSetting('tw_holidays') || '[]'); } catch(ex) {}
 
@@ -1671,7 +1671,7 @@ var data = [];
 				'特休額度(h)': (await _getALB(r.employee_id)).ah,
 				'特休已用(h)': (await _getALB(r.employee_id)).au,
 				'特休剩餘(h)': (await _getALB(r.employee_id)).ar,
-				'婚假剩餘(h)': (await _getALB(r.employee_id)).mr,
+				'婚假(陪產假)剩餘(h)': (await _getALB(r.employee_id)).mr,
 				'喪假剩餘(h)': (await _getALB(r.employee_id)).fr,
 				'年度事假(h)': (await _getALB(r.employee_id))._ytdP || 0,
 				'年度病假(h)': (await _getALB(r.employee_id))._ytdS || 0
@@ -1681,7 +1681,7 @@ var data = [];
 		// 建立 Excel
 		var wb = XLSX.utils.book_new();
 		var ws = XLSX.utils.json_to_sheet(data, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','遲到請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','遲到請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws, '出勤彙總');
 		var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -1718,7 +1718,7 @@ router.get('/export/all', auth, async function(req, res) {
 		var missedPunches = await db.getMissedPunches('approved', 500);
 		var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
 		var lateBufMin = parseInt(await db.getSetting('late_buffer_minutes') || '30');
-		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
+		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
 			var _holidays2 = [];
 			try { _holidays2 = JSON.parse(await db.getSetting('tw_holidays') || '[]'); } catch(ex) {}
 
@@ -1835,14 +1835,14 @@ summaryData.push({
 			'特休額度(h)': (await _getALB2(r.employee_id)).ah,
 			'特休已用(h)': (await _getALB2(r.employee_id)).au,
 			'特休剩餘(h)': (await _getALB2(r.employee_id)).ar,
-			'婚假剩餘(h)': (await _getALB2(r.employee_id)).mr,
+			'婚假(陪產假)剩餘(h)': (await _getALB2(r.employee_id)).mr,
 			'喪假剩餘(h)': (await _getALB2(r.employee_id)).fr,
 				'年度事假(h)': (await _getALB2(r.employee_id))._ytdP || 0,
 				'年度病假(h)': (await _getALB2(r.employee_id))._ytdS || 0
 			});
 		}
 		var ws1 = XLSX.utils.json_to_sheet(summaryData, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','遲到請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','遲到請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws1, '出勤彙總');
 
@@ -1887,7 +1887,7 @@ summaryData.push({
 		// ===== Sheet 3: 請假紀錄 =====
 		var allLeaves = await db.getLeaveRequests('', 2000);
 		var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-		var typeLabels2 = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
+		var typeLabels2 = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
 		var leaveData = [];
 		for (var lv = 0; lv < allLeaves.length; lv++) {
 			var lr = allLeaves[lv];

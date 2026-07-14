@@ -519,6 +519,7 @@ router.get('/leaves', auth, async (req, res) => {
   var now = new Date();
   var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var rows = '';
+  var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
   var empMap = {};
   for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
   function getOtApprover(rec) {
@@ -586,7 +587,7 @@ router.get('/leaves', auth, async (req, res) => {
       personMap[l.employee_no].total += hours;
       if (startStr && startStr.indexOf(thisMonth) === 0) personMap[l.employee_no].month += hours;
     }
-    rows += '<tr><td>'+cb+'</td><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+(l.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(l.reject_reason)+'</small>':'')+'</td><td>'+actionHtml+'</td></tr>';
+    rows += '<tr><td>'+cb+'</td><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(leaveTypeLabels[l.leave_type] || l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+(l.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(l.reject_reason)+'</small>':'')+'</td><td>'+actionHtml+'</td></tr>';
   }
   // 個人彙總表格
   var personRows = '';
@@ -1404,7 +1405,7 @@ router.get('/export/leaves', auth, async function(req, res) {
     var all = await db.getLeaveRequests('', 2000);
     var data = [];
     var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-    var typeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出' };
+    var typeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假', funeral: '喪假', comp: '補休' };
     for (var i = 0; i < all.length; i++) {
       var l = all[i];
       var lStart = typeof l.start_date === 'string' ? (l.start_date.indexOf(' ')!==-1 ? l.start_date.split(' ')[0] : l.start_date.split('T')[0]) : '';

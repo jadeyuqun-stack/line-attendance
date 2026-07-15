@@ -86,7 +86,6 @@ const GPS_BUTTONS = { items: [] };
 const APPROVER_BUTTONS = {
   items: [
     { type: 'action', action: { type: 'message', label: '✅ 核准全部', text: '核准全部' } },
-    { type: 'action', action: { type: 'message', label: '❌ 駁回全部', text: '駁回全部' } },
   ]
 };
 
@@ -260,7 +259,7 @@ async function handleText(text, uid, client, replyToken) {
   var _pendingMsg = _notifMsg;
   try {
     if (emp && (emp.can_approve || emp.role === '經理' || emp.role === '老闆' || emp.role === '簽核人員')) {
-      var _isApprovalCmd = cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending' || cmd === '核准全部' || cmd === '駁回全部';
+      var _isApprovalCmd = cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending' || cmd === '核准全部';
       var _isInApprovalFlow = states.has(uid) && (states.get(uid).flow === 'approval_browse' || states.get(uid).flow === 'reject_leave' || states.get(uid).flow === 'reject_ot' || states.get(uid).flow === 'reject_missed');
       if (!_isApprovalCmd && !_isInApprovalFlow) {
         var _pendingCount = await countPendingForApprover(emp);
@@ -314,7 +313,7 @@ async function handleText(text, uid, client, replyToken) {
     return client.replyMessage(replyToken, [withMenu(newMode === 'test' ? '🔬 已切換為測試模式，所有規則限制已暫停。\n\n任何打卡、請假、加班皆不檢查限制。\n\n輸入「切換測試模式」可恢復正常模式。' : '✅ 已切換為正常模式，規則限制已恢復。')]);
   }
 
-  if (cmd.includes('幫助')) return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')] : [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部 ❌駁回全部')]);
+  if (cmd.includes('幫助')) return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部')] : [withMenu('📖 功能選單\n📍傳位置→打卡 🏖請假 🕐加班\n📋查詢 🆔我的ID\n✅核准全部')]);
   return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')] : [withMenu('請點選下方選單，或輸入：上班 / 下班 / 查詢 / 請假 / 加班 / 我的ID')]);
 }
 
@@ -460,7 +459,6 @@ async function checkPendingApprovalsCmd(emp, client, replyToken, uid, _prefix) {
     var qr = {
       items: [
         { type: 'action', action: { type: 'message', label: '✅ 核准全部', text: '核准全部' } },
-        { type: 'action', action: { type: 'message', label: '❌ 駁回全部', text: '駁回全部' } },
         { type: 'action', action: { type: 'message', label: '🔙 取消', text: '取消' } },
       ]
     };
@@ -477,9 +475,6 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
     if (text === '核准全部') {
       states.delete(uid);
       return batchApproveAll(emp, client, replyToken, '', uid);
-    }  if (text === '駁回全部') {
-      states.delete(uid);
-      return batchRejectAll(emp, client, replyToken, '', uid);
     }
   if (state.step === 'list') {
     var num = parseInt(text);

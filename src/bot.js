@@ -287,6 +287,11 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '核准全部') return batchApproveAll(emp, client, replyToken, _pendingMsg || undefined, uid);
   if (cmd === '駁回全部') return batchRejectAll(emp, client, replyToken, _pendingMsg || undefined, uid);
   if (cmd === '取消' && states.has(uid)) { states.delete(uid); return client.replyMessage(replyToken, _pendingMsg ? [{ type: 'text', text: _pendingMsg }, withMenu('已取消操作。')] : [withMenu('已取消操作。')]); }
+  // 查詢/記錄可跳出任何進行中的流程（避免陷入迴圈）
+  if ((cmd.includes('查詢') || cmd.includes('記錄')) && states.has(uid)) {
+    states.delete(uid);
+    return doQuery(emp, client, replyToken, _pendingMsg || undefined);
+  }
   if (states.has(uid)) {
     var state2 = states.get(uid);
     if (state2.flow === 'reject_leave' || state2.flow === 'reject_ot' || state2.flow === 'reject_missed') {

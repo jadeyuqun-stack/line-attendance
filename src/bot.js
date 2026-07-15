@@ -559,8 +559,14 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
     }
 
     if (text.indexOf('駁回') === 0) {
+      var reason = text.substring(2).trim();
+      if (!reason) {
+        // 只按了「駁回」按鈕未附原因 → 先要求輸入
+        var _rejectFlow = selItem.type === 'leave' ? 'reject_leave' : selItem.type === 'ot' ? 'reject_ot' : 'reject_missed';
+        states.set(uid, { flow: _rejectFlow, id: selItem.data.id, approverId: emp.id });
+        return client.replyMessage(replyToken, [withMenu('📝 請輸入駁回原因（或輸入「取消」放棄）：')]);
+      }
       states.delete(uid);
-      var reason = text.substring(2).trim() || '未提供原因';
       try {
         if (selItem.type === 'leave') {
           await db.updateLeaveStatus(selItem.data.id, 'rejected', emp.id, reason);

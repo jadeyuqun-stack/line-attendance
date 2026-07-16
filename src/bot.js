@@ -1054,7 +1054,6 @@ async function startLeaveFlow(uid, client, replyToken, _prefix) {
         { type: 'action', action: { type: 'message', label: '公假', text: '公假' } },
         { type: 'action', action: { type: 'message', label: '婚假(陪產假)', text: '婚假(陪產假)' } },
         { type: 'action', action: { type: 'message', label: '喪假', text: '喪假' } },
-        { type: 'action', action: { type: 'message', label: '其他', text: '其他' } },
         { type: 'action', action: { type: 'message', label: '取消', text: '取消' } },
       ]
     }

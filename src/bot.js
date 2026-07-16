@@ -869,7 +869,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
     var mls = typeof ml.start_date === 'string' ? ml.start_date.substring(0, 10) : '';
     var mle = typeof ml.end_date === 'string' ? ml.end_date.substring(0, 10) : '';
     if (mle < monthStart || mls > monthEnd) continue;
-    var leaveLabel = ml.leave_type === 'annual' ? '特休' : ml.leave_type === 'personal' ? '事假' : ml.leave_type === 'sick' ? '病假' : ml.leave_type === 'official' ? '公假' : ml.leave_type === 'outing' ? '外出' : (ml.leave_type || '請假');
+    var leaveLabel = leaveTypeLabel(ml.leave_type);
     var lh = leaveHours(ml.start_date, ml.end_date);
     leaveRecords.push({
       start: fmtDt(ml.start_date).length > 7 ? fmtDt(ml.start_date).substring(5) : fmtDt(ml.start_date),
@@ -1829,7 +1829,7 @@ async function queryTodayAttendance(emp, client, replyToken) {
     var als = typeof al.start_date === 'string' ? al.start_date.split('T')[0] : '';
     var ale = typeof al.end_date === 'string' ? al.end_date.split('T')[0] : '';
     if (als <= today && ale >= today) {
-      var leaveLabel = al.leave_type === 'annual' ? '特休' : al.leave_type === 'personal' ? '事假' : al.leave_type === 'sick' ? '病假' : al.leave_type === 'official' ? '公假' : al.leave_type === 'outing' ? '外出' : (al.leave_type || '請假');
+      var leaveLabel = leaveTypeLabel(al.leave_type);
       var lEmp = await db.getEmployeeById(al.employee_id);
       if (lEmp) leaveEmpMap[al.employee_id] = lEmp.name + '（' + lEmp.employee_no + '） ' + leaveLabel;
     }
@@ -1954,7 +1954,7 @@ async function queryMonthAttendance(emp, client, replyToken) {
     var le2 = typeof l.end_date === 'string' ? l.end_date.substring(0, 10) : ls;
     if (le2 < monthStart || ls > monthEnd) continue;
 
-    var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : (l.leave_type || '請假');
+    var leaveLabel = leaveTypeLabel(l.leave_type);
     var hours = leaveHours(l.start_date, l.end_date);
     if (!empLeaveMap[l.employee_id]) {
       empLeaveMap[l.employee_id] = { name: l.name, no: l.employee_no, records: [], totalHours: 0 };
@@ -2662,7 +2662,7 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 		if (leDate < monthStart || lsDate > monthEnd) continue;
 
 		var leaveType = l.leave_type || '請假';
-		var leaveLabel = leaveType === 'annual' ? '特休' : leaveType === 'personal' ? '事假' : leaveType === 'sick' ? '病假' : leaveType === 'official' ? '公假' : leaveType === 'outing' ? '外出' : leaveType;
+		var leaveLabel = leaveTypeLabel(leaveType);
 		var hours = leaveHours(l.start_date, l.end_date);
 		if (!empLeaveMap[l.employee_id]) {
 			empLeaveMap[l.employee_id] = { name: l.name, no: l.employee_no, records: [], totalHours: 0 };

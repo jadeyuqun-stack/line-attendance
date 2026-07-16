@@ -281,9 +281,13 @@ router.get('/records', auth, async (req, res) => {
       // 檢查當天是否有核准的請假（使用 map 加速）
       var _leaveIds = leaveMap[e.id] || [];
       var hasLeave = false;
+      d2.leaveLabel = "";
       for (var _li2 = 0; _li2 < _leaveIds.length; _li2++) {
         if (dateOverlaps(_leaveIds[_li2].start_date, _leaveIds[_li2].end_date, d)) {
-          hasLeave = true; break;
+          hasLeave = true;
+          var _lt2 = _leaveIds[_li2].leave_type;
+          d2.leaveLabel = _lt2 === "annual" ? "特休" : _lt2 === "personal" ? "事假" : _lt2 === "sick" ? "病假" : _lt2 === "official" ? "公假" : _lt2 === "outing" ? "外出" : _lt2 === "marriage" ? "婚假(陪產假)" : _lt2 === "funeral" ? "喪假" : _lt2 === "comp" ? "補休" : _lt2 === "other" ? "其他" : _lt2;
+          break;
         }
       }
       // 檢查是否有核准的補打卡（使用 map 加速）
@@ -317,7 +321,7 @@ router.get('/records', auth, async (req, res) => {
     }
     var statusBadge = d2.status === '❌曠職' ? '<span class="badge badge-out">❌曠職</span>'
       : d2.status === '⚠️考勤異常' ? '<span class="badge badge-warn">⚠️考勤異常</span>'
-      : d2.status === '🏖請假' ? '<span class="badge badge-info">🏖請假</span>'
+      : d2.status === '🏖請假' ? '<span class="badge badge-info">🏖' + (d2.leaveLabel || '請假') + '</span>'
       : d2.status === '📝已補卡' ? '<span class="badge badge-in">📝已補卡</span>'
       : '<span class="badge badge-in">✅出勤</span>';
     var delBtn = '';

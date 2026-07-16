@@ -504,27 +504,31 @@ router.get('/leave-balances', auth, async (req, res) => {
       _personalYTD += parseFloat(e.personal_ytd_manual || 0);
       _sickYTD += parseFloat(e.sick_ytd_manual || 0);
     } catch(ex) {}
-    rows += '<tr>'
-      + '<td>'+h(e.employee_no)+'</td>'
-      + '<td>'+h(e.name)+'</td>'
-      + '<td>'+h(e.department||'')+'</td>'
-      + '<td>'+(e.hire_date||'<span style="color:#999">未設定</span>')+'</td>'
-      + '<td><span class="editable" onclick="editField('+e.id+',\'annual_leave_used_manual\',\''+esc(e.annual_leave_used_manual||'0')+'\')">'+(e.annual_leave_used_manual||'0')+'</span></td>'
-      + '<td>' + _al.remaining_hours + 'h</td>'
-      + '<td><span class="editable" onclick="editField('+e.id+',\'marriage_leave_total\',\''+esc(e.marriage_leave_total||'0')+'\')">'+(e.marriage_leave_total||'0')+'</span></td>'
-      + '<td>' + _ml.remaining_hours + 'h</td>'
-      + '<td><span class="editable" onclick="editField('+e.id+',\'funeral_leave_total\',\''+esc(e.funeral_leave_total||'0')+'\')">'+(e.funeral_leave_total||'0')+'</span></td>'
-      + '<td>' + _fl.remaining_hours + 'h</td>'
-      + '<td><span class="editable" onclick="editField('+e.id+',\'comp_leave_total\',\''+esc(e.comp_leave_total||'0')+'\')">'+(e.comp_leave_total||'0')+'</span></td>'
-      + '<td>' + _cl.remaining_hours + 'h</td>'
-      + '<td><span class="editable" style="' + (_personalYTD > 0 ? 'color:#e67e22;font-weight:bold' : '') + '" onclick="editField('+e.id+',\'personal_ytd_manual\',\''+esc(e.personal_ytd_manual||'0')+'\')">' + (_personalYTD||'0') + 'h</span></td>'
-      + '<td><span class="editable" style="' + (_sickYTD > 0 ? 'color:#e67e22;font-weight:bold' : '') + '" onclick="editField('+e.id+',\'sick_ytd_manual\',\''+esc(e.sick_ytd_manual||'0')+'\')">' + (_sickYTD||'0') + 'h</span></td>'
-      + '</tr>';
+	    var _au = _al.used_hours || 0;
+	    var _am = e.annual_leave_used_manual || 0;
+	    rows += '<tr>'
+	      + '<td class="c-basic">'+h(e.employee_no)+'</td>'
+	      + '<td class="c-basic">'+h(e.name)+'</td>'
+	      + '<td class="c-basic">'+h(e.department||'')+'</td>'
+	      + '<td class="c-basic">'+(e.hire_date||'<span style="color:#999">未設定</span>')+'</td>'
+	      + '<td class="c-annual">'+(_au>0?'<b style="color:#e67e22">'+_au+'h</b>':'<span style="color:#bbb">0</span>')+'</td>'
+	      + '<td class="c-annual"><span class="editable" onclick="editField('+e.id+',\'annual_leave_used_manual\',\''+esc(_am)+'\')">'+(_am>0?'<b style="color:#e67e22">'+_am+'</b>':'<span style="color:#bbb">0</span>')+'</span></td>'
+	      + '<td class="c-annual">'+(_al.remaining_hours>0?'<b style="color:#27ae60">'+_al.remaining_hours+'h</b>':'<span style="color:#bbb">0h</span>')+'</td>'
+	      + '<td class="c-marriage"><span class="editable" onclick="editField('+e.id+',\'marriage_leave_total\',\''+esc(e.marriage_leave_total||'0')+'\')">'+(e.marriage_leave_total>0?'<b style="color:#e67e22">'+(e.marriage_leave_total||'0')+'</b>':'<span style="color:#bbb">0</span>')+'</span></td>'
+	      + '<td class="c-marriage">'+(_ml.remaining_hours>0?'<b style="color:#27ae60">'+_ml.remaining_hours+'h</b>':'<span style="color:#bbb">0h</span>')+'</td>'
+	      + '<td class="c-funeral"><span class="editable" onclick="editField('+e.id+',\'funeral_leave_total\',\''+esc(e.funeral_leave_total||'0')+'\')">'+(e.funeral_leave_total>0?'<b style="color:#e67e22">'+(e.funeral_leave_total||'0')+'</b>':'<span style="color:#bbb">0</span>')+'</span></td>'
+	      + '<td class="c-funeral">'+(_fl.remaining_hours>0?'<b style="color:#27ae60">'+_fl.remaining_hours+'h</b>':'<span style="color:#bbb">0h</span>')+'</td>'
+	      + '<td class="c-comp"><span class="editable" onclick="editField('+e.id+',\'comp_leave_total\',\''+esc(e.comp_leave_total||'0')+'\')">'+(e.comp_leave_total>0?'<b style="color:#e67e22">'+(e.comp_leave_total||'0')+'</b>':'<span style="color:#bbb">0</span>')+'</span></td>'
+	      + '<td class="c-comp">'+(_cl.remaining_hours>0?'<b style="color:#27ae60">'+_cl.remaining_hours+'h</b>':'<span style="color:#bbb">0h</span>')+'</td>'
+	      + '<td class="c-year"><span class="editable" onclick="editField('+e.id+',\'personal_ytd_manual\',\''+esc(e.personal_ytd_manual||'0')+'\')">'+(_personalYTD>0?'<b style="color:#e67e22">'+(_personalYTD||'0')+'h</b>':'<span style="color:#bbb">0h</span>')+'</span></td>'
+	      + '<td class="c-year"><span class="editable" onclick="editField('+e.id+',\'sick_ytd_manual\',\''+esc(e.sick_ytd_manual||'0')+'\')">'+(_sickYTD>0?'<b style="color:#e67e22">'+(_sickYTD||'0')+'h</b>':'<span style="color:#bbb">0h</span>')+'</span></td>'
+	      + '</tr>';
   }
-  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假(陪產假)總額度、喪假總額度、補休總額度、年度事假/病假手動補登。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'
-    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假(陪產假)總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>補休總額(h)</th><th>補休剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
-    + (rows||'<tr><td colspan="14">尚無員工</td></tr>')
-    + '</table></div>'
+  var body = '<style>.qt{border-collapse:collapse;width:100%}.qt th{background:#dfe6e9;color:#2d3436;font-size:12px;padding:8px 6px;position:sticky;top:0;z-index:1}.qt td{padding:8px 6px;font-size:13px;text-align:center}.qt .c-basic{background:#fafafa}.qt .c-annual{background:#e8f5e9}.qt .c-marriage{background:#fce4ec}.qt .c-funeral{background:#f3e5f5}.qt .c-comp{background:#fff8e1}.qt .c-year{background:#e3f2fd}.editable{cursor:pointer;border-bottom:1px dashed #999}.editable:hover{background:#ffeaa7!important}</style>'
+    + '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休額度。點擊數值直接編輯，非零數字以<span style="color:#e67e22;font-weight:600">橘色</span>顯示，剩餘時數以<span style="color:#27ae60;font-weight:600">綠色</span>顯示。</p>'
+    + '<div style="overflow-x:auto"><table class="qt"><tr><th class="c-basic">編號</th><th class="c-basic">姓名</th><th class="c-basic">部門</th><th class="c-basic">入職日</th><th class="c-annual">特休已用(h)<br><small>系統計算</small></th><th class="c-annual">特休手動<br>補登(h)</th><th class="c-annual">特休剩餘(h)</th><th class="c-marriage">婚假(陪產假)<br>總額(h)</th><th class="c-marriage">婚假剩餘(h)</th><th class="c-funeral">喪假總額(h)</th><th class="c-funeral">喪假剩餘(h)</th><th class="c-comp">補休總額(h)</th><th class="c-comp">補休剩餘(h)</th><th class="c-year">本年度<br>事假(h)</th><th class="c-year">本年度<br>病假(h)</th></tr>'
+    + (rows||'<tr><td colspan="15" style="color:#999">尚無員工</td></tr>')
+    + '</table></div></div>'
     + '<div class="card"><h3>📖 說明</h3><ul style="font-size:13px;color:#666;line-height:2">'
     + '<li>特休：依入職日與勞基法年資自動計算額度。手動補登僅用於系統上線前已使用的時數。</li>'
     + '<li>婚假(陪產假)/喪假/補休：管理員設定總額度，員工於 LINE 申請時自動扣減剩餘。</li>'

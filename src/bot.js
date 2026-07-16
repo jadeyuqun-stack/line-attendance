@@ -843,7 +843,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
     for (var cl = 0; cl < allLeaves.length; cl++) {
       var clv = allLeaves[cl];
       if (clv.employee_id !== emp.id || clv.status !== 'approved') continue;
-      if (ctMs >= new Date(clv.start_date).getTime() && ctMs <= new Date(clv.end_date).getTime()) {
+      if (isCoveredByLeave(ctMs, clv.start_date, clv.end_date)) {
         covered = true; break;
       }
     }
@@ -1727,6 +1727,20 @@ function checkLate(now) {
   return Math.max(0, now.getHours() * 60 + now.getMinutes() - (parseInt(process.env.WORK_START_HOUR || '8') * 60 + parseInt(process.env.LATE_BUFFER_MINUTES || '30')));
 }
 
+// 檢查打卡時間是否被已核准請假覆蓋（含午休延伸：請假到12:00，午休12-13點打卡也算已請假）
+function isCoveredByLeave(checkInMs, leaveStartStr, leaveEndStr) {
+  var lsMs = new Date(leaveStartStr).getTime();
+  if (isNaN(lsMs)) return false;
+  var leDate = new Date(leaveEndStr);
+  if (isNaN(leDate.getTime())) return false;
+  var leMs = leDate.getTime();
+  // 午休延伸：若請假結束於 12:00，將覆蓋範圍延伸到 13:00（午休）
+  if (leDate.getHours() === 12 && leDate.getMinutes() === 0) {
+    leMs += 60 * 60 * 1000;
+  }
+  return checkInMs >= lsMs && checkInMs <= leMs;
+}
+
 // 儲存 8 格 Rich Menu ID（供 assignRichMenu 使用）
 var _richMenuId8 = null;
 
@@ -1791,7 +1805,7 @@ async function queryTodayAttendance(emp, client, replyToken) {
           for (var cl = 0; cl < allLeaves.length; cl++) {
             var clv = allLeaves[cl];
             if (clv.employee_id !== c.employee_id || clv.status !== 'approved') continue;
-            if (ctMs >= new Date(clv.start_date).getTime() && ctMs <= new Date(clv.end_date).getTime()) {
+            if (isCoveredByLeave(ctMs, clv.start_date, clv.end_date)) {
               covered = true; break;
             }
           }
@@ -1925,9 +1939,7 @@ async function queryMonthAttendance(emp, client, replyToken) {
     for (var cl3 = 0; cl3 < allLeaves.length; cl3++) {
       var clv3 = allLeaves[cl3];
       if (clv3.employee_id !== c.employee_id || clv3.status !== 'approved') continue;
-      var cls3 = new Date(clv3.start_date).getTime();
-      var cle3 = new Date(clv3.end_date).getTime();
-      if (ctMs3 >= cls3 && ctMs3 <= cle3) { covered3 = true; break; }
+      if (isCoveredByLeave(ctMs3, clv3.start_date, clv3.end_date)) { covered3 = true; break; }
     }
     empLateMap[c.employee_id].records.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: covered3 });
     empLateMap[c.employee_id].count++;
@@ -2763,9 +2775,7 @@ async function queryBossMonthLates(emp, client, replyToken) {
 		for (var cl = 0; cl < allMonthLeaves.length; cl++) {
 			var clv = allMonthLeaves[cl];
 			if (clv.employee_id !== c.employee_id || clv.status !== 'approved') continue;
-			var cls = new Date(clv.start_date).getTime();
-			var cle = new Date(clv.end_date).getTime();
-			if (ctMs >= cls && ctMs <= cle) { coveredByLeave = true; break; }
+			if (isCoveredByLeave(ctMs, clv.start_date, clv.end_date)) { coveredByLeave = true; break; }
 		}
 		empLateMap[c.employee_id].records.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: coveredByLeave });
 		empLateMap[c.employee_id].count++;

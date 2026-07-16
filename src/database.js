@@ -833,6 +833,7 @@ async function getAnnualLeaveBalance(employeeId) {
     entitlement_days: calc.entitlement_days,
     entitlement_hours: entitlementHours,
     used_hours: totalUsed,
+    system_used_hours: systemUsed,
     remaining_hours: remaining
   };
 }

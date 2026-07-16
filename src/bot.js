@@ -2144,6 +2144,50 @@ async function queryMonthAttendance(emp, client, replyToken) {
 	  if (alLines.length > 0) {
 	    lines.push('\n📊 特休使用狀況（本週期）：');
 	    lines = lines.concat(alLines);
+
+	  // 年度事假/病假累計（1/1～今天）
+	  var yearStart = now.getFullYear() + '-01-01';
+	  var ytdPersonalMap = {};
+	  var ytdSickMap = {};
+	  var ytdEmpMap = {}; // employee_id -> {name, no}
+	  for (var yti = 0; yti < allLeaves.length; yti++) {
+	    var ytlv = allLeaves[yti];
+	    if (ytlv.start_date < yearStart) continue;
+	    if (Object.keys(designatedIds).length > 0 && !designatedIds[ytlv.employee_id]) continue;
+	    var yth = leaveHours(ytlv.start_date, ytlv.end_date);
+	    ytdEmpMap[ytlv.employee_id] = { name: ytlv.name, no: ytlv.employee_no };
+	    if (ytlv.leave_type === 'personal') {
+	      ytdPersonalMap[ytlv.employee_id] = (ytdPersonalMap[ytlv.employee_id] || 0) + yth;
+	    } else if (ytlv.leave_type === 'sick') {
+	      ytdSickMap[ytlv.employee_id] = (ytdSickMap[ytlv.employee_id] || 0) + yth;
+	    }
+	  }
+	  // 補上無請假記錄但被指定的員工（從 allActive 取）
+	  for (var yti2 = 0; yti2 < allActive.length; yti2++) {
+	    var ytae = allActive[yti2];
+	    if (Object.keys(designatedIds).length > 0 && !designatedIds[ytae.id]) continue;
+	    if (!ytdEmpMap[ytae.id]) ytdEmpMap[ytae.id] = { name: ytae.name, no: ytae.employee_no };
+	    // 加上手動補登
+	    var _pm = parseFloat(ytae.personal_ytd_manual || 0);
+	    var _sm = parseFloat(ytae.sick_ytd_manual || 0);
+	    if (_pm > 0) ytdPersonalMap[ytae.id] = (ytdPersonalMap[ytae.id] || 0) + _pm;
+	    if (_sm > 0) ytdSickMap[ytae.id] = (ytdSickMap[ytae.id] || 0) + _sm;
+	  }
+	  var ytdKeys = Object.keys(ytdEmpMap).sort(function(a,b) { return (ytdEmpMap[a].no||'').localeCompare(ytdEmpMap[b].no||''); });
+	  var ytdLines = [];
+	  for (var ytk = 0; ytk < ytdKeys.length; ytk++) {
+	    var yteid = ytdKeys[ytk];
+	    var yte = ytdEmpMap[yteid];
+	    var ytp = ytdPersonalMap[yteid] || 0;
+	    var yts = ytdSickMap[yteid] || 0;
+	    if (ytp > 0 || yts > 0) {
+	      ytdLines.push('  ' + yte.name + '（' + yte.no + '） 事假' + ytp.toFixed(1) + 'h / 病假' + yts.toFixed(1) + 'h');
+	    }
+	  }
+	  if (ytdLines.length > 0) {
+	    lines.push('\n📋 年度事假/病假累計（1/1～今天）：');
+	    lines = lines.concat(ytdLines);
+	  }
 	  }
 
   var title2 = lines[0];

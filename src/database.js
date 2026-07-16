@@ -733,38 +733,62 @@ async function calculateAnnualLeaveEntitlement(hireDate, refDate) {
   return { entitlement_days: baseDays, entitlement_hours: baseDays * 8 };
 }
 
-// 查當月特休額度有變動的人員（年資跨級距）
-// 比較「上月底」與「本月底」的額度差異，整個月都能顯示
+// 查當月與下月特休額度有變動的人員（年資跨級距）
+// 同時回傳剩餘特休時數
 async function getAnnualLeaveChangesThisMonth() {
   var now = new Date();
-  var beforeMonth = new Date(now.getFullYear(), now.getMonth(), 0); // 上月底
-  var afterMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0); // 本月底
-  var changes = [];
+  var lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0); // 上月底
+  var thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0); // 本月底
+  var nextMonthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0); // 下月底
+  var thisMonth = [];
+  var nextMonth = [];
   var emps = await listAttendanceEmployees();
   for (var i = 0; i < emps.length; i++) {
     var e = emps[i];
     if (!e.hire_date) continue;
-    var oldCalc = await calculateAnnualLeaveEntitlement(e.hire_date, beforeMonth);
-    var newCalc = await calculateAnnualLeaveEntitlement(e.hire_date, afterMonth);
-    if (oldCalc.entitlement_days !== newCalc.entitlement_days) {
-      var hireStr2 = e.hire_date.replace(/\//g, '-');
-      var hireParts2 = hireStr2.split('-');
-      var hireDate2 = new Date(parseInt(hireParts2[0]), parseInt(hireParts2[1]) - 1, parseInt(hireParts2[2]));
+    var oldCalc = await calculateAnnualLeaveEntitlement(e.hire_date, lastMonthEnd);
+    var thisCalc = await calculateAnnualLeaveEntitlement(e.hire_date, thisMonthEnd);
+    var nextCalc = await calculateAnnualLeaveEntitlement(e.hire_date, nextMonthEnd);
+
+    var hireStr2 = e.hire_date.replace(/\//g, '-');
+    var hireParts2 = hireStr2.split('-');
+    var hireDate2 = new Date(parseInt(hireParts2[0]), parseInt(hireParts2[1]) - 1, parseInt(hireParts2[2]));
+
+    // 取得剩餘特休
+    var remaining = 0;
+    try { var _ab = await getAnnualLeaveBalance(e.id); remaining = _ab.remaining_hours; } catch(ex) {}
+
+    // 本月變動
+    if (oldCalc.entitlement_days !== thisCalc.entitlement_days) {
       var effDate = new Date(now.getFullYear(), hireDate2.getMonth(), hireDate2.getDate());
       var effStr = effDate.getFullYear() + '-' + String(effDate.getMonth()+1).padStart(2,'0') + '-' + String(effDate.getDate()).padStart(2,'0');
-      changes.push({
-        name: e.name,
-        employee_no: e.employee_no,
-        hire_date: e.hire_date,
+      thisMonth.push({
+        name: e.name, employee_no: e.employee_no, hire_date: e.hire_date,
         effective_date: effStr,
-        old_days: oldCalc.entitlement_days,
-        old_hours: oldCalc.entitlement_hours,
-        new_days: newCalc.entitlement_days,
-        new_hours: newCalc.entitlement_hours,
+        old_days: oldCalc.entitlement_days, old_hours: oldCalc.entitlement_hours,
+        new_days: thisCalc.entitlement_days, new_hours: thisCalc.entitlement_hours,
+        remaining_hours: remaining
+      });
+    }
+
+    // 下月變動（紀念日落在下個月）
+    if (thisCalc.entitlement_days !== nextCalc.entitlement_days) {
+      // 下月紀念日
+      var _nm = now.getMonth() + 1; // 下個月
+      var effDate2 = new Date(now.getFullYear(), _nm, hireDate2.getDate());
+      // 若該月無此日（如 2/30），取該月最後一天
+      if (effDate2.getMonth() !== _nm) effDate2 = new Date(now.getFullYear(), _nm + 1, 0);
+      var effStr2 = effDate2.getFullYear() + '-' + String(effDate2.getMonth()+1).padStart(2,'0') + '-' + String(effDate2.getDate()).padStart(2,'0');
+      nextMonth.push({
+        name: e.name, employee_no: e.employee_no, hire_date: e.hire_date,
+        effective_date: effStr2,
+        old_days: thisCalc.entitlement_days, old_hours: thisCalc.entitlement_hours,
+        new_days: nextCalc.entitlement_days, new_hours: nextCalc.entitlement_hours,
+        remaining_hours: remaining
       });
     }
   }
-  return changes;
+  return { thisMonth: thisMonth, nextMonth: nextMonth };
 }
 
 // 查特休餘額（以入職日為週期）

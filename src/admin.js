@@ -266,12 +266,12 @@ router.get('/records', auth, async (req, res) => {
     if (hasCheckIn) {
       var ciDt = new Date(d2.checkIn.check_time);
       var ciH = ciDt.getHours(), ciM = ciDt.getMinutes();
-      // 假日不計遲到
+      // 假日不計考勤異常
       var ciDay = ciDt.getDay();
       var ciDateStr = d;
       var isHoliday2 = ciDay === 0 || ciDay === 6;
       if (!isHoliday2 && _holidaysArr.indexOf(ciDateStr) !== -1) isHoliday2 = true;
-      d2.status = (!isHoliday2 && ciH*60+ciM > _startH*60+_buf) ? '⚠️遲到' : '✅出勤';
+      d2.status = (!isHoliday2 && ciH*60+ciM > _startH*60+_buf) ? '⚠️考勤異常' : '✅出勤';
     } else {
       // 檢查當天是否有核准的請假（使用 map 加速）
       var _leaveIds = leaveMap[e.id] || [];
@@ -311,7 +311,7 @@ router.get('/records', auth, async (req, res) => {
       if (normalH2 < 9) hours += ' <span class="badge badge-warn">⚠️</span>';
     }
     var statusBadge = d2.status === '❌曠職' ? '<span class="badge badge-out">❌曠職</span>'
-      : d2.status === '⚠️遲到' ? '<span class="badge badge-warn">⚠️遲到</span>'
+      : d2.status === '⚠️考勤異常' ? '<span class="badge badge-warn">⚠️考勤異常</span>'
       : d2.status === '🏖請假' ? '<span class="badge badge-info">🏖請假</span>'
       : d2.status === '📝已補卡' ? '<span class="badge badge-in">📝已補卡</span>'
       : '<span class="badge badge-in">✅出勤</span>';
@@ -322,7 +322,7 @@ router.get('/records', auth, async (req, res) => {
   }
   var opts = '';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'">'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
-  // 本月遲到統計
+  // 本月考勤異常統計
   var monthStart = new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')+'-01';
   var monthRecords = await db.queryCheckins(null, monthStart, d, 5000, 0);
   var lateMap = {};
@@ -342,7 +342,7 @@ router.get('/records', auth, async (req, res) => {
   var lateKeys = Object.keys(lateMap);
   var lateSummary = '';
   if (lateKeys.length > 0) {
-    lateSummary = '<div class="card"><h3>⚠️ 本月遲到統計</h3><table><tr><th>編號</th><th>姓名</th><th>遲到次數</th><th>累計分鐘</th></tr>';
+    lateSummary = '<div class="card"><h3>⚠️ 本月考勤異常統計</h3><table><tr><th>編號</th><th>姓名</th><th>考勤異常次數</th><th>累計分鐘</th></tr>';
     for (var k = 0; k < lateKeys.length; k++) {
       var lm = lateMap[lateKeys[k]];
       lateSummary += '<tr><td>'+h(lm.no)+'</td><td>'+h(lm.name)+'</td><td>'+lm.count+' 次</td><td>'+lm.totalMin+' 分鐘</td></tr>';
@@ -480,16 +480,18 @@ router.get('/leave-balances', auth, async (req, res) => {
     var _al = { entitlement_days: 0, used_hours: 0, remaining_hours: 0 };
     var _ml = { total_hours: 0, used_hours: 0, remaining_hours: 0 };
     var _fl = { total_hours: 0, used_hours: 0, remaining_hours: 0 };
+    var _cl = { total_hours: 0, used_hours: 0, remaining_hours: 0 };
     var _personalYTD = 0, _sickYTD = 0;
     try {
       var _balRes = await Promise.all([
         db.getAnnualLeaveBalance(e.id),
         db.getMarriageLeaveBalance(e.id),
         db.getFuneralLeaveBalance(e.id),
+        db.getCompLeaveBalance(e.id),
         db.getEmployeeLeaveRequests(e.id, 'approved', 200)
       ]);
-      _al = _balRes[0]; _ml = _balRes[1]; _fl = _balRes[2];
-      var _leaves2 = _balRes[3];
+      _al = _balRes[0]; _ml = _balRes[1]; _fl = _balRes[2]; _cl = _balRes[3];
+      var _leaves2 = _balRes[4];
       var _ys2 = new Date().getFullYear() + '-01-01';
       for (var _li = 0; _li < _leaves2.length; _li++) {
         var _lv = _leaves2[_li];
@@ -513,17 +515,19 @@ router.get('/leave-balances', auth, async (req, res) => {
       + '<td>' + _ml.remaining_hours + 'h</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'funeral_leave_total\',\''+esc(e.funeral_leave_total||'0')+'\')">'+(e.funeral_leave_total||'0')+'</span></td>'
       + '<td>' + _fl.remaining_hours + 'h</td>'
+      + '<td><span class="editable" onclick="editField('+e.id+',\'comp_leave_total\',\''+esc(e.comp_leave_total||'0')+'\')">'+(e.comp_leave_total||'0')+'</span></td>'
+      + '<td>' + _cl.remaining_hours + 'h</td>'
       + '<td><span class="editable" style="' + (_personalYTD > 0 ? 'color:#e67e22;font-weight:bold' : '') + '" onclick="editField('+e.id+',\'personal_ytd_manual\',\''+esc(e.personal_ytd_manual||'0')+'\')">' + (_personalYTD||'0') + 'h</span></td>'
       + '<td><span class="editable" style="' + (_sickYTD > 0 ? 'color:#e67e22;font-weight:bold' : '') + '" onclick="editField('+e.id+',\'sick_ytd_manual\',\''+esc(e.sick_ytd_manual||'0')+'\')">' + (_sickYTD||'0') + 'h</span></td>'
       + '</tr>';
   }
-  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假(陪產假)總額度、喪假總額度、年度事假/病假手動補登。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'
-    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假(陪產假)總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
-    + (rows||'<tr><td colspan="12">尚無員工</td></tr>')
+  var body = '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休手動補登時數、婚假(陪產假)總額度、喪假總額度、補休總額度、年度事假/病假手動補登。點擊數值直接編輯。剩餘時數由系統自動計算。</p>'
+    + '<table><tr><th>編號</th><th>姓名</th><th>部門</th><th>入職日</th><th>特休已用(h)<br><small>手動補登</small></th><th>特休剩餘</th><th>婚假(陪產假)總額(h)</th><th>婚假剩餘</th><th>喪假總額(h)</th><th>喪假剩餘</th><th>補休總額(h)</th><th>補休剩餘</th><th>本年度<br>事假(h)</th><th>本年度<br>病假(h)</th></tr>'
+    + (rows||'<tr><td colspan="14">尚無員工</td></tr>')
     + '</table></div>'
     + '<div class="card"><h3>📖 說明</h3><ul style="font-size:13px;color:#666;line-height:2">'
     + '<li>特休：依入職日與勞基法年資自動計算額度。手動補登僅用於系統上線前已使用的時數。</li>'
-    + '<li>婚假(陪產假)/喪假：管理員設定總額度，員工於 LINE 申請時自動扣減剩餘。</li>'
+    + '<li>婚假(陪產假)/喪假/補休：管理員設定總額度，員工於 LINE 申請時自動扣減剩餘。</li>'
     + '<li>本年度事假/病假：系統自動計算已核准時數，可手動補登調整。</li>'
     + '</ul></div>';
 	  + modalHtml();
@@ -757,7 +761,7 @@ router.get('/settings', auth, async (_, res) => {
     + '<p style="color:#999;font-size:13px;margin-bottom:12px">目前：彈性上班 '+workStart+':00 ~ '+(parseInt(workStart)+Math.ceil(parseInt(lateBuf)/60))+':'+String(parseInt(lateBuf)%60).padStart(2,'0')+'，下班 '+workEnd+':00 起，需滿 8 小時</p>'
     + '<form id="hourForm" class="inline">'
     + '<div><label>上班最早時間</label><input id="workStart" value="'+workStart+'" style="width:80px"></div>'
-    + '<div><label>遲到緩衝（分）</label><input id="lateBuf" value="'+lateBuf+'" style="width:80px"></div>'
+    + '<div><label>考勤異常緩衝（分）</label><input id="lateBuf" value="'+lateBuf+'" style="width:80px"></div>'
     + '<div><label>下班時間</label><input id="workEnd" value="'+workEnd+'" style="width:80px"></div>'
     + '<button class="btn">儲存</button><span id="hourMsg" style="color:#06c755"></span></form></div>'
     + '<div class="card"><h3>📍 GPS 打卡設定</h3>'
@@ -786,7 +790,7 @@ router.get('/settings', auth, async (_, res) => {
   }
   body += '</div></div>'
     + '<div class="card"><h3>🇹🇼 國定假日</h3>'
-    + '<p style="color:#999;font-size:13px;margin-bottom:12px">假日上班打卡不計遲到。選擇日期加入列表。</p>'
+    + '<p style="color:#999;font-size:13px;margin-bottom:12px">假日上班打卡不計考勤異常。選擇日期加入列表。</p>'
     + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">'
     + '<input type="date" id="holidayDate" style="width:200px">'
     + '<button type="button" id="addHolidayBtn" class="btn">➕ 加入</button>'
@@ -1762,11 +1766,11 @@ var data = [];
 					if (normalH3 < 9) under9h = '是';
 				}
 
-				// 判斷遲到
+				// 判斷考勤異常
 				var ciMins = ci.getHours() * 60 + ci.getMinutes();
 				lateMin = ciMins - (workStartH * 60 + lateBufMin);
 				if (lateMin > 0) {
-					status = '遲到';
+					status = '考勤異常';
 				} else {
 					status = '出勤';
 					lateMin = 0;
@@ -1821,8 +1825,8 @@ var data = [];
 				'淨工時(h)': netHours !== null ? netHours : '',
 				'是否<9h': under9h,
 				'考勤狀態': status,
-				'遲到分鐘': lateMin > 0 ? lateMin : '',
-				'遲到請假時數': _lateLeaveH,
+				'考勤異常分鐘': lateMin > 0 ? lateMin : '',
+				'考勤異常請假時數': _lateLeaveH,
 								'請假假別': leaveType,
 				'備註': note,
 				'特休額度(h)': (await _getALB(r.employee_id)).ah,
@@ -1838,7 +1842,7 @@ var data = [];
 		// 建立 Excel
 		var wb = XLSX.utils.book_new();
 		var ws = XLSX.utils.json_to_sheet(data, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','遲到請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','考勤異常分鐘','考勤異常請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws, '出勤彙總');
 		var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -1937,7 +1941,7 @@ var summaryData = [];
 				}
 				var ciMins = ci.getHours() * 60 + ci.getMinutes();
 				lateMin = ciMins - (workStartH * 60 + lateBufMin);
-				if (lateMin > 0) { status = '遲到'; } else { status = '出勤'; lateMin = 0; }
+				if (lateMin > 0) { status = '考勤異常'; } else { status = '出勤'; lateMin = 0; }
 			} else if (ci && !co) {
 				status = '未下班';
 			} else {
@@ -1985,8 +1989,8 @@ summaryData.push({
 				'淨工時(h)': netHours !== null ? netHours : '',
 				'是否<9h': under9h,
 				'考勤狀態': status,
-				'遲到分鐘': lateMin > 0 ? lateMin : '',
-				'遲到請假時數': _llh,
+				'考勤異常分鐘': lateMin > 0 ? lateMin : '',
+				'考勤異常請假時數': _llh,
 								'請假假別': leaveType,
 				'備註': note,
 			'特休額度(h)': (await _getALB2(r.employee_id)).ah,
@@ -1999,7 +2003,7 @@ summaryData.push({
 			});
 		}
 		var ws1 = XLSX.utils.json_to_sheet(summaryData, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','遲到分鐘','遲到請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
+			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','考勤異常分鐘','考勤異常請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','年度事假(h)','年度病假(h)']
 		});
 		XLSX.utils.book_append_sheet(wb, ws1, '出勤彙總');
 
@@ -2118,7 +2122,7 @@ summaryData.push({
 	}
 });
 
-// ===== 除錯：遲到請假時數 =====
+// ===== 除錯：考勤異常請假時數 =====
 // 除錯：檢查特休計算
 router.get('/debug-annual-leave', auth, async function(req, res) {
   try {
@@ -2163,7 +2167,7 @@ router.get('/debug-late-hours', auth, async function(req, res) {
 		var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
 		var lateBufMin = parseInt(await db.getSetting('late_buffer_minutes') || '30');
 
-		var html = '<h2>除錯：遲到請假時數</h2><pre style="font-size:12px;line-height:1.5">';
+		var html = '<h2>除錯：考勤異常請假時數</h2><pre style="font-size:12px;line-height:1.5">';
 
 		html += '日期範圍: ' + start + ' ~ ' + end + '\n';
 		html += 'summaryRows 總筆數: ' + rows.length + '\n';
@@ -2247,7 +2251,7 @@ router.get('/debug-late-hours', auth, async function(req, res) {
 					html += 'lateMin>0 但無符合的已核准請假\n';
 				}
 			} else {
-				html += '\n=== 未遲到 ===\n';
+				html += '\n=== 未考勤異常 ===\n';
 			}
 		}
 
@@ -2259,7 +2263,7 @@ router.get('/debug-late-hours', auth, async function(req, res) {
 		}
 
 		html += '</pre><p><a href="/admin">← 返回儀表板</a></p>';
-		res.send(layout('除錯', '除錯：遲到請假時數', html));
+		res.send(layout('除錯', '除錯：考勤異常請假時數', html));
 	} catch(e) {
 		res.status(500).send('除錯錯誤：' + e.message + '<br><pre>' + (e.stack || '') + '</pre>');
 	}

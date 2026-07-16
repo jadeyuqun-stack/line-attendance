@@ -107,8 +107,8 @@ async function doSendReport(client) {
     // 逐一分析每位員工
     var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
     var workBuf = parseInt(await db.getSetting('late_buffer_minutes') || '30');
-    var checkedInList = [];    // 已打卡（含遲到標記）
-    var lateList = [];         // 遲到
+    var checkedInList = [];    // 已打卡（含考勤異常標記）
+    var lateList = [];         // 考勤異常
     var leaveList = [];        // 請假中（不論是否打卡都列入）
     var absentList = [];       // 未打卡（非請假）
     for (var j = 0; j < allEmps.length; j++) {
@@ -123,7 +123,7 @@ async function doSendReport(client) {
 
       if (ci && ci.checkIn) {
         checkedInList.push(emp.employee_no + ' ' + emp.name);
-        // 判斷遲到
+        // 判斷考勤異常
         var ciH = new Date(ci.checkIn.check_time).getHours();
         var ciM = new Date(ci.checkIn.check_time).getMinutes();
         var lateMin = ciH * 60 + ciM - (workStartH * 60 + workBuf);
@@ -145,7 +145,7 @@ async function doSendReport(client) {
     msg += '❌ 未打卡：' + absentList.length + ' 人\n\n';
 
     if (lateList.length > 0) {
-      msg += '⚠️ 遲到名單（' + lateList.length + ' 人）：\n' + lateList.join('\n') + '\n\n';
+      msg += '⚠️ 考勤異常名單（' + lateList.length + ' 人）：\n' + lateList.join('\n') + '\n\n';
     }
     if (leaveList.length > 0) {
       msg += '🏖 請假名單（' + leaveList.length + ' 人）：\n' + leaveList.join('\n') + '\n\n';

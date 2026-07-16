@@ -278,7 +278,7 @@ async function handleText(text, uid, client, replyToken) {
   if (cmd === '查詢當月考勤') return queryMonthAttendance(emp, client, replyToken);
   if (cmd === '公司今日考勤') return queryBossTodayStatus(emp, client, replyToken);
   if (cmd === '本月請假累計') return queryBossMonthLeaves(emp, client, replyToken);
-  if (cmd === '本月遲到累計') return queryBossMonthLates(emp, client, replyToken);
+  if (cmd === '本月考勤異常累計') return queryBossMonthLates(emp, client, replyToken);
   if (cmd === '本月加班累計') return queryBossMonthOvertime(emp, client, replyToken);
   if (cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending') return checkPendingApprovalsCmd(emp, client, replyToken, uid, _pendingMsg || undefined);
   if (cmd === '加班') return startOvertimeFlow(uid, client, replyToken, _pendingMsg || undefined);
@@ -716,7 +716,7 @@ async function doCheckIn(emp, client, replyToken, loc, gps) {
     { type: 'text', text: '👤 ' + emp.name + '  ' + emp.employee_no, margin: 'md', size: 'sm', color: '#666666' },
     { type: 'text', text: '⏰ ' + fmt(now), margin: 'md', size: 'xl', weight: 'bold' },
   ];
-  if (late > 0) contents.push({ type: 'text', text: '⚠️ 遲到 ' + late + ' 分鐘', margin: 'sm', color: '#e74c3c', size: 'sm' });
+  if (late > 0) contents.push({ type: 'text', text: '⚠️ 考勤異常 ' + late + ' 分鐘', margin: 'sm', color: '#e74c3c', size: 'sm' });
   if (loc) {
     var locText = '📍 ' + (loc.address || loc.latitude.toFixed(4) + ', ' + loc.longitude.toFixed(4));
     if (gps && !gps.inRange) locText += '\n⚠️ 不在公司範圍（' + gps.distance + 'm）';
@@ -825,7 +825,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
   var _titleExtra = emp.hire_date ? ' | 📅 入職日：' + emp.hire_date : '';
   var lines = ['📅 當月考勤明細（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）' + _titleExtra + ''];
 
-  // 遲到記錄
+  // 考勤異常記錄
   var lateRecords = [];
   for (var ci = 0; ci < monthCheckins.length; ci++) {
     var mc = monthCheckins[ci];
@@ -850,13 +850,13 @@ async function doQuery(emp, client, replyToken, _prefix) {
     lateRecords.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: covered });
   }
   if (lateRecords.length > 0) {
-    lines.push('\n⚠️ 遲到（' + lateRecords.length + ' 次）：');
+    lines.push('\n⚠️ 考勤異常（' + lateRecords.length + ' 次）：');
     for (var lr = 0; lr < lateRecords.length; lr++) {
       var lr2 = lateRecords[lr];
       lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分' + (lr2.covered ? '' : ' （尚未請假）'));
     }
   } else {
-    lines.push('\n⚠️ 遲到：無');
+    lines.push('\n⚠️ 考勤異常：無');
   }
 
   // 請假記錄
@@ -1486,7 +1486,7 @@ async function setupRichMenu() {
 			areas: [
 				{ bounds: { x: 0, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '公司今日考勤' } },
 				{ bounds: { x: 1250, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '本月請假累計' } },
-				{ bounds: { x: 0, y: 421, width: 1250, height: 422 }, action: { type: 'message', text: '本月遲到累計' } },
+				{ bounds: { x: 0, y: 421, width: 1250, height: 422 }, action: { type: 'message', text: '本月考勤異常累計' } },
 				{ bounds: { x: 1250, y: 421, width: 1250, height: 422 }, action: { type: 'message', text: '本月加班累計' } },
 			]
 		};
@@ -1742,7 +1742,7 @@ function isApproverRole(emp) {
   return role === '簽核人員';
 }
 
-// 查詢被簽核人員當天考勤（遲到/曠職/請假/GPS超出範圍）
+// 查詢被簽核人員當天考勤（考勤異常/曠職/請假/GPS超出範圍）
 async function queryTodayAttendance(emp, client, replyToken) {
   var role = emp.role || '';
   if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && !emp.can_approve) {
@@ -1837,13 +1837,13 @@ async function queryTodayAttendance(emp, client, replyToken) {
 
   var lines = ['📋 今日考勤狀態（' + today.substring(5) + '）'];
   if (lateList.length > 0) {
-    lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
+    lines.push('\n⚠️ 考勤異常（' + lateList.length + ' 人）：');
     for (var k = 0; k < lateList.length; k++) {
       var le = lateList[k];
       var e3 = await db.getEmployeeById(le.employee_id);
       var t = le.check_time;
       var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' （尚未請假）'));
+      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 考勤異常 ' + le.late_min + ' 分' + (le.covered ? '' : ' （尚未請假）'));
     }
   }
   if (absentList.length > 0) {
@@ -1870,7 +1870,7 @@ async function queryTodayAttendance(emp, client, replyToken) {
   return sendTableImage(client, replyToken, title1, lines.join('\n'));
 }
 
-// 查詢被簽核人員當月考勤（遲到+請假備註/請假/加班細項與累加，1號～當天）
+// 查詢被簽核人員當月考勤（考勤異常+請假備註/請假/加班細項與累加，1號～當天）
 async function queryMonthAttendance(emp, client, replyToken) {
   var role = emp.role || '';
   if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && !emp.can_approve) {
@@ -1903,7 +1903,7 @@ async function queryMonthAttendance(emp, client, replyToken) {
     allCheckins = allCheckins.filter(function(c) { return designatedIds[c.employee_id]; });
   }
 
-  // 遲到彙整（1號～當天）
+  // 考勤異常彙整（1號～當天）
   var empLateMap = {};
   for (var i = 0; i < allCheckins.length; i++) {
     var c = allCheckins[i];
@@ -2062,24 +2062,24 @@ async function queryMonthAttendance(emp, client, replyToken) {
     lines.push('  ❌ 未打卡：0 人');
   }
   if (lateTodayCount > 0) {
-    lines.push('  ⚠️ 遲到 ' + lateTodayCount + ' 人：' + lateTodayNames.join('、'));
+    lines.push('  ⚠️ 考勤異常 ' + lateTodayCount + ' 人：' + lateTodayNames.join('、'));
   }
   lines.push('');
 
   if (lateKeys.length > 0) {
     lateKeys.sort(function(a, b) { return (empLateMap[a].no || '').localeCompare(empLateMap[b].no || ''); });
-    lines.push('\n⚠️ 遲到累計：');
+    lines.push('\n⚠️ 考勤異常累計：');
     var totalLate = 0;
     for (var k = 0; k < lateKeys.length; k++) {
       var info = empLateMap[lateKeys[k]];
       totalLate += info.records.length;
-      lines.push('  ' + info.name + '（' + info.no + '） 遲到 ' + info.records.length + ' 次');
+      lines.push('  ' + info.name + '（' + info.no + '） 考勤異常 ' + info.records.length + ' 次');
       for (var r = 0; r < info.records.length; r++) {
         var rec = info.records[r];
         lines.push('      ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' （尚未請假）'));
       }
     }
-    if (totalLate > 0) lines.push('  📊 遲到合計：' + totalLate + ' 次');
+    if (totalLate > 0) lines.push('  📊 考勤異常合計：' + totalLate + ' 次');
   }
 
   if (leaveKeys.length > 0) {
@@ -2364,7 +2364,7 @@ function makePngBoss() {
 	var areas = [
 		{ x: 0, y: 0, w: 1250, h: 421, color: '#0ea5e9', label: '公司今日考勤' },
 		{ x: 1250 + gap, y: 0, w: 1250 - gap, h: 421, color: '#059669', label: '本月請假累計' },
-		{ x: 0, y: 421 + gap, w: 1250, h: 422 - gap, color: '#ea580c', label: '本月遲到累計' },
+		{ x: 0, y: 421 + gap, w: 1250, h: 422 - gap, color: '#ea580c', label: '本月考勤異常累計' },
 		{ x: 1250 + gap, y: 421 + gap, w: 1250 - gap, h: 422 - gap, color: '#7c3aed', label: '本月加班累計' },
 	];
 
@@ -2414,7 +2414,7 @@ function makePngBoss() {
 				ctx.moveTo(cx + 24, iy - 20);
 				ctx.lineTo(cx + 24, iy + 20);
 				break;
-			case 2: // 時鐘/遲到
+			case 2: // 時鐘/考勤異常
 				ctx.arc(cx, iy, 26, 0, Math.PI * 2);
 				ctx.moveTo(cx, iy);
 				ctx.lineTo(cx, iy - 18);
@@ -2503,7 +2503,7 @@ function makeSimplePngBoss() {
 // ===== 老闆查詢功能 =====
 var _richMenuIdBoss = null;
 
-// 查詢公司今日考勤狀態（遲到/曠職/GPS超出/請假）
+// 查詢公司今日考勤狀態（考勤異常/曠職/GPS超出/請假）
 async function queryBossTodayStatus(emp, client, replyToken) {
 	var role = emp.role || '';
 	if (role !== '老闆' && role !== 'boss') {
@@ -2571,13 +2571,13 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 
 	var lines = ['📋 今日公司考勤狀態'];
 		if (lateList.length > 0) {
-			lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
+			lines.push('\n⚠️ 考勤異常（' + lateList.length + ' 人）：');
 			for (var k = 0; k < lateList.length; k++) {
 				var le = lateList[k];
 				var e3 = await db.getEmployeeById(le.employee_id);
 				var t = le.check_time;
 				var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-				lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 遲到 ' + le.late_min + ' 分' + (le.covered ? '' : ' （尚未請假）'));
+				lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 考勤異常 ' + le.late_min + ' 分' + (le.covered ? '' : ' （尚未請假）'));
 			}
 		}
 	if (absentList.length > 0) {
@@ -2721,7 +2721,7 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 	return sendTableImage(client, replyToken, titleB2, lines.join('\n'));
 }
 
-// 當月公司人員遲到累計
+// 當月公司人員考勤異常累計
 async function queryBossMonthLates(emp, client, replyToken) {
 	var role = emp.role || '';
 	if (role !== '老闆' && role !== 'boss') {
@@ -2750,7 +2750,7 @@ async function queryBossMonthLates(emp, client, replyToken) {
 
 		var lateMins = totalMin - lateThreshold;
 		var fullDateStr = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
-		// 假日/國定假日不計遲到
+		// 假日/國定假日不計考勤異常
 		if (await isHoliday(fullDateStr)) continue;
 		var dateStr = String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
 		if (!empLateMap[c.employee_id]) {
@@ -2773,23 +2773,23 @@ async function queryBossMonthLates(emp, client, replyToken) {
 
 	var keys = Object.keys(empLateMap);
 	if (keys.length === 0) {
-		return client.replyMessage(replyToken, [withMenu('✅ 本月無遲到記錄')]);
+		return client.replyMessage(replyToken, [withMenu('✅ 本月無考勤異常記錄')]);
 	}
 
 	keys.sort(function(a, b) { return (empLateMap[a].no || '').localeCompare(empLateMap[b].no || ''); });
 
-			var lines = ['📋 本月遲到累計（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）'];
+			var lines = ['📋 本月考勤異常累計（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）'];
 		var totalCount = 0;
 		for (var k = 0; k < keys.length; k++) {
 			var info = empLateMap[keys[k]];
 			totalCount += info.records.length;
-			lines.push('\n👤 ' + info.name + '（' + info.no + '） 遲到 ' + info.records.length + ' 次');
+			lines.push('\n👤 ' + info.name + '（' + info.no + '） 考勤異常 ' + info.records.length + ' 次');
 			for (var r = 0; r < info.records.length; r++) {
 				var rec = info.records[r];
 				lines.push('    ' + rec.date + ' ' + rec.time + '（晚 ' + rec.lateMin + ' 分）' + (rec.covered ? '' : ' （尚未請假）'));
 			}
 		}
-		if (totalCount > 0) lines.push('\n📊 全公司本月遲到合計：' + totalCount + ' 次');
+		if (totalCount > 0) lines.push('\n📊 全公司本月考勤異常合計：' + totalCount + ' 次');
 
 	var titleB3 = lines[0];
 	return sendTableImage(client, replyToken, titleB3, lines.join('\n'));

@@ -164,7 +164,7 @@ router.get('/', auth, async (_, res) => {
     if (lStart <= todayStr && lEnd >= todayStr) {
       if (!leaveEmpIds[l.employee_id]) {
         leaveEmpIds[l.employee_id] = true;
-        var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type === 'marriage' ? '婚假(陪產假)' : l.leave_type === 'funeral' ? '喪假' : l.leave_type === 'comp' ? '補休' : l.leave_type;
+        var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type === 'marriage' ? '婚假(陪產假)' : l.leave_type === 'funeral' ? '喪假' : l.leave_type === 'comp' ? '補休' : l.leave_type === 'other' ? '其他' : l.leave_type;
         todayLeaves.push({ name: l.name, no: l.employee_no, dept: l.department, type: leaveLabel, start: lStart, end: lEnd });
       }
     }
@@ -548,7 +548,7 @@ router.get('/leaves', auth, async (req, res) => {
   var now = new Date();
   var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var rows = '';
-  var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
+  var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休', other: '其他' };
   var empMap = {};
   for (var ei = 0; ei < emps.length; ei++) empMap[emps[ei].id] = emps[ei];
   function getOtApprover(rec) {
@@ -1097,7 +1097,7 @@ router.post('/salary/preview', auth, upload.any(), async function(req, res) {
       var content = (req.body[key] || '').trim();
       var hasImg = !!salaryImages[id];
       if ((content || hasImg) && empMap[id] && empMap[id].line_user_id) {
-                var _llh = ''; if (lateMin > 0) { for (var _li=0;_li<leaves.length;_li++) { var _lv=leaves[_li]; if (_lv.employee_id===r.employee_id && _lv.status==='approved' && dateOverlaps(_lv.start_date,_lv.end_date,r.work_date)) { _llh = _lv.leave_type==='annual'?'特休':_lv.leave_type==='personal'?'事假':_lv.leave_type==='sick'?'病假':_lv.leave_type==='official'?'公假':_lv.leave_type==='outing'?'外出':_lv.leave_type==='marriage'?'婚假(陪產假)':_lv.leave_type==='funeral'?'喪假':_lv.leave_type==='comp'?'補休':_lv.leave_type; break; } } }
+                var _llh = ''; if (lateMin > 0) { for (var _li=0;_li<leaves.length;_li++) { var _lv=leaves[_li]; if (_lv.employee_id===r.employee_id && _lv.status==='approved' && dateOverlaps(_lv.start_date,_lv.end_date,r.work_date)) { _llh = _lv.leave_type==='annual'?'特休':_lv.leave_type==='personal'?'事假':_lv.leave_type==='sick'?'病假':_lv.leave_type==='official'?'公假':_lv.leave_type==='outing'?'外出':_lv.leave_type==='marriage'?'婚假(陪產假)':_lv.leave_type==='funeral'?'喪假':_lv.leave_type==='comp'?'補休':_lv.leave_type==='other'?'其他':_lv.leave_type; break; } } }
 data.push({ id: id, emp: empMap[id], content: content, hasImg: hasImg });
       }
     }
@@ -1570,7 +1570,7 @@ router.get('/export/leaves', auth, async function(req, res) {
     var all = await db.getLeaveRequests('', 2000);
     var data = [];
     var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-    var typeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
+    var typeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休', other: '其他' };
     for (var i = 0; i < all.length; i++) {
       var l = all[i];
       var lStart = typeof l.start_date === 'string' ? (l.start_date.indexOf(' ')!==-1 ? l.start_date.split(' ')[0] : l.start_date.split('T')[0]) : '';
@@ -1701,7 +1701,7 @@ router.get('/export/summary', auth, async function(req, res) {
 		}
 
 		// 假別標籤
-		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
+		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休', other: '其他' };
 			var _holidays2 = [];
 			try { _holidays2 = JSON.parse(await db.getSetting('tw_holidays') || '[]'); } catch(ex) {}
 
@@ -1883,7 +1883,7 @@ router.get('/export/all', auth, async function(req, res) {
 		var missedPunches = await db.getMissedPunches('approved', 500);
 		var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
 		var lateBufMin = parseInt(await db.getSetting('late_buffer_minutes') || '30');
-		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
+		var leaveTypeLabels = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休', other: '其他' };
 			var _holidays2 = [];
 			try { _holidays2 = JSON.parse(await db.getSetting('tw_holidays') || '[]'); } catch(ex) {}
 
@@ -2052,7 +2052,7 @@ summaryData.push({
 		// ===== Sheet 3: 請假紀錄 =====
 		var allLeaves = await db.getLeaveRequests('', 2000);
 		var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-		var typeLabels2 = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休' };
+		var typeLabels2 = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休', other: '其他' };
 		var leaveData = [];
 		for (var lv = 0; lv < allLeaves.length; lv++) {
 			var lr = allLeaves[lv];

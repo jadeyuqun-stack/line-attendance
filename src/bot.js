@@ -2126,6 +2126,27 @@ async function queryMonthAttendance(emp, client, replyToken) {
     lines.push('  📊 加班合計：' + Math.round(totalOT * 10) / 10 + ' 小時');
   }
 
+	  // 特休使用狀況
+	  var alEmpList = [];
+	  for (var ai2 = 0; ai2 < allActive.length; ai2++) {
+	    var ae2 = allActive[ai2];
+	    if (Object.keys(designatedIds).length > 0 && !designatedIds[ae2.id]) continue;
+	    if (!ae2.hire_date || ae2.hire_date === '') continue;
+	    alEmpList.push(ae2);
+	  }
+	  var alLines = [];
+	  for (var ali = 0; ali < alEmpList.length; ali++) {
+	    var ale = alEmpList[ali];
+	    try {
+	      var alBal = await db.getAnnualLeaveBalance(ale.id);
+	      alLines.push('  ' + ale.name + '（' + ale.employee_no + '） 額度' + alBal.entitlement_hours + 'h / 已用' + alBal.used_hours + 'h / 剩餘' + alBal.remaining_hours + 'h');
+	    } catch(ex) {}
+	  }
+	  if (alLines.length > 0) {
+	    lines.push('\n📊 特休使用狀況（本週期）：');
+	    lines = lines.concat(alLines);
+	  }
+
   var title2 = lines[0];
   return sendTableImage(client, replyToken, title2, lines.join('\n'));
 }

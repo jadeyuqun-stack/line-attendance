@@ -677,7 +677,9 @@ async function calcPeriodHours(startStr, endStr) {
       var dayDiff = dayEnd - dayStart;
       if (dayDiff > 0) {
         var dayRaw = Math.round(dayDiff / 1800000) * 0.5;
-        var lunch = (dayStart.getHours() < 12 && dayEnd.getHours() >= 13) ? 1 : 0;
+        var _ls7 = new Date(dayStart); _ls7.setHours(12, 0, 0, 0);
+	        var _le7 = new Date(dayStart); _le7.setHours(13, 0, 0, 0);
+	        var lunch = (dayStart < _le7 && dayEnd > _ls7) ? 1 : 0;
         var dayHours = dayRaw - lunch;
         if (dayHours > 8) dayHours = 8;
         if (dayHours > 0) total += dayHours;

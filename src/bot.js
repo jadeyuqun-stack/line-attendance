@@ -742,7 +742,9 @@ async function doCheckOut(emp, client, replyToken, loc, gps) {
   const co = r.check_time ? new Date(r.check_time) : new Date();
   // 總工時 = 實際打卡時間差，淨工時 = 總工時 - 午休 1h
   const totalH = Math.round(Math.max(0, (co - ci) / 3600000) * 10) / 10;
-  var lunchDeduct = (ci.getHours() < 12 && co.getHours() >= 13) ? 1 : 0;
+  var _ls1 = new Date(ci); _ls1.setHours(12, 0, 0, 0);
+	var _le1 = new Date(ci); _le1.setHours(13, 0, 0, 0);
+	var lunchDeduct = (ci < _le1 && co > _ls1) ? 1 : 0;
   var netH = Math.round((totalH - lunchDeduct) * 10) / 10;
   // 正常工時：僅計算 8:00-17:30 區間，17:30 後屬加班不計入
   var normalEnd = new Date(ci);
@@ -802,7 +804,9 @@ async function doQuery(emp, client, replyToken, _prefix) {
   if (checkIn && checkOut) {
     var ciDt = new Date(checkIn.check_time), coDt = new Date(checkOut.check_time);
     var rawWorkH = Math.round(Math.max(0, (coDt - ciDt) / 3600000) * 10) / 10;
-    var lunchDed = (ciDt.getHours() < 12 && coDt.getHours() >= 13) ? 1 : 0;
+    var _ls2 = new Date(ciDt); _ls2.setHours(12, 0, 0, 0);
+		var _le2 = new Date(ciDt); _le2.setHours(13, 0, 0, 0);
+		var lunchDed = (ciDt < _le2 && coDt > _ls2) ? 1 : 0;
     var workH = Math.round((rawWorkH - lunchDed) * 10) / 10;
     var nEnd = new Date(ciDt); nEnd.setHours(17, 30, 0, 0);
     var normalWH = Math.round(Math.max(0, ((coDt > nEnd ? nEnd : coDt) - ciDt) / 3600000) * 10) / 10;
@@ -1029,7 +1033,9 @@ function leaveHours(startStr, endStr) {
       if (dayDiff > 0) {
         var dayRaw = Math.round(dayDiff / 1800000) * 0.5;
         // 午休扣除：跨越 12:00-13:00 扣 1 小時
-        var lunch = (dayStart.getHours() < 12 && dayEnd.getHours() >= 13) ? 1 : 0;
+        var _ls3 = new Date(dayStart); _ls3.setHours(12, 0, 0, 0);
+			var _le3 = new Date(dayStart); _le3.setHours(13, 0, 0, 0);
+			var lunch = (dayStart < _le3 && dayEnd > _ls3) ? 1 : 0;
         var dayHours = dayRaw - lunch;
         if (dayHours > 8) dayHours = 8;
         if (dayHours > 0) total += dayHours;

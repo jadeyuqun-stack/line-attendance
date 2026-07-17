@@ -312,7 +312,9 @@ router.get('/records', auth, async (req, res) => {
     if (d2.checkIn && d2.checkOut) {
       var ci = new Date(d2.checkIn.check_time), co = new Date(d2.checkOut.check_time);
       var totalH = Math.round(Math.max(0,(co-ci)/3600000)*10)/10;
-      var lunchDed2 = (ci.getHours() < 12 && co.getHours() >= 13) ? 1 : 0;
+      var _ls4 = new Date(ci); _ls4.setHours(12, 0, 0, 0);
+	      var _le4 = new Date(ci); _le4.setHours(13, 0, 0, 0);
+	      var lunchDed2 = (ci < _le4 && co > _ls4) ? 1 : 0;
       workH = Math.round((totalH - lunchDed2) * 10) / 10;
       hours = totalH + 'h / ' + workH + 'h';
       var nEnd2 = new Date(ci); nEnd2.setHours(17, 30, 0, 0);
@@ -600,7 +602,9 @@ router.get('/leaves', auth, async (req, res) => {
     var s2d = new Date(s2.getFullYear(), s2.getMonth(), s2.getDate());
     var e2d = new Date(e2.getFullYear(), e2.getMonth(), e2.getDate());
     var days = Math.round((e2d - s2d) / 86400000) + 1;
-    var lunch = (s2.getHours() < 12 && e2.getHours() >= 13) ? 1 : 0;
+    var _ls5 = new Date(s2); _ls5.setHours(12, 0, 0, 0);
+	    var _le5 = new Date(s2); _le5.setHours(13, 0, 0, 0);
+	    var lunch = (s2 < _le5 && e2 > _ls5) ? 1 : 0;
     var workHours = raw - lunch;
     if (workHours < 0.5) workHours = 0.5;
     return Math.min(workHours, days * 8);
@@ -1504,7 +1508,9 @@ async function exportLeaveHours(startStr, endStr) {
       var dayDiff = dayEnd - dayStart;
       if (dayDiff > 0) {
         var dayRaw = Math.round(dayDiff / 1800000) * 0.5;
-        var lunch = (dayStart.getHours() < 12 && dayEnd.getHours() >= 13) ? 1 : 0;
+        var _ls6 = new Date(dayStart); _ls6.setHours(12, 0, 0, 0);
+	        var _le6 = new Date(dayStart); _le6.setHours(13, 0, 0, 0);
+	        var lunch = (dayStart < _le6 && dayEnd > _ls6) ? 1 : 0;
         var dayHours = dayRaw - lunch;
         if (dayHours > 8) dayHours = 8;
         if (dayHours > 0) total += dayHours;

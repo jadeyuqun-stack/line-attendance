@@ -93,7 +93,7 @@ function getMenu(emp) {
   if (!emp) return GPS_BUTTONS;
   var role = emp.role || '';
   if (role === '老闆' || role === 'boss') return GPS_BUTTONS;
-  if (role === '簽核人員' || role === '經理' || emp.can_approve) return APPROVER_BUTTONS;
+  if (role === '簽核人員' || role === '經理' || role === '主任' || emp.can_approve) return APPROVER_BUTTONS;
   return GPS_BUTTONS;
 }
 function withMenu(text, emp) {
@@ -1846,10 +1846,29 @@ function isApproverRole(emp) {
   return role === '簽核人員';
 }
 
+// 角色是否為主任（可查詢採樣+分析部門）
+function isDirector(emp) {
+  var role = emp.role || '';
+  return role === '主任';
+}
+
+// 取得主任可查詢的部門員工 ID
+async function getDirectorDepartmentEmployeeIds() {
+  var allEmps = await db.listAttendanceEmployees();
+  var ids = {};
+  for (var i = 0; i < allEmps.length; i++) {
+    var e = allEmps[i];
+    if (e.department === '採樣' || e.department === '分析') {
+      ids[e.id] = true;
+    }
+  }
+  return ids;
+}
+
 // 查詢被簽核人員當天考勤（考勤異常/曠職/請假/GPS超出範圍）
 async function queryTodayAttendance(emp, client, replyToken) {
   var role = emp.role || '';
-  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && !emp.can_approve) {
+  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && role !== '主任' && !emp.can_approve) {
     return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
   }
 
@@ -1865,6 +1884,10 @@ async function queryTodayAttendance(emp, client, replyToken) {
     for (var d = 0; d < designated.length; d++) {
       designatedIds[designated[d].id] = true;
     }
+  }
+  // 主任：僅限查詢採樣+分析部門
+  if (isDirector(emp)) {
+    designatedIds = await getDirectorDepartmentEmployeeIds();
   }
 
   var allCheckins = await db.queryCheckins(null, today, today, 2000, 0);
@@ -1977,7 +2000,7 @@ async function queryTodayAttendance(emp, client, replyToken) {
 // 查詢被簽核人員當月考勤（考勤異常+請假備註/請假/加班細項與累加，1號～當天）
 async function queryMonthAttendance(emp, client, replyToken) {
   var role = emp.role || '';
-  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && !emp.can_approve) {
+  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && role !== '主任' && !emp.can_approve) {
     return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
   }
 
@@ -1998,6 +2021,10 @@ async function queryMonthAttendance(emp, client, replyToken) {
       designatedIds[designated[d].id] = true;
     }
   }
+	  // 主任：僅限查詢採樣+分析部門
+	  if (isDirector(emp)) {
+	    designatedIds = await getDirectorDepartmentEmployeeIds();
+	  }
 
   var allCheckins = await db.queryCheckins(null, monthStart, today, 5000, 0);
   var allLeaves = await db.getLeaveRequests('approved', 2000);
@@ -2322,7 +2349,7 @@ async function assignRichMenu(uid, role, token) {
       console.log('[RichMenu] 8格選單尚未建立，請先至 /admin/setup-richmenu');
       return false;
     }
-    if (role === '經理' || role === '簽核人員') {
+    if (role === '經理' || role === '簽核人員' || role === '主任') {
       // 連結 8 格選單
       var res = await fetch('https://api.line.me/v2/bot/user/' + uid + '/richmenu/' + _richMenuId8, { method: 'POST', headers });
       console.log('[RichMenu] assign 8-btn to', uid, 'role:', role, 'status:', res.status);

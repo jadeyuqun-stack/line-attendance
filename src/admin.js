@@ -1794,7 +1794,11 @@ var data = [];
 					lunchEnd.setHours(13, 0, 0, 0);
 					var spansLunch = ci < lunchEnd && co > lunchStart;
 					netHours = totalHours;
-					if (spansLunch) netHours = Math.max(0, totalHours - 1);
+					if (spansLunch) {
+						var _os_s = ci > lunchStart ? ci : lunchStart;
+						var _oe_s = co < lunchEnd ? co : lunchEnd;
+						netHours = Math.max(0, totalHours - Math.round((_oe_s - _os_s) / 1800000) * 0.5);
+					}
 					netHours = Math.round(netHours * 10) / 10;
 
 					// 正常工時 < 9h 標記（僅計算 8:00-17:30，超過屬加班不計）
@@ -1973,7 +1977,11 @@ var summaryData = [];
 					var lunchStart = new Date(ci); lunchStart.setHours(12, 0, 0, 0);
 					var lunchEnd = new Date(ci); lunchEnd.setHours(13, 0, 0, 0);
 					netHours = totalHours;
-					if (ci < lunchEnd && co > lunchStart) netHours = Math.max(0, totalHours - 1);
+					if (ci < lunchEnd && co > lunchStart) {
+						var _os_t = ci > lunchStart ? ci : lunchStart;
+						var _oe_t = co < lunchEnd ? co : lunchEnd;
+						netHours = Math.max(0, totalHours - Math.round((_oe_t - _os_t) / 1800000) * 0.5);
+					}
 					netHours = Math.round(netHours * 10) / 10;
 					var normalEnd3 = new Date(ci); normalEnd3.setHours(17, 30, 0, 0);
 					var normalH3 = Math.round(Math.max(0, ((co > normalEnd3 ? normalEnd3 : co) - ci) / 3600000) * 10) / 10;

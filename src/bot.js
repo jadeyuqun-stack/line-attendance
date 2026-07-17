@@ -1917,27 +1917,41 @@ async function queryMonthAttendance(emp, client, replyToken) {
   }
 
   // 考勤異常彙整（1號～當天）
+  // 先找出每位員工每天最早的非遲到打卡（含補打卡），該日不重複計入考勤異常
+  var empDateCovered2 = {};
+  for (var pi2 = 0; pi2 < allCheckins.length; pi2++) {
+    var pc2 = allCheckins[pi2];
+    if (pc2.type !== "check_in") continue;
+    var pct2 = new Date(pc2.check_time);
+    var pTotalMin2 = pct2.getHours() * 60 + pct2.getMinutes();
+    if (pTotalMin2 <= lateThreshold) {
+      var pDateStr2 = pct2.getFullYear() + "-" + String(pct2.getMonth()+1).padStart(2,"0") + "-" + String(pct2.getDate()).padStart(2,"0");
+      empDateCovered2[pc2.employee_id + "|" + pDateStr2] = true;
+    }
+  }
   var empLateMap = {};
   for (var i = 0; i < allCheckins.length; i++) {
     var c = allCheckins[i];
-    if (c.type !== 'check_in') continue;
+    if (c.type !== "check_in") continue;
     var ct = new Date(c.check_time);
     var totalMin = ct.getHours() * 60 + ct.getMinutes();
     if (totalMin <= lateThreshold) continue;
-    var fullDateStr2 = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
+    var fullDateStr2 = ct.getFullYear() + "-" + String(ct.getMonth()+1).padStart(2,"0") + "-" + String(ct.getDate()).padStart(2,"0");
+    // 當天已有非遲到打卡（含補打卡），跳過不計考勤異常
+    if (empDateCovered2[c.employee_id + "|" + fullDateStr2]) continue;
     if (await isHoliday(fullDateStr2)) continue;
 
     var lateMins = totalMin - lateThreshold;
-    var dateStr = String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
+    var dateStr = String(ct.getMonth()+1).padStart(2,"0") + "-" + String(ct.getDate()).padStart(2,"0");
     if (!empLateMap[c.employee_id]) {
       empLateMap[c.employee_id] = { name: c.name, no: c.employee_no, records: [], count: 0 };
     }
-    var timeStr = String(ct.getHours()).padStart(2, '0') + ':' + String(ct.getMinutes()).padStart(2, '0');
+    var timeStr = String(ct.getHours()).padStart(2,"0") + ":" + String(ct.getMinutes()).padStart(2,"0");
     var covered3 = false;
     var ctMs3 = ct.getTime();
     for (var cl3 = 0; cl3 < allLeaves.length; cl3++) {
       var clv3 = allLeaves[cl3];
-      if (clv3.employee_id !== c.employee_id || clv3.status !== 'approved') continue;
+      if (clv3.employee_id !== c.employee_id || clv3.status !== "approved") continue;
       if (isCoveredByLeave(ctMs3, clv3.start_date, clv3.end_date)) { covered3 = true; break; }
     }
     empLateMap[c.employee_id].records.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: covered3 });

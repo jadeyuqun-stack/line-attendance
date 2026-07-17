@@ -1392,7 +1392,7 @@ async function setupRichMenu() {
 
 		// ===== Menu A: 6 格（一般員工預設） =====
 		var menu6 = {
-			size: { width: 2500, height: 843 }, selected: true, name: '一般員工選單', chatBarText: '📋 點此開啟功能選單',
+			size: { width: 2500, height: 843 }, selected: true, name: '一般員工選單', chatBarText: '📋 玉群考勤系統功能選單',
 			areas: [
 				{ bounds: { x: 0, y: 0, width: 833, height: 421 }, action: { type: 'message', text: '上班' } },
 				{ bounds: { x: 833, y: 0, width: 834, height: 421 }, action: { type: 'message', text: '請假' } },
@@ -1438,7 +1438,7 @@ async function setupRichMenu() {
 
 		// ===== Menu B: 8 格（經理/老闆/簽核人員） =====
 		var menu8 = {
-			size: { width: 2500, height: 843 }, selected: false, name: '主管選單', chatBarText: '📋 點此開啟功能選單',
+			size: { width: 2500, height: 843 }, selected: false, name: '主管選單', chatBarText: '📋 玉群考勤系統功能選單',
 			areas: [
 				{ bounds: { x: 0, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '上班' } },
 				{ bounds: { x: 625, y: 0, width: 625, height: 421 }, action: { type: 'message', text: '請假' } },
@@ -1481,7 +1481,7 @@ async function setupRichMenu() {
 
 		// ===== Menu C: 4 格（老闆 2×2） =====
 		var menuBoss = {
-			size: { width: 2500, height: 843 }, selected: false, name: '老闆選單', chatBarText: '📋 點此開啟功能選單',
+			size: { width: 2500, height: 843 }, selected: false, name: '老闆選單', chatBarText: '📋 玉群考勤系統功能選單',
 			areas: [
 				{ bounds: { x: 0, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '公司今日考勤' } },
 				{ bounds: { x: 1250, y: 0, width: 1250, height: 421 }, action: { type: 'message', text: '本月請假累計' } },
@@ -1552,93 +1552,172 @@ function makePng() {
 	var cv = canvasLib.createCanvas(w, h);
 	var ctx = cv.getContext('2d');
 
-	// 深色背景
-	ctx.fillStyle = '#0f172a';
+	// 純白背景
+	ctx.fillStyle = '#ffffff';
 	ctx.fillRect(0, 0, w, h);
 
-	var gap = 4;
-	var areas = [
-		{ x: 0, y: 0, w: 833, h: 421, color: '#059669', label: '上班' },
-		{ x: 833 + gap, y: 0, w: 833 - gap, h: 421, color: '#0d9488', label: '請假' },
-		{ x: 1667 + gap, y: 0, w: 833 - gap, h: 421, color: '#d97706', label: '下班' },
-		{ x: 0, y: 421 + gap, w: 833, h: 422 - gap, color: '#7c3aed', label: '加班' },
-		{ x: 833 + gap, y: 421 + gap, w: 833 - gap, h: 422 - gap, color: '#4f46e5', label: '補打卡' },
-		{ x: 1667 + gap, y: 421 + gap, w: 833 - gap, h: 422 - gap, color: '#2563eb', label: '查詢' },
+	var marginX = 22, marginY = 18, gap = 16;
+	var colW = Math.floor((w - marginX * 2 - gap * 2) / 3);
+	var rowH = Math.floor((h - marginY * 2 - gap) / 2);
+
+	var accent = [
+		'#ff8a69', '#5596e6', '#966fd0',
+		'#f2a54b', '#5fbe91', '#e66e7d'
 	];
+	var topColors = [
+		'#ffe8e1', '#e4eefc', '#f0e8f8',
+		'#fcf0e4', '#e4f5eb', '#fce6e8'
+	];
+	var botColors = [
+		'#ffc0b0', '#b0d0f5', '#c8b0e8',
+		'#fad0a0', '#a0e0c0', '#f5b0b8'
+	];
+	var icons = ['arrow-up', 'umbrella', 'arrow-down', 'clock', 'check', 'search'];
+	var labels = ['上班', '請假', '下班', '加班', '補打卡', '查詢'];
 
 	var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
 
-	for (var i = 0; i < areas.length; i++) {
-		var a = areas[i];
-		var cx = a.x + a.w / 2;
+	function drawRoundRect(x, y, w2, h2, r) {
+		ctx.beginPath();
+		ctx.roundRect(x, y, w2, h2, r);
+		ctx.fill();
+	}
 
-		// 主色背景
-		ctx.fillStyle = a.color;
-		ctx.fillRect(a.x, a.y, a.w, a.h);
+	function drawCard(cx2, cy2, cw, ch, radius, topColor, botColor) {
+		// Shadow
+		ctx.fillStyle = 'rgba(0,0,0,0.06)';
+		drawRoundRect(cx2 + 2, cy2 + 3, cw, ch, radius);
+		// Gradient
+		var grad = ctx.createLinearGradient(cx2, cy2, cx2, cy2 + ch);
+		grad.addColorStop(0, topColor);
+		grad.addColorStop(1, botColor);
+		ctx.fillStyle = grad;
+		drawRoundRect(cx2, cy2, cw, ch, radius);
+	}
 
-		// 頂部亮邊
-		ctx.fillStyle = 'rgba(255,255,255,0.12)';
-		ctx.fillRect(a.x, a.y, a.w, 6);
+	function drawIcon(cx, cy, r, color, type) {
+		// White circle shadow
+		ctx.fillStyle = 'rgba(0,0,0,0.06)';
+		ctx.beginPath();
+		ctx.arc(cx + 2, cy + 2, r, 0, Math.PI * 2);
+		ctx.fill();
+		// White circle
+		ctx.fillStyle = 'rgba(255,255,255,0.95)';
+		ctx.beginPath();
+		ctx.arc(cx, cy, r, 0, Math.PI * 2);
+		ctx.fill();
 
-		// 大型 label 文字（置中偏上）
-		ctx.fillStyle = '#ffffff';
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.font = 'bold 150px ' + fontFamily;
-		ctx.fillText(a.label, cx, a.y + a.h * 0.48);
-
-		// 簡約底部線條圖示
-		ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-		ctx.lineWidth = 7;
+		ctx.strokeStyle = color;
+		ctx.lineWidth = 5;
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
+		ctx.fillStyle = color;
 		ctx.beginPath();
-		var iy = a.y + a.h * 0.80;
 
-		switch (i) {
-			case 0: // 上班 ▲
-				ctx.moveTo(cx - 32, iy + 16);
-				ctx.lineTo(cx, iy - 16);
-				ctx.lineTo(cx + 32, iy + 16);
-				break;
-			case 1: // 請假 三條線
-				ctx.moveTo(cx - 24, iy - 16);
-				ctx.lineTo(cx - 24, iy + 16);
-				ctx.moveTo(cx, iy - 16);
-				ctx.lineTo(cx, iy + 16);
-				ctx.moveTo(cx + 24, iy - 16);
-				ctx.lineTo(cx + 24, iy + 16);
-				break;
-			case 2: // 下班 ▼
-				ctx.moveTo(cx - 32, iy - 16);
-				ctx.lineTo(cx, iy + 16);
-				ctx.lineTo(cx + 32, iy - 16);
-				break;
-			case 3: // 加班 ◉
-				ctx.arc(cx, iy, 24, 0, Math.PI * 2);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx, iy - 16);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx + 14, iy);
-				break;
-			case 4: // 補打卡
-				ctx.moveTo(cx - 18, iy - 20);
-				ctx.lineTo(cx + 10, iy - 4);
-				ctx.lineTo(cx + 22, iy + 12);
-				ctx.moveTo(cx + 10, iy - 4);
-				ctx.lineTo(cx - 6, iy + 20);
-				break;
-			case 5: // 查詢
-				ctx.arc(cx - 2, iy, 22, 0, Math.PI * 2);
-				ctx.moveTo(cx + 16, iy + 16);
-				ctx.lineTo(cx + 34, iy + 34);
-				break;
+		var s;
+		if (type === 'arrow-up') {
+			s = Math.round(r * 0.62);
+			ctx.moveTo(cx, cy - s);
+			ctx.lineTo(cx - Math.round(s * 0.7), cy + Math.round(s * 0.55));
+			ctx.lineTo(cx + Math.round(s * 0.7), cy + Math.round(s * 0.55));
+			ctx.closePath();
+			ctx.fill();
+		} else if (type === 'umbrella') {
+			s = Math.round(r * 0.58);
+			// Canopy arc
+			ctx.beginPath();
+			ctx.arc(cx, cy - Math.round(s * 0.05), Math.round(s * 0.85), Math.PI, 0);
+			ctx.stroke();
+			// Ribs
+			ctx.lineWidth = 3;
+			for (var ang = -40; ang <= 40; ang += 20) {
+				var rad = (ang + 90) * Math.PI / 180;
+				ctx.beginPath();
+				ctx.moveTo(cx, cy - Math.round(s * 0.05));
+				ctx.lineTo(cx + Math.round(Math.cos(rad) * s * 0.75), cy - Math.round(s * 0.05) + Math.round(Math.sin(rad) * s * 0.4));
+				ctx.stroke();
+			}
+			// Pole
+			ctx.lineWidth = 5;
+			ctx.beginPath();
+			ctx.moveTo(cx, cy - Math.round(s * 0.05));
+			ctx.lineTo(cx, cy + Math.round(s * 0.7));
+			ctx.stroke();
+			// Wave
+			ctx.lineWidth = 3;
+			ctx.beginPath();
+			ctx.arc(cx, cy + Math.round(s * 0.4), Math.round(s * 0.55), 0.26, 2.88);
+			ctx.stroke();
+		} else if (type === 'arrow-down') {
+			s = Math.round(r * 0.62);
+			ctx.moveTo(cx, cy + s);
+			ctx.lineTo(cx - Math.round(s * 0.7), cy - Math.round(s * 0.55));
+			ctx.lineTo(cx + Math.round(s * 0.7), cy - Math.round(s * 0.55));
+			ctx.closePath();
+			ctx.fill();
+		} else if (type === 'clock') {
+			s = Math.round(r * 0.58);
+			ctx.beginPath();
+			ctx.arc(cx, cy, s, 0, Math.PI * 2);
+			ctx.stroke();
+			ctx.lineWidth = 5;
+			ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - Math.round(s * 0.65)); ctx.stroke();
+			ctx.lineWidth = 4;
+			ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.round(s * 0.55), cy); ctx.stroke();
+			ctx.fillStyle = color;
+			ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+		} else if (type === 'check') {
+			s = Math.round(r * 0.55);
+			ctx.beginPath();
+			ctx.arc(cx, cy, s, 0, Math.PI * 2);
+			ctx.stroke();
+			ctx.lineWidth = 5;
+			ctx.beginPath();
+			ctx.moveTo(cx - Math.round(s * 0.55), cy + 3);
+			ctx.lineTo(cx - 3, cy + Math.round(s * 0.55));
+			ctx.lineTo(cx + Math.round(s * 0.6), cy - Math.round(s * 0.6));
+			ctx.stroke();
+		} else if (type === 'search') {
+			s = Math.round(r * 0.52);
+			ctx.lineWidth = 5;
+			ctx.beginPath();
+			ctx.arc(cx + 3, cy + 2, s, 0, Math.PI * 2);
+			ctx.stroke();
+			ctx.beginPath();
+			ctx.moveTo(cx + s - 2, cy + s - 2);
+			ctx.lineTo(cx + Math.round(s * 1.5), cy + Math.round(s * 1.5));
+			ctx.stroke();
 		}
-		ctx.stroke();
+	}
+
+	for (var i = 0; i < 6; i++) {
+		var col = i % 3;
+		var row = Math.floor(i / 3);
+		var bx = marginX + col * (colW + gap);
+		var by = marginY + row * (rowH + gap);
+		var cx = bx + Math.floor(colW / 2);
+		var cardW = colW - 8;
+		var cardH = rowH - 8;
+		var cardX = bx + 4;
+		var cardY = by + 4;
+
+		drawCard(cardX, cardY, cardW, cardH, 42, topColors[i], botColors[i]);
+
+		var iconR = Math.round(colW * 0.15);
+		var iconY = cardY + Math.round(cardH * 0.37);
+		drawIcon(cx, iconY, iconR, accent[i], icons[i]);
+
+		// Text
+		ctx.fillStyle = '#32323c';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.font = 'bold 78px ' + fontFamily;
+		ctx.fillText(labels[i], cx, cardY + Math.round(cardH * 0.84));
 	}
 
 	return cv.toBuffer('image/png');
 }
+
 
 // 備用：無 canvas 時用純色塊 PNG
 function makeSimplePng() {
@@ -2250,125 +2329,188 @@ async function assignRichMenu(uid, role, token) {
 
 // 8 格 Rich Menu PNG（4×2）
 function makePng8() {
-  var canvasLib;
-  try {
-    canvasLib = require('canvas');
-  } catch (e) {
-    return makeSimplePng8();
-  }
+	var canvasLib;
+	try {
+		canvasLib = require('canvas');
+	} catch (e) {
+		return makeSimplePng8();
+	}
 
-  var w = 2500, h = 843;
-  var cv = canvasLib.createCanvas(w, h);
-  var ctx = cv.getContext('2d');
+	var w = 2500, h = 843;
+	var cv = canvasLib.createCanvas(w, h);
+	var ctx = cv.getContext('2d');
 
-  ctx.fillStyle = '#0f172a';
-  ctx.fillRect(0, 0, w, h);
+	ctx.fillStyle = '#ffffff';
+	ctx.fillRect(0, 0, w, h);
 
-  var gap = 3;
-  var areas = [
-    { x: 0, y: 0, w: 625, h: 421, color: '#059669', label: '上班' },
-    { x: 625 + gap, y: 0, w: 625 - gap, h: 421, color: '#0d9488', label: '請假' },
-    { x: 1250 + gap, y: 0, w: 625 - gap, h: 421, color: '#4f46e5', label: '補打卡' },
-    { x: 1875 + gap, y: 0, w: 625 - gap, h: 421, color: '#d97706', label: '下班' },
-    { x: 0, y: 421 + gap, w: 625, h: 422 - gap, color: '#7c3aed', label: '加班' },
-    { x: 625 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#2563eb', label: '查詢' },
-    { x: 1250 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#0891b2', label: '簽核查詢' },
-    { x: 1875 + gap, y: 421 + gap, w: 625 - gap, h: 422 - gap, color: '#b91c1c', label: '查詢當月考勤' },
-  ];
+	var marginX = 22, marginY = 18, gap = 16;
+	var colW = Math.floor((w - marginX * 2 - gap * 3) / 4);
+	var rowH = Math.floor((h - marginY * 2 - gap) / 2);
 
-  var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
+	var accent = [
+		'#ff8a69', '#5596e6', '#5fbe91', '#966fd0',
+		'#f2a54b', '#e66e7d', '#b487c0', '#649bd0'
+	];
+	var topColors = [
+		'#ffe8e1', '#e4eefc', '#e4f5eb', '#f0e8f8',
+		'#fcf0e4', '#fce6e8', '#f5ebf2', '#e8f0f8'
+	];
+	var botColors = [
+		'#ffc0b0', '#b0d0f5', '#a0e0c0', '#c8b0e8',
+		'#fad0a0', '#f5b0b8', '#d8b8e0', '#a8c8e8'
+	];
+	var icons = ['arrow-up', 'umbrella', 'check', 'arrow-down', 'clock', 'search', 'approve', 'calendar'];
+	var labels = ['上班', '請假', '補打卡', '下班', '加班', '查詢', '簽核查詢', '當月考勤'];
 
-  for (var i = 0; i < areas.length; i++) {
-    var a = areas[i];
-    var cx = a.x + a.w / 2;
+	var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
 
-    ctx.fillStyle = a.color;
-    ctx.fillRect(a.x, a.y, a.w, a.h);
+	function drawRoundRect(x, y, w2, h2, r) {
+		ctx.beginPath();
+		ctx.roundRect(x, y, w2, h2, r);
+		ctx.fill();
+	}
 
-    // 頂部亮邊
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fillRect(a.x, a.y, a.w, 5);
+	function drawCard(cx2, cy2, cw, ch, radius, topColor, botColor) {
+		ctx.fillStyle = 'rgba(0,0,0,0.06)';
+		drawRoundRect(cx2 + 2, cy2 + 3, cw, ch, radius);
+		var grad = ctx.createLinearGradient(cx2, cy2, cx2, cy2 + ch);
+		grad.addColorStop(0, topColor);
+		grad.addColorStop(1, botColor);
+		ctx.fillStyle = grad;
+		drawRoundRect(cx2, cy2, cw, ch, radius);
+	}
 
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+	function drawIcon(cx, cy, r, color, type) {
+		ctx.fillStyle = 'rgba(0,0,0,0.06)';
+		ctx.beginPath();
+		ctx.arc(cx + 2, cy + 2, r, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.fillStyle = 'rgba(255,255,255,0.95)';
+		ctx.beginPath();
+		ctx.arc(cx, cy, r, 0, Math.PI * 2);
+		ctx.fill();
 
-    var label = a.label;
-    if (label.indexOf('\n') !== -1) {
-      var parts = label.split('\n');
-      ctx.font = 'bold 72px ' + fontFamily;
-      ctx.fillText(parts[0], cx, a.y + a.h * 0.42);
-      ctx.fillText(parts[1], cx, a.y + a.h * 0.62);
-    } else {
-      if (label.length <= 2) {
-        ctx.font = 'bold 105px ' + fontFamily;
-      } else if (label.length <= 3) {
-        ctx.font = 'bold 90px ' + fontFamily;
-      } else if (label.length <= 4) {
-        ctx.font = 'bold 75px ' + fontFamily;
-      } else {
-        ctx.font = 'bold 66px ' + fontFamily;
-      }
-      ctx.fillText(label, cx, a.y + a.h * 0.50);
-    }
+		ctx.strokeStyle = color;
+		ctx.lineWidth = 5;
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+		ctx.fillStyle = color;
+		ctx.beginPath();
 
-    // 底部簡約圖示
-    ctx.strokeStyle = 'rgba(255,255,255,0.30)';
-    ctx.lineWidth = 6;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    var iy = a.y + a.h * 0.84;
+		var s;
+		if (type === 'arrow-up') {
+			s = Math.round(r * 0.62);
+			ctx.moveTo(cx, cy - s);
+			ctx.lineTo(cx - Math.round(s * 0.7), cy + Math.round(s * 0.55));
+			ctx.lineTo(cx + Math.round(s * 0.7), cy + Math.round(s * 0.55));
+			ctx.closePath();
+			ctx.fill();
+		} else if (type === 'umbrella') {
+			s = Math.round(r * 0.58);
+			ctx.beginPath();
+			ctx.arc(cx, cy - Math.round(s * 0.05), Math.round(s * 0.85), Math.PI, 0);
+			ctx.stroke();
+			ctx.lineWidth = 3;
+			for (var ang = -40; ang <= 40; ang += 20) {
+				var rad = (ang + 90) * Math.PI / 180;
+				ctx.beginPath();
+				ctx.moveTo(cx, cy - Math.round(s * 0.05));
+				ctx.lineTo(cx + Math.round(Math.cos(rad) * s * 0.75), cy - Math.round(s * 0.05) + Math.round(Math.sin(rad) * s * 0.4));
+				ctx.stroke();
+			}
+			ctx.lineWidth = 5;
+			ctx.beginPath();
+			ctx.moveTo(cx, cy - Math.round(s * 0.05));
+			ctx.lineTo(cx, cy + Math.round(s * 0.7));
+			ctx.stroke();
+			ctx.lineWidth = 3;
+			ctx.beginPath();
+			ctx.arc(cx, cy + Math.round(s * 0.4), Math.round(s * 0.55), 0.26, 2.88);
+			ctx.stroke();
+		} else if (type === 'arrow-down') {
+			s = Math.round(r * 0.62);
+			ctx.moveTo(cx, cy + s);
+			ctx.lineTo(cx - Math.round(s * 0.7), cy - Math.round(s * 0.55));
+			ctx.lineTo(cx + Math.round(s * 0.7), cy - Math.round(s * 0.55));
+			ctx.closePath();
+			ctx.fill();
+		} else if (type === 'clock') {
+			s = Math.round(r * 0.58);
+			ctx.beginPath();
+			ctx.arc(cx, cy, s, 0, Math.PI * 2);
+			ctx.stroke();
+			ctx.lineWidth = 5;
+			ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - Math.round(s * 0.65)); ctx.stroke();
+			ctx.lineWidth = 4;
+			ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.round(s * 0.55), cy); ctx.stroke();
+			ctx.fillStyle = color;
+			ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+		} else if (type === 'check') {
+			s = Math.round(r * 0.55);
+			ctx.beginPath(); ctx.arc(cx, cy, s, 0, Math.PI * 2); ctx.stroke();
+			ctx.lineWidth = 5;
+			ctx.beginPath();
+			ctx.moveTo(cx - Math.round(s * 0.55), cy + 3);
+			ctx.lineTo(cx - 3, cy + Math.round(s * 0.55));
+			ctx.lineTo(cx + Math.round(s * 0.6), cy - Math.round(s * 0.6));
+			ctx.stroke();
+		} else if (type === 'search') {
+			s = Math.round(r * 0.52);
+			ctx.lineWidth = 5;
+			ctx.beginPath(); ctx.arc(cx + 3, cy + 2, s, 0, Math.PI * 2); ctx.stroke();
+			ctx.beginPath();
+			ctx.moveTo(cx + s - 2, cy + s - 2);
+			ctx.lineTo(cx + Math.round(s * 1.5), cy + Math.round(s * 1.5));
+			ctx.stroke();
+		} else if (type === 'approve') {
+			s = Math.round(r * 0.52);
+			ctx.lineWidth = 4;
+			ctx.beginPath(); ctx.roundRect(cx - s, cy - s - 2, s * 2, s * 2, 8); ctx.stroke();
+			ctx.lineWidth = 4;
+			ctx.beginPath();
+			ctx.moveTo(cx - Math.round(s * 0.5), cy + 2);
+			ctx.lineTo(cx - 2, cy + Math.round(s * 0.5));
+			ctx.lineTo(cx + Math.round(s * 0.55), cy - Math.round(s * 0.55));
+			ctx.stroke();
+		} else if (type === 'calendar') {
+			s = Math.round(r * 0.52);
+			ctx.lineWidth = 4;
+			ctx.beginPath(); ctx.roundRect(cx - s, cy - s, s * 2, s * 2, 8); ctx.stroke();
+			ctx.fillStyle = color;
+			ctx.beginPath();
+			ctx.fillRect(cx - s, cy - s, s * 2, Math.round(s * 0.45));
+		}
+	}
 
-    switch (i) {
-      case 0:
-        ctx.moveTo(cx - 24, iy + 12);
-        ctx.lineTo(cx, iy - 12);
-        ctx.lineTo(cx + 24, iy + 12);
-        break;
-      case 1: case 4:
-        ctx.moveTo(cx - 16, iy - 12);
-        ctx.lineTo(cx - 16, iy + 12);
-        ctx.moveTo(cx, iy - 12);
-        ctx.lineTo(cx, iy + 12);
-        ctx.moveTo(cx + 16, iy - 12);
-        ctx.lineTo(cx + 16, iy + 12);
-        break;
-      case 2:
-        ctx.moveTo(cx - 12, iy - 14);
-        ctx.lineTo(cx + 8, iy - 2);
-        ctx.lineTo(cx + 16, iy + 8);
-        ctx.moveTo(cx + 8, iy - 2);
-        ctx.lineTo(cx - 4, iy + 14);
-        break;
-      case 3:
-        ctx.moveTo(cx - 24, iy - 12);
-        ctx.lineTo(cx, iy + 12);
-        ctx.lineTo(cx + 24, iy - 12);
-        break;
-      case 5:
-        ctx.arc(cx - 2, iy, 16, 0, Math.PI * 2);
-        ctx.moveTo(cx + 12, iy + 12);
-        ctx.lineTo(cx + 24, iy + 24);
-        break;
-      case 6:
-        // 簽核查詢圖示（勾選框 + 打勾）
-        ctx.rect(cx - 16, iy - 12, 32, 24);
-        ctx.moveTo(cx - 8, iy);
-        ctx.lineTo(cx - 2, iy + 6);
-        ctx.lineTo(cx + 10, iy - 6);
-        break;
-      case 7:
-        ctx.arc(cx, iy, 12, 0, Math.PI * 2);
-        ctx.moveTo(cx + 14, iy);
-        ctx.lineTo(cx + 27, iy);
-        break;
-    }
-    ctx.stroke();
-  }
+	for (var i = 0; i < 8; i++) {
+		var col = i % 4;
+		var row = Math.floor(i / 4);
+		var bx = marginX + col * (colW + gap);
+		var by = marginY + row * (rowH + gap);
+		var cx = bx + Math.floor(colW / 2);
+		var cardW = colW - 8;
+		var cardH = rowH - 8;
+		var cardX = bx + 4;
+		var cardY = by + 4;
 
-  return cv.toBuffer('image/png');
+		drawCard(cardX, cardY, cardW, cardH, 42, topColors[i], botColors[i]);
+
+		var iconR = Math.round(colW * 0.17);
+		var iconY = cardY + Math.round(cardH * 0.37);
+		drawIcon(cx, iconY, iconR, accent[i], icons[i]);
+
+		ctx.fillStyle = '#32323c';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+
+		var label = labels[i];
+		ctx.font = 'bold 60px ' + fontFamily;
+		ctx.fillText(label, cx, cardY + Math.round(cardH * 0.84));
+	}
+
+	return cv.toBuffer('image/png');
 }
+
 
 // 8 格備用 PNG
 function makeSimplePng8() {
@@ -2447,86 +2589,126 @@ function makePngBoss() {
 	var cv = canvasLib.createCanvas(w, h);
 	var ctx = cv.getContext('2d');
 
-	ctx.fillStyle = '#0f172a';
+	ctx.fillStyle = '#ffffff';
 	ctx.fillRect(0, 0, w, h);
 
-	var gap = 4;
-	var areas = [
-		{ x: 0, y: 0, w: 1250, h: 421, color: '#0ea5e9', label: '公司今日考勤' },
-		{ x: 1250 + gap, y: 0, w: 1250 - gap, h: 421, color: '#059669', label: '本月請假累計' },
-		{ x: 0, y: 421 + gap, w: 1250, h: 422 - gap, color: '#ea580c', label: '本月考勤異常累計' },
-		{ x: 1250 + gap, y: 421 + gap, w: 1250 - gap, h: 422 - gap, color: '#7c3aed', label: '本月加班累計' },
-	];
+	var marginX = 22, marginY = 18, gap = 16;
+	var colW = Math.floor((w - marginX * 2 - gap) / 2);
+	var rowH = Math.floor((h - marginY * 2 - gap) / 2);
+
+	var accent = ['#55a5de', '#55be96', '#eb8c41', '#916cd0'];
+	var topColors = ['#e4f0fa', '#e4f5ee', '#faf0e4', '#f2ebf8'];
+	var botColors = ['#c0ddf5', '#b8e8d5', '#f5c8a0', '#d8c0e8'];
+	var icons = ['dashboard', 'leave-list', 'late-list', 'ot-list'];
+	var labels = ['公司今日考勤', '本月請假累計', '本月考勤異常累計', '本月加班累計'];
 
 	var fontFamily = _cnFontFamily || '"PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Heiti TC", "STHeiti", "Microsoft JhengHei", sans-serif';
 
-	for (var i = 0; i < areas.length; i++) {
-		var a = areas[i];
-		var cx = a.x + a.w / 2;
+	function drawRoundRect(x, y, w2, h2, r) {
+		ctx.beginPath();
+		ctx.roundRect(x, y, w2, h2, r);
+		ctx.fill();
+	}
 
-		ctx.fillStyle = a.color;
-		ctx.fillRect(a.x, a.y, a.w, a.h);
+	function drawCard(cx2, cy2, cw, ch, radius, topColor, botColor) {
+		ctx.fillStyle = 'rgba(0,0,0,0.06)';
+		drawRoundRect(cx2 + 2, cy2 + 3, cw, ch, radius);
+		var grad = ctx.createLinearGradient(cx2, cy2, cx2, cy2 + ch);
+		grad.addColorStop(0, topColor);
+		grad.addColorStop(1, botColor);
+		ctx.fillStyle = grad;
+		drawRoundRect(cx2, cy2, cw, ch, radius);
+	}
 
-		// 頂部亮邊
-		ctx.fillStyle = 'rgba(255,255,255,0.15)';
-		ctx.fillRect(a.x, a.y, a.w, 8);
+	function drawIcon(cx, cy, r, color, type) {
+		ctx.fillStyle = 'rgba(0,0,0,0.05)';
+		ctx.beginPath();
+		ctx.arc(cx + 2, cy + 2, r, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.fillStyle = 'rgba(255,255,255,0.95)';
+		ctx.beginPath();
+		ctx.arc(cx, cy, r, 0, Math.PI * 2);
+		ctx.fill();
 
-		// 主 label
-		ctx.fillStyle = '#ffffff';
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-
-		var label = a.label;
-		ctx.font = 'bold 120px ' + fontFamily;
-		ctx.fillText(label, cx, a.y + a.h * 0.54);
-
-		// 底部簡約圖示
-		ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-		ctx.lineWidth = 8;
+		ctx.strokeStyle = color;
+		ctx.lineWidth = 5;
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
-		ctx.beginPath();
-		var iy = a.y + a.h * 0.84;
+		ctx.fillStyle = color;
 
-		switch (i) {
-			case 0: // 儀表板
-				ctx.arc(cx, iy, 26, 0, Math.PI * 2);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx, iy - 18);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx + 15, iy);
-				break;
-			case 1: // 文件/請假
-				ctx.moveTo(cx - 24, iy - 20);
-				ctx.lineTo(cx - 24, iy + 20);
-				ctx.moveTo(cx, iy - 20);
-				ctx.lineTo(cx, iy + 20);
-				ctx.moveTo(cx + 24, iy - 20);
-				ctx.lineTo(cx + 24, iy + 20);
-				break;
-			case 2: // 時鐘/考勤異常
-				ctx.arc(cx, iy, 26, 0, Math.PI * 2);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx, iy - 18);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx + 14, iy);
-				ctx.moveTo(cx, iy + 28);
-				ctx.lineTo(cx - 12, iy + 18);
-				ctx.lineTo(cx + 12, iy + 18);
-				break;
-			case 3: // 兌/加班
-				ctx.arc(cx, iy, 26, 0, Math.PI * 2);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx, iy - 16);
-				ctx.moveTo(cx, iy);
-				ctx.lineTo(cx + 12, iy);
-				break;
+		var s = Math.round(r * 0.52);
+		if (type === 'dashboard') {
+			// Gauge
+			ctx.beginPath();
+			ctx.arc(cx, cy, s, 3.84, 5.59);
+			ctx.stroke();
+			ctx.lineWidth = 5;
+			ctx.beginPath();
+			ctx.moveTo(cx, cy + Math.round(s * 0.2));
+			ctx.lineTo(cx - Math.round(s * 0.4), cy - Math.round(s * 0.3));
+			ctx.stroke();
+			ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+		} else if (type === 'leave-list') {
+			// Document with lines
+			ctx.lineWidth = 4;
+			ctx.beginPath(); ctx.roundRect(cx - s, cy - s, Math.round(s * 1.6), s * 2, 6); ctx.stroke();
+			ctx.lineWidth = 4;
+			for (var ly = -Math.round(s * 0.4); ly <= Math.round(s * 0.4); ly += Math.round(s * 0.4)) {
+				ctx.beginPath();
+				ctx.moveTo(cx - Math.round(s * 0.7), cy + ly);
+				ctx.lineTo(cx + Math.round(s * 0.3), cy + ly);
+				ctx.stroke();
+			}
+		} else if (type === 'late-list') {
+			// Warning triangle
+			ctx.beginPath();
+			ctx.moveTo(cx, cy - s);
+			ctx.lineTo(cx - s, cy + s);
+			ctx.lineTo(cx + s, cy + s);
+			ctx.closePath();
+			ctx.stroke();
+			ctx.lineWidth = 4;
+			ctx.beginPath();
+			ctx.moveTo(cx, cy - Math.round(s * 0.1));
+			ctx.lineTo(cx, cy + Math.round(s * 0.4));
+			ctx.stroke();
+			ctx.beginPath(); ctx.arc(cx, cy + Math.round(s * 0.6), 3, 0, Math.PI * 2); ctx.fill();
+		} else if (type === 'ot-list') {
+			// Clock
+			ctx.beginPath(); ctx.arc(cx, cy, s, 0, Math.PI * 2); ctx.stroke();
+			ctx.lineWidth = 4;
+			ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - Math.round(s * 0.55)); ctx.stroke();
+			ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.round(s * 0.45), cy); ctx.stroke();
 		}
-		ctx.stroke();
+	}
+
+	for (var i = 0; i < 4; i++) {
+		var col = i % 2;
+		var row = Math.floor(i / 2);
+		var bx = marginX + col * (colW + gap);
+		var by = marginY + row * (rowH + gap);
+		var cx = bx + Math.floor(colW / 2);
+		var cardW = colW - 8;
+		var cardH = rowH - 8;
+		var cardX = bx + 4;
+		var cardY = by + 4;
+
+		drawCard(cardX, cardY, cardW, cardH, 42, topColors[i], botColors[i]);
+
+		var iconR = Math.round(colW * 0.10);
+		var iconY = cardY + Math.round(cardH * 0.34);
+		drawIcon(cx, iconY, iconR, accent[i], icons[i]);
+
+		ctx.fillStyle = '#32323c';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.font = 'bold 90px ' + fontFamily;
+		ctx.fillText(labels[i], cx, cardY + Math.round(cardH * 0.78));
 	}
 
 	return cv.toBuffer('image/png');
 }
+
 
 function makeSimplePngBoss() {
 	var zlib = require('zlib');

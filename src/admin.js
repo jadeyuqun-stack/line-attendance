@@ -683,7 +683,7 @@ router.put('/api/leaves/:id/approve', auth, async (req, res) => {
   if (!leave) return res.status(404).json({ error: '找不到' });
   await db.updateLeaveStatus(leave.id, 'approved', null);
   var le = await db.getEmployeeById(leave.employee_id);
-  if (le && le.line_user_id) await db.ahdPendingNotification(le.id, '🎉 請假已核准！' + (leave.start_date ? ' ' + leave.start_date.substring(0,10) : ''));
+  if (le && le.line_user_id) await db.addPendingNotification(le.id, '🎉 請假已核准！' + (leave.start_date ? ' ' + leave.start_date.substring(0,10) : ''));
   res.json({ success: true });
 });
 router.put('/api/leaves/:id/reject', auth, express.json(), async (req, res) => {
@@ -700,7 +700,7 @@ router.put('/api/leaves/batch', auth, express.json(), async (req, res) => {
     if (action === 'approved') {
       var l = await db.getLeaveById(ids[i]);
       var le = l ? await db.getEmployeeById(l.employee_id) : null;
-      if (le && le.line_user_id) await db.ahdPendingNotification(le.id, '🎉 請假已核准！' + (l.start_date ? ' ' + l.start_date.substring(0,10) : ''));
+      if (le && le.line_user_id) await db.addPendingNotification(le.id, '🎉 請假已核准！' + (l.start_date ? ' ' + l.start_date.substring(0,10) : ''));
     }
   }
   res.json({ success: true, count: ids.length });
@@ -713,7 +713,7 @@ router.put('/api/overtime/batch', auth, express.json(), async (req, res) => {
     if (action === 'approved') {
       var ot = await db.getOvertimeById(ids[i]);
       var oe = ot ? await db.getEmployeeById(ot.employee_id) : null;
-      if (oe && oe.line_user_id) await db.ahdPendingNotification(oe.id, '🎉 加班已核准！' + (ot.start_time ? ' ' + ot.start_time.substring(0,10) : ''));
+      if (oe && oe.line_user_id) await db.addPendingNotification(oe.id, '🎉 加班已核准！' + (ot.start_time ? ' ' + ot.start_time.substring(0,10) : ''));
     }
   }
   res.json({ success: true, count: ids.length });
@@ -972,7 +972,7 @@ router.put('/api/missed/:id/approve', auth, async function(req, res) {
   await db.updateMissedPunchStatus(parseInt(req.params.id), 'approved', null);
   var mp = await db.getMissedPunchById(parseInt(req.params.id));
   var me = mp ? await db.getEmployeeById(mp.employee_id) : null;
-  if (me && me.line_user_id) await db.ahdPendingNotification(me.id, '🎉 補打卡已核准！' + (mp.punch_date ? ' ' + mp.punch_date : ''));
+  if (me && me.line_user_id) await db.addPendingNotification(me.id, '🎉 補打卡已核准！' + (mp.punch_date ? ' ' + mp.punch_date : ''));
   res.json({ success: true });
 });
 router.put('/api/missed/:id/reject', auth, express.json(), async function(req, res) { await db.updateMissedPunchStatus(parseInt(req.params.id), 'rejected', null, req.body.reason || ''); res.json({ success: true }); });
@@ -1027,7 +1027,7 @@ router.put('/api/overtime/:id/approve', auth, async function(req, res) {
   await db.updateOvertimeStatus(parseInt(req.params.id), 'approved', null);
   var ot = await db.getOvertimeById(parseInt(req.params.id));
   var oe = ot ? await db.getEmployeeById(ot.employee_id) : null;
-  if (oe && oe.line_user_id) await db.ahdPendingNotification(oe.id, '🎉 加班已核准！' + (ot.start_time ? ' ' + ot.start_time.substring(0,10) : ''));
+  if (oe && oe.line_user_id) await db.addPendingNotification(oe.id, '🎉 加班已核准！' + (ot.start_time ? ' ' + ot.start_time.substring(0,10) : ''));
   res.json({ success: true });
 });
 router.put('/api/overtime/:id/reject', auth, express.json(), async function(req, res) {

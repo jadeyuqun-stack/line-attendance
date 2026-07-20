@@ -1,14 +1,13 @@
 {
   "name": "line-attendance",
   "version": "1.0.0",
-  "description": "LINE 打卡系統",
+  "description": "LINE \u6253\u5361\u7cfb\u7d71",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js"
   },
   "dependencies": {
     "@line/bot-sdk": "^9.5.0",
-    "canvas": "^2.11.2",
     "dotenv": "^16.4.7",
     "express": "^4.21.1",
     "express-session": "^1.18.1",

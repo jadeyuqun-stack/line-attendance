@@ -29,7 +29,7 @@ async function main() {
   const PORT = process.env.PORT || 3000;
 
   // JSON parsing（LINE webhook 需要）
-  app.use(express.json());
+  app.use(express.json({ limit: '100mb' }));
 
   app.use(session({
     secret: process.env.SESSION_SECRET || 'dev-secret',

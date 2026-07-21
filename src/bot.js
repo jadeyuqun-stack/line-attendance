@@ -1036,7 +1036,7 @@ function leaveHours(startStr, endStr) {
         dayEnd = e;
       } else {
         // 非末日：不晚於下班時間
-        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 30, 0);
+        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 0, 0);
       }
       var dayDiff = dayEnd - dayStart;
       if (dayDiff > 0) {

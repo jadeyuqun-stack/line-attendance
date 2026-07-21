@@ -683,7 +683,7 @@ async function calcPeriodHours(startStr, endStr) {
         dayEnd = e;
       } else {
         // 非末日：不晚於下班時間
-        var _we = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 30, 0);
+        var _we = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 0, 0);
         dayEnd = _we;
       }
       var dayDiff = dayEnd - dayStart;

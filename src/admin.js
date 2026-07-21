@@ -614,7 +614,7 @@ router.get('/leaves', auth, async (req, res) => {
         if (current.getTime() === eDay.getTime()) {
           dayEnd = e2;
         } else {
-          dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 30, 0);
+          dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 0, 0);
         }
         var dayDiff = dayEnd - dayStart;
         if (dayDiff > 0) {
@@ -1532,7 +1532,7 @@ async function exportLeaveHours(startStr, endStr) {
       if (current.getTime() === eDay.getTime()) {
         dayEnd = e;
       } else {
-        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 30, 0);
+        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 0, 0);
       }
       var dayDiff = dayEnd - dayStart;
       if (dayDiff > 0) {

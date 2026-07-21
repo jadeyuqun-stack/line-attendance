@@ -1499,11 +1499,15 @@ async function exportLeaveHours(startStr, endStr) {
     var ds = current.getFullYear() + '-' + String(current.getMonth()+1).padStart(2,'0') + '-' + String(current.getDate()).padStart(2,'0');
     if (dow !== 0 && dow !== 6 && holidays.indexOf(ds) === -1) {
       var dayStart = current.getTime() === sDay.getTime() ? s : new Date(current);
+      if (current.getTime() !== sDay.getTime()) {
+        var _ws = new Date(current); _ws.setHours(8, 0, 0, 0);
+        if (dayStart < _ws) dayStart = _ws;
+      }
       var dayEnd;
       if (current.getTime() === eDay.getTime()) {
         dayEnd = e;
       } else {
-        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 23, 59, 59);
+        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 30, 0);
       }
       var dayDiff = dayEnd - dayStart;
       if (dayDiff > 0) {

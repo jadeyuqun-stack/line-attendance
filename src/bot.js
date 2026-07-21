@@ -1026,12 +1026,17 @@ function leaveHours(startStr, endStr) {
     if (dow !== 0 && dow !== 6 && _holidays.indexOf(ds) === -1) {
       // 工作日（非週末、非國定假日）：決定當天的起訖時間
       var dayStart = current.getTime() === sDay.getTime() ? s : new Date(current);
+      // 非首日：不早於上班時間，避免計入非工作時段
+      if (current.getTime() !== sDay.getTime()) {
+        var _ws = new Date(current); _ws.setHours(8, 0, 0, 0);
+        if (dayStart < _ws) dayStart = _ws;
+      }
       var dayEnd;
       if (current.getTime() === eDay.getTime()) {
         dayEnd = e;
       } else {
-        // 中間日：到當天 23:59:59
-        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 23, 59, 59);
+        // 非末日：不晚於下班時間
+        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 30, 0);
       }
       var dayDiff = dayEnd - dayStart;
       if (dayDiff > 0) {

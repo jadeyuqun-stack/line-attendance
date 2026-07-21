@@ -673,11 +673,18 @@ async function calcPeriodHours(startStr, endStr) {
     var ds = current.getFullYear() + '-' + String(current.getMonth() + 1).padStart(2, '0') + '-' + String(current.getDate()).padStart(2, '0');
     if (dow !== 0 && dow !== 6 && holidays.indexOf(ds) === -1) {
       var dayStart = current.getTime() === sDay.getTime() ? s : new Date(current);
+      // 非首日：不早於上班時間，避免計入非工作時段
+      if (current.getTime() !== sDay.getTime()) {
+        var _ws = new Date(current); _ws.setHours(8, 0, 0, 0);
+        if (dayStart < _ws) dayStart = _ws;
+      }
       var dayEnd;
       if (current.getTime() === eDay.getTime()) {
         dayEnd = e;
       } else {
-        dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 23, 59, 59);
+        // 非末日：不晚於下班時間
+        var _we = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 30, 0);
+        dayEnd = _we;
       }
       var dayDiff = dayEnd - dayStart;
       if (dayDiff > 0) {
@@ -836,7 +843,7 @@ async function getAnnualLeaveBalance(employeeId) {
   }
 
   // 以週期起始日的年資計算特休額度
-  var calc = await calculateAnnualLeaveEntitlement(_hireDate, periodStart);
+  var calc = await calculateAnnualLeaveEntitlement(_hireDate, now);
   var entitlementHours = calc.entitlement_hours;
 
   // 查詢此入職週期內已核准特休

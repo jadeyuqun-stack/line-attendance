@@ -1201,6 +1201,15 @@ async function handlePostback(postback, uid, client, replyToken) {
     if (!state || state.step !== 'start_date') return;
     var dt = params.datetime || (params.date ? params.date + ' ' + (params.time || '00:00') : null);
     if (!dt) return client.replyMessage(replyToken, [{ type: 'text', text: '❌ 日期錯誤' }]);
+		// 請假開始日不可早於入職日
+		var _emp = await db.getEmployeeByLineId(uid);
+		if (_emp && _emp.hire_date) {
+			var _hd = new Date(_emp.hire_date.replace(/\//g, '-'));
+			if (new Date(dt) < _hd) {
+				states.delete(uid);
+				return client.replyMessage(replyToken, [withMenu('❌ 請假日期不可早於入職日（' + _emp.hire_date + '）')]);
+			}
+		}
     state.startDateTime = dt; state.step = 'end_date';
     return client.replyMessage(replyToken, [withDatePicker('📅 開始：' + dt + '\n\n請選擇「結束日期時間」', 'leave_end')]);
   }

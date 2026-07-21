@@ -598,16 +598,41 @@ router.get('/leaves', auth, async (req, res) => {
     var s2 = new Date(startStr), e2 = new Date(endStr||startStr);
     var diff = e2 - s2;
     if (diff <= 0) return 0.5;
-    var raw = Math.round(diff / 1800000) * 0.5;
-    var s2d = new Date(s2.getFullYear(), s2.getMonth(), s2.getDate());
-    var e2d = new Date(e2.getFullYear(), e2.getMonth(), e2.getDate());
-    var days = Math.round((e2d - s2d) / 86400000) + 1;
-    var _ls5 = new Date(s2); _ls5.setHours(12, 0, 0, 0);
-	    var _le5 = new Date(s2); _le5.setHours(13, 0, 0, 0);
-	    var lunch = (s2 < _le5 && e2 > _ls5) ? 1 : 0;
-    var workHours = raw - lunch;
-    if (workHours < 0.5) workHours = 0.5;
-    return Math.min(workHours, days * 8);
+    var sDay = new Date(s2.getFullYear(), s2.getMonth(), s2.getDate());
+    var eDay = new Date(e2.getFullYear(), e2.getMonth(), e2.getDate());
+    var total = 0;
+    var current = new Date(sDay);
+    while (current <= eDay) {
+      var dow = current.getDay();
+      if (dow !== 0 && dow !== 6) {
+        var dayStart = current.getTime() === sDay.getTime() ? s2 : new Date(current);
+        if (current.getTime() !== sDay.getTime()) {
+          var _ws = new Date(current); _ws.setHours(8, 0, 0, 0);
+          if (dayStart < _ws) dayStart = _ws;
+        }
+        var dayEnd;
+        if (current.getTime() === eDay.getTime()) {
+          dayEnd = e2;
+        } else {
+          dayEnd = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 30, 0);
+        }
+        var dayDiff = dayEnd - dayStart;
+        if (dayDiff > 0) {
+          var dayRaw = Math.round(dayDiff / 1800000) * 0.5;
+          var _ls5 = new Date(dayStart); _ls5.setHours(12, 0, 0, 0);
+          var _le5 = new Date(dayStart); _le5.setHours(13, 0, 0, 0);
+          var _os5 = dayStart > _ls5 ? dayStart : _ls5;
+          var _oe5 = dayEnd < _le5 ? dayEnd : _le5;
+          var lunch = _os5 < _oe5 ? Math.round((_oe5 - _os5) / 1800000) * 0.5 : 0;
+          var dayHours = dayRaw - lunch;
+          if (dayHours > 8) dayHours = 8;
+          if (dayHours > 0) total += dayHours;
+        }
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    if (total < 0.5) total = 0.5;
+    return total;
   }
   function sd(d) { return typeof d === 'string' ? d : (d ? d.toISOString().split('T')[0] : ''); }
   var empMap = {};  // employee_id -> { approver fields }

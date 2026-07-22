@@ -688,9 +688,10 @@ async function calcPeriodHours(startStr, endStr) {
       if (current.getTime() === eDay.getTime()) {
         dayEnd = e;
       } else {
-        // 非末日：不晚於下班時間
-        var _we = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 0, 0);
-        dayEnd = _we;
+        // 非末日：下班時間取 max(17:00, 請假結束時間)
+        var _we17 = new Date(current.getFullYear(), current.getMonth(), current.getDate(), 17, 0, 0);
+        var _eTime = new Date(current.getFullYear(), current.getMonth(), current.getDate(), e.getHours(), e.getMinutes(), 0);
+        dayEnd = _eTime > _we17 ? _eTime : _we17;
       }
       var dayDiff = dayEnd - dayStart;
       if (dayDiff > 0) {

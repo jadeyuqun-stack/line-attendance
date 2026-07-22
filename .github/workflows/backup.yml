@@ -6,6 +6,9 @@ on:
     - cron: '37 18 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   backup:
     runs-on: ubuntu-latest
@@ -14,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: 安裝依賴
         run: npm install pg
@@ -24,14 +27,15 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
 
-      - name: 推到 backups 分支（永遠只留 latest-backup.json）
+      - name: 推到 backups 分支
         run: |
           cp latest-backup.json /tmp/latest-backup.json
-          git checkout backups 2>/dev/null || git checkout --orphan backups
-          git rm -rf . 2>/dev/null || true
+          git fetch origin backups 2>/dev/null || true
+          git checkout -B backups origin/backups 2>/dev/null || git checkout --orphan backups
+          rm -f latest-backup.json
           cp /tmp/latest-backup.json latest-backup.json
           git add latest-backup.json
           git config user.name "Backup Bot"
           git config user.email "backup@bot"
-          git commit -m "Backup $(date +%Y-%m-%d)" || true
+          git diff --cached --quiet || git commit -m "Backup $(date +%Y-%m-%d)"
           git push origin backups --force

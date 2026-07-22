@@ -635,22 +635,17 @@ if (_prefix) _msg.unshift({ type: "text", text: _prefix });
 
 async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
   if (uid) states.delete(uid);
-  // 簽核人員（即使沒有 can_approve）也可用批次核准，限指定員工
+  // 簽核人員/經理/老闆可用批次核准（can_approve 亦可用）
   var isApproverRole = emp.role === '簽核人員' || emp.role === '經理' || emp.role === '老闆';
   if (!emp.can_approve && !isApproverRole) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ 無簽核權限')] : [withMenu('❌ 無簽核權限')]);
   var leaves = await db.getLeaveRequests('pending', 200);
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
-  // 非 can_approve 的簽核人員：只簽自己指定的員工
-  var designatedIds = emp.can_approve ? null : (await db.getDesignatedEmployeeIds(emp.id)).map(function(d) { return d.id; });
   var lines = [];
   function canBatch(emp2, eid, appr) {
+    // can_approve 全體簽核，其他只認 L1/L2 指定簽核人；無指定則僅後台可簽
     if (appr && appr.can_approve) return true;
-    if (emp2.approver_id === eid || emp2.approver2_id === eid) return true;
-    if (designatedIds && designatedIds.indexOf(emp2.id) >= 0) {
-      if (!emp2.approver_id && !emp2.approver2_id) return true;
-    }
-    return false;
+    return emp2.approver_id === eid || emp2.approver2_id === eid;
   }
   for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch(e, emp.id, emp)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); } } }
   for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch(e, emp.id, emp)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); } } }
@@ -666,15 +661,11 @@ async function batchRejectAll(emp, client, replyToken, _prefix, uid) {
   var leaves = await db.getLeaveRequests('pending', 200);
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
-  var designatedIds2 = emp.can_approve ? null : (await db.getDesignatedEmployeeIds(emp.id)).map(function(d) { return d.id; });
   var lCount = 0, otCount = 0, mpCount = 0;
   function canBatch2(emp2, eid, appr) {
+    // can_approve 全體簽核，其他只認 L1/L2 指定簽核人；無指定則僅後台可簽
     if (appr && appr.can_approve) return true;
-    if (emp2.approver_id === eid || emp2.approver2_id === eid) return true;
-    if (designatedIds2 && designatedIds2.indexOf(emp2.id) >= 0) {
-      if (!emp2.approver_id && !emp2.approver2_id) return true;
-    }
-    return false;
+    return emp2.approver_id === eid || emp2.approver2_id === eid;
   }
   for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch2(e, emp.id, emp)) { await db.updateLeaveStatus(leaves[i].id, 'rejected', emp.id); lCount++; } }
   for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch2(e, emp.id, emp)) { await db.updateOvertimeStatus(ots[i].id, 'rejected', emp.id); otCount++; } }

@@ -431,9 +431,12 @@ async function updateLeaveStatus(id, status, approvedBy, rejectReason) {
     // 全體簽核權限（can_approve）可跳過指定簽核人檢查
     var _apprRecord = approvedBy ? await getEmployeeById(approvedBy) : null;
     var _canApprAll = _apprRecord && _apprRecord.can_approve;
-    if (approvedBy !== null && designatedApprover && !isDesignated && !_canApprAll) {
-      console.log('[DB] 跳過：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人（指定為 ' + designatedApprover + '）');
-      return { advanced: false, notYourTurn: true };
+    if (approvedBy !== null && !_canApprAll) {
+      // LINE 端簽核：必須是該階指定簽核人，若無指定則僅後台可簽
+      if (!designatedApprover || !isDesignated) {
+        console.log('[DB] 跳過請假：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
+        return { advanced: false, notYourTurn: true };
+      }
     }
     var nextLevel = currentLevel + 1;
     console.log('[DB] nextLevel='+nextLevel+' looking for approvers...');
@@ -618,9 +621,12 @@ async function updateOvertimeStatus(id, status, approvedBy, rejectReason) {
     var isDesignated = designatedApprover && designatedApprover === approvedBy;
     var _apprRecord2 = approvedBy ? await getEmployeeById(approvedBy) : null;
     var _canApprAll2 = _apprRecord2 && _apprRecord2.can_approve;
-    if (approvedBy !== null && designatedApprover && !isDesignated && !_canApprAll2) {
-      console.log('[DB] 跳過加班：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人（指定為 ' + designatedApprover + '）');
-      return { advanced: false, notYourTurn: true };
+    if (approvedBy !== null && !_canApprAll2) {
+      // LINE 端簽核：必須是該階指定簽核人，若無指定則僅後台可簽
+      if (!designatedApprover || !isDesignated) {
+        console.log('[DB] 跳過加班：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
+        return { advanced: false, notYourTurn: true };
+      }
     }
     var nextLevel = currentLevel + 1;
     if (nextLevel <= 2) {

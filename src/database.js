@@ -421,23 +421,21 @@ async function updateLeaveStatus(id, status, approvedBy, rejectReason) {
   var leave = await getLeaveById(id);
   if (!leave) return;
   console.log('[DB] updateLeaveStatus id='+id+' status='+status+' currentLevel='+(leave.approval_level||1));
-  if (status === 'approved') {
-    // 檢查該簽核人是否有權限簽核當前層級（不可跳階）
-    var empRecord = await getEmployeeById(leave.employee_id);
-    var currentLevel = leave.approval_level || 1;
-    var levelCol = currentLevel === 1 ? 'approver_id' : 'approver2_id';
-    var designatedApprover = empRecord ? empRecord[levelCol] : null;
-    var isDesignated = designatedApprover && designatedApprover === approvedBy;
-    // 全體簽核權限（can_approve）可跳過指定簽核人檢查
-    var _apprRecord = approvedBy ? await getEmployeeById(approvedBy) : null;
-    var _canApprAll = _apprRecord && _apprRecord.can_approve;
-    if (approvedBy !== null && !_canApprAll) {
-      // LINE 端簽核：必須是該階指定簽核人，若無指定則僅後台可簽
-      if (!designatedApprover || !isDesignated) {
-        console.log('[DB] 跳過請假：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
-        return { advanced: false, notYourTurn: true };
-      }
+  // 簽核權限檢查：LINE 端簽核必須是該階指定簽核人或 can_approve
+  var empRecord = await getEmployeeById(leave.employee_id);
+  var currentLevel = leave.approval_level || 1;
+  var levelCol = currentLevel === 1 ? 'approver_id' : 'approver2_id';
+  var designatedApprover = empRecord ? empRecord[levelCol] : null;
+  var isDesignated = designatedApprover && designatedApprover === approvedBy;
+  var _apprRecord = approvedBy ? await getEmployeeById(approvedBy) : null;
+  var _canApprAll = _apprRecord && _apprRecord.can_approve;
+  if (approvedBy !== null && !_canApprAll) {
+    if (!designatedApprover || !isDesignated) {
+      console.log('[DB] 跳過請假：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
+      return { advanced: false, notYourTurn: true };
     }
+  }
+  if (status === 'approved') {
     var nextLevel = currentLevel + 1;
     console.log('[DB] nextLevel='+nextLevel+' looking for approvers...');
     if (nextLevel <= 2) {
@@ -612,22 +610,21 @@ async function deleteOvertimeRequest(id) {
 async function updateOvertimeStatus(id, status, approvedBy, rejectReason) {
   var ot = await getOvertimeById(id);
   if (!ot) return;
-  if (status === 'approved') {
-    // 檢查該簽核人是否有權限簽核當前層級（不可跳階）
-    var empRecord = await getEmployeeById(ot.employee_id);
-    var currentLevel = ot.approval_level || 1;
-    var levelCol = currentLevel === 1 ? 'approver_id' : 'approver2_id';
-    var designatedApprover = empRecord ? empRecord[levelCol] : null;
-    var isDesignated = designatedApprover && designatedApprover === approvedBy;
-    var _apprRecord2 = approvedBy ? await getEmployeeById(approvedBy) : null;
-    var _canApprAll2 = _apprRecord2 && _apprRecord2.can_approve;
-    if (approvedBy !== null && !_canApprAll2) {
-      // LINE 端簽核：必須是該階指定簽核人，若無指定則僅後台可簽
-      if (!designatedApprover || !isDesignated) {
-        console.log('[DB] 跳過加班：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
-        return { advanced: false, notYourTurn: true };
-      }
+  // 簽核權限檢查：LINE 端簽核必須是該階指定簽核人或 can_approve
+  var empRecord = await getEmployeeById(ot.employee_id);
+  var currentLevel = ot.approval_level || 1;
+  var levelCol = currentLevel === 1 ? 'approver_id' : 'approver2_id';
+  var designatedApprover = empRecord ? empRecord[levelCol] : null;
+  var isDesignated = designatedApprover && designatedApprover === approvedBy;
+  var _apprRecord2 = approvedBy ? await getEmployeeById(approvedBy) : null;
+  var _canApprAll2 = _apprRecord2 && _apprRecord2.can_approve;
+  if (approvedBy !== null && !_canApprAll2) {
+    if (!designatedApprover || !isDesignated) {
+      console.log('[DB] 跳過加班：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
+      return { advanced: false, notYourTurn: true };
     }
+  }
+  if (status === 'approved') {
     var nextLevel = currentLevel + 1;
     if (nextLevel <= 2) {
       var nextApprovers = await findApprovers(ot.employee_id, nextLevel);

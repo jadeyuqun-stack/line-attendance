@@ -642,13 +642,14 @@ async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
   var lines = [];
-  function canBatch(emp2, eid, appr) {
-    // can_approve 全體簽核，其他只認 L1/L2 指定簽核人；無指定則僅後台可簽
+  function canBatch(emp2, eid, appr, level) {
+    // can_approve 全體簽核，其他只認該階指定簽核人
     if (appr && appr.can_approve) return true;
-    return emp2.approver_id === eid || emp2.approver2_id === eid;
+    var col = (level || 1) === 1 ? 'approver_id' : 'approver2_id';
+    return emp2[col] === eid;
   }
-  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch(e, emp.id, emp)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); } } }
-  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch(e, emp.id, emp)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); } } }
+  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch(e, emp.id, emp, leaves[i].approval_level)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); } } }
+  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch(e, emp.id, emp, ots[i].approval_level)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); } } }
   for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && canBatch(e, emp.id, emp)) { var _r3 = await db.updateMissedPunchStatus(mps[i].id, 'approved', emp.id); if (_r3) { lines.push('📝 ' + e.name + ' ' + (mps[i].punch_type === 'check_in' ? '補上班' : '補下班') + ' ' + mps[i].punch_date); } } }
   if (lines.length === 0) return client.replyMessage(replyToken, _prefix ? [withMenu('✅ 無可核准的項目（可能非您簽核階段）')] : [withMenu('✅ 無可核准的項目（可能非您簽核階段）')]);
   return client.replyMessage(replyToken, _prefix ? [withMenu('✅ 已核准 ' + lines.length + ' 筆\n' + lines.join(' · ')), { type: 'text', text: _prefix }] : [withMenu('✅ 已核准 ' + lines.length + ' 筆\n' + lines.join(' · '))]);
@@ -662,13 +663,14 @@ async function batchRejectAll(emp, client, replyToken, _prefix, uid) {
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
   var lCount = 0, otCount = 0, mpCount = 0;
-  function canBatch2(emp2, eid, appr) {
-    // can_approve 全體簽核，其他只認 L1/L2 指定簽核人；無指定則僅後台可簽
+  function canBatch2(emp2, eid, appr, level) {
+    // can_approve 全體簽核，其他只認該階指定簽核人
     if (appr && appr.can_approve) return true;
-    return emp2.approver_id === eid || emp2.approver2_id === eid;
+    var col = (level || 1) === 1 ? 'approver_id' : 'approver2_id';
+    return emp2[col] === eid;
   }
-  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch2(e, emp.id, emp)) { await db.updateLeaveStatus(leaves[i].id, 'rejected', emp.id); lCount++; } }
-  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch2(e, emp.id, emp)) { await db.updateOvertimeStatus(ots[i].id, 'rejected', emp.id); otCount++; } }
+  for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch2(e, emp.id, emp, leaves[i].approval_level)) { await db.updateLeaveStatus(leaves[i].id, 'rejected', emp.id); lCount++; } }
+  for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch2(e, emp.id, emp, ots[i].approval_level)) { await db.updateOvertimeStatus(ots[i].id, 'rejected', emp.id); otCount++; } }
   for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && canBatch2(e, emp.id, emp)) { await db.updateMissedPunchStatus(mps[i].id, 'rejected', emp.id); mpCount++; } }
   var detail = '';
   if (lCount > 0) detail += '🏖 請假：' + lCount + ' 筆 ';
@@ -1318,7 +1320,10 @@ async function handlePostback(postback, uid, client, replyToken) {
     var leave = await db.getLeaveById(leaveId);
     if (!approver || !leave) return client.replyMessage(replyToken, [withMenu('❌ 無效請求')]);
     var leaveEmp = await db.getEmployeeById(leave.employee_id);
-    var isDesignated = leaveEmp && (leaveEmp.approver_id===approver.id || leaveEmp.approver2_id===approver.id || leaveEmp.approver3_id===approver.id);
+    var currentLevel = leave.approval_level || 1;
+    var levelCol = currentLevel === 1 ? 'approver_id' : 'approver2_id';
+    var designatedApprover = leaveEmp ? leaveEmp[levelCol] : null;
+    var isDesignated = designatedApprover && designatedApprover === approver.id;
     if (!approver.can_approve && !isDesignated) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
     if (leave.status !== 'pending') return client.replyMessage(replyToken, [withMenu('申請已處理過')]);
 
@@ -1346,7 +1351,10 @@ async function handlePostback(postback, uid, client, replyToken) {
     var ot = await db.getOvertimeById(otId);
     if (!otApprover || !ot) return client.replyMessage(replyToken, [withMenu('❌ 無效請求')]);
     var otEmp = await db.getEmployeeById(ot.employee_id);
-    var otDesignated = otEmp && (otEmp.approver_id===otApprover.id || otEmp.approver2_id===otApprover.id || otEmp.approver3_id===otApprover.id);
+    var otCurrentLevel = ot.approval_level || 1;
+    var otLevelCol = otCurrentLevel === 1 ? 'approver_id' : 'approver2_id';
+    var otDesignatedApprover = otEmp ? otEmp[otLevelCol] : null;
+    var otDesignated = otDesignatedApprover && otDesignatedApprover === otApprover.id;
     if (!otApprover.can_approve && !otDesignated) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
     if (ot.status !== 'pending') return client.replyMessage(replyToken, [withMenu('已處理過')]);
 

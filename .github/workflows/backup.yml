@@ -1,0 +1,37 @@
+name: 每日資料庫備份
+
+on:
+  schedule:
+    # 台灣時間凌晨 2:00（UTC 18:00）
+    - cron: '37 18 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 安裝依賴
+        run: npm install pg
+
+      - name: 匯出備份
+        run: node .github/scripts/backup.js
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+
+      - name: 推到 backups 分支（永遠只留 latest-backup.json）
+        run: |
+          cp latest-backup.json /tmp/latest-backup.json
+          git checkout backups 2>/dev/null || git checkout --orphan backups
+          git rm -rf . 2>/dev/null || true
+          cp /tmp/latest-backup.json latest-backup.json
+          git add latest-backup.json
+          git config user.name "Backup Bot"
+          git config user.email "backup@bot"
+          git commit -m "Backup $(date +%Y-%m-%d)" || true
+          git push origin backups --force

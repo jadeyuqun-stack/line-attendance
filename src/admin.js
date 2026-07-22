@@ -651,8 +651,8 @@ router.get('/leaves', auth, async (req, res) => {
     var l = leaves[i];
     if (filterEid && l.employee_id !== filterEid) continue;
     var statusBadge = l.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getCurrentApprover(l)
-      : l.status === 'approved' ? '<span class="badge badge-in">已核准</span>'
-      : '<span class="badge badge-out">已駁回</span>';
+      : l.status === 'approved' ? '<span class="badge badge-in">已核准</span>' + (l.approver_name ? ' <small style="color:#27ae60">' + h(l.approver_name) + '</small>' : '')
+      : '<span class="badge badge-out">已駁回</span>' + (l.approver_name ? ' <small style="color:#e74c3c">' + h(l.approver_name) + '</small>' : '');
     var actionHtml = '';
     var cb = l.status === 'pending' ? '<input type="checkbox" class="leaveCb" value="'+l.id+'" style="width:auto;height:auto">' : '';
     if (l.status === 'pending') {
@@ -983,7 +983,7 @@ router.get('/missed', auth, async function(_, res) {
   }
   for (var i = 0; i < records.length; i++) {
     var r = records[i];
-    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getMpApprover(r) : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
+    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getMpApprover(r) : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' + (r.approver_name ? ' <small style="color:#27ae60">' + h(r.approver_name) + '</small>' : '') : '<span class="badge badge-out">已駁回</span>' + (r.approver_name ? ' <small style="color:#e74c3c">' + h(r.approver_name) + '</small>' : '');
     var ah = '';
     if (r.status === 'pending') ah = '<button onclick="approveMp('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectMp('+r.id+')" class="btn-sm btn-red">駁回</button>';
     rows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.punch_type==='check_in'?'🔵補上班':'🔴補下班')+'</td><td>'+h(r.punch_date)+' '+h(r.punch_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(r.reject_reason)+'</small>':'')+'</td><td>'+ah+'</td></tr>';
@@ -1031,7 +1031,7 @@ router.get('/overtime', auth, async function(_, res) {
       var sd = typeof r.start_time === 'string' ? r.start_time : '';
       if (sd.indexOf(filterMonth) !== 0) continue;
     }
-    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getOtApprover(r) : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' : '<span class="badge badge-out">已駁回</span>';
+    var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getOtApprover(r) : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' + (r.approver_name ? ' <small style="color:#27ae60">' + h(r.approver_name) + '</small>' : '') : '<span class="badge badge-out">已駁回</span>' + (r.approver_name ? ' <small style="color:#e74c3c">' + h(r.approver_name) + '</small>' : '');
     var ah = '';
     var otCb = r.status === 'pending' ? '<input type="checkbox" class="otCb" value="'+r.id+'" style="width:auto;height:auto">' : '';
     if (r.status === 'pending') ah = '<button onclick="approveOt('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectOt('+r.id+')" class="btn-sm btn-red">駁回</button>';

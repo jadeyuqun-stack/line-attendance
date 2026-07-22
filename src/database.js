@@ -407,8 +407,8 @@ async function getEmployeeLeaveRequests(employeeId, status, limit = 100) {
 }
 
 async function getLeaveRequests(status, limit = 100) {
-  let sql = `SELECT lr.*, e.name, e.employee_no, e.department FROM leave_requests lr
-    JOIN employees e ON lr.employee_id=e.id WHERE 1=1`;
+  let sql = `SELECT lr.*, e.name, e.employee_no, e.department, ae.name AS approver_name, ae.employee_no AS approver_no FROM leave_requests lr
+    JOIN employees e ON lr.employee_id=e.id LEFT JOIN employees ae ON lr.approved_by=ae.id WHERE 1=1`;
   const p = [];
   let i = 1;
   if (status) { sql += ` AND lr.status=$${i++}`; p.push(status); }
@@ -518,7 +518,7 @@ async function createMissedPunch(empId, punchType, punchDate, punchTime, reason)
 }
 async function getMissedPunches(status, limit) {
   limit = limit || 200;
-  var sql = 'SELECT mp.*, e.name, e.employee_no, e.department FROM missed_punch mp JOIN employees e ON mp.employee_id=e.id WHERE 1=1';
+  var sql = 'SELECT mp.*, e.name, e.employee_no, e.department, ae.name AS approver_name, ae.employee_no AS approver_no FROM missed_punch mp JOIN employees e ON mp.employee_id=e.id LEFT JOIN employees ae ON mp.approved_by=ae.id WHERE 1=1';
   var p = [], i = 1;
   if (status) { sql += ' AND mp.status=$' + i++; p.push(status); }
   sql += ' ORDER BY mp.created_at DESC LIMIT $' + i; p.push(limit);
@@ -592,7 +592,7 @@ async function createOvertimeRequest(empId, startTime, endTime, reason) {
 }
 async function getOvertimeRequests(status, limit) {
   limit = limit || 200;
-  var sql = 'SELECT ot.*, e.name, e.employee_no, e.department FROM overtime_requests ot JOIN employees e ON ot.employee_id=e.id WHERE 1=1';
+  var sql = 'SELECT ot.*, e.name, e.employee_no, e.department, ae.name AS approver_name, ae.employee_no AS approver_no FROM overtime_requests ot JOIN employees e ON ot.employee_id=e.id LEFT JOIN employees ae ON ot.approved_by=ae.id WHERE 1=1';
   var p = [], i = 1;
   if (status) { sql += ' AND ot.status=$' + i++; p.push(status); }
   sql += ' ORDER BY ot.created_at DESC LIMIT $' + i; p.push(limit);

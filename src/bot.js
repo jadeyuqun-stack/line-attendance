@@ -635,12 +635,23 @@ if (_prefix) _msg.unshift({ type: "text", text: _prefix });
 
 async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
   if (uid) states.delete(uid);
-  if (!emp.can_approve) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ 無簽核權限')] : [withMenu('❌ 無簽核權限')]);
+  // 簽核人員（即使沒有 can_approve）也可用批次核准，限指定員工
+  var isApproverRole = emp.role === '簽核人員' || emp.role === '經理' || emp.role === '老闆';
+  if (!emp.can_approve && !isApproverRole) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ 無簽核權限')] : [withMenu('❌ 無簽核權限')]);
   var leaves = await db.getLeaveRequests('pending', 200);
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
+  // 非 can_approve 的簽核人員：只簽自己指定的員工
+  var designatedIds = emp.can_approve ? null : (await db.getDesignatedEmployeeIds(emp.id)).map(function(d) { return d.id; });
   var lines = [];
-  function canBatch(emp2, eid, appr) { return emp2.approver_id === eid || emp2.approver2_id === eid ||  (!emp2.approver_id && !emp2.approver2_id) || (appr && appr.can_approve); }
+  function canBatch(emp2, eid, appr) {
+    if (appr && appr.can_approve) return true;
+    if (emp2.approver_id === eid || emp2.approver2_id === eid) return true;
+    if (designatedIds && designatedIds.indexOf(emp2.id) >= 0) {
+      if (!emp2.approver_id && !emp2.approver2_id) return true;
+    }
+    return false;
+  }
   for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch(e, emp.id, emp)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); } } }
   for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch(e, emp.id, emp)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); } } }
   for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && canBatch(e, emp.id, emp)) { var _r3 = await db.updateMissedPunchStatus(mps[i].id, 'approved', emp.id); if (_r3) { lines.push('📝 ' + e.name + ' ' + (mps[i].punch_type === 'check_in' ? '補上班' : '補下班') + ' ' + mps[i].punch_date); } } }
@@ -650,12 +661,21 @@ async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
 
 async function batchRejectAll(emp, client, replyToken, _prefix, uid) {
   if (uid) states.delete(uid);
-  if (!emp.can_approve) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ 無簽核權限')] : [withMenu('❌ 無簽核權限')]);
+  var isApproverRole2 = emp.role === '簽核人員' || emp.role === '經理' || emp.role === '老闆';
+  if (!emp.can_approve && !isApproverRole2) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ 無簽核權限')] : [withMenu('❌ 無簽核權限')]);
   var leaves = await db.getLeaveRequests('pending', 200);
   var ots = await db.getOvertimeRequests('pending', 200);
   var mps = await db.getMissedPunches('pending', 200);
+  var designatedIds2 = emp.can_approve ? null : (await db.getDesignatedEmployeeIds(emp.id)).map(function(d) { return d.id; });
   var lCount = 0, otCount = 0, mpCount = 0;
-  function canBatch2(emp2, eid, appr) { return emp2.approver_id === eid || emp2.approver2_id === eid ||  (!emp2.approver_id && !emp2.approver2_id) || (appr && appr.can_approve); }
+  function canBatch2(emp2, eid, appr) {
+    if (appr && appr.can_approve) return true;
+    if (emp2.approver_id === eid || emp2.approver2_id === eid) return true;
+    if (designatedIds2 && designatedIds2.indexOf(emp2.id) >= 0) {
+      if (!emp2.approver_id && !emp2.approver2_id) return true;
+    }
+    return false;
+  }
   for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch2(e, emp.id, emp)) { await db.updateLeaveStatus(leaves[i].id, 'rejected', emp.id); lCount++; } }
   for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch2(e, emp.id, emp)) { await db.updateOvertimeStatus(ots[i].id, 'rejected', emp.id); otCount++; } }
   for (var i = 0; i < mps.length; i++) { var e = await db.getEmployeeById(mps[i].employee_id); if (e && canBatch2(e, emp.id, emp)) { await db.updateMissedPunchStatus(mps[i].id, 'rejected', emp.id); mpCount++; } }

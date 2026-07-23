@@ -643,8 +643,10 @@ async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
   var mps = await db.getMissedPunches('pending', 200);
   var lines = [];
   function canBatch(emp2, eid, appr, level) {
-    // can_approve 全體簽核，其他只認該階指定簽核人
-    if (appr && appr.can_approve) return true;
+    // can_approve 可簽任意層級但限指定員工；一般簽核人員只認該階
+    if (appr && appr.can_approve) {
+      return emp2.approver_id === eid || emp2.approver2_id === eid;
+    }
     var col = (level || 1) === 1 ? 'approver_id' : 'approver2_id';
     return emp2[col] === eid;
   }
@@ -664,8 +666,10 @@ async function batchRejectAll(emp, client, replyToken, _prefix, uid) {
   var mps = await db.getMissedPunches('pending', 200);
   var lCount = 0, otCount = 0, mpCount = 0;
   function canBatch2(emp2, eid, appr, level) {
-    // can_approve 全體簽核，其他只認該階指定簽核人
-    if (appr && appr.can_approve) return true;
+    // can_approve 可簽任意層級但限指定員工；一般簽核人員只認該階
+    if (appr && appr.can_approve) {
+      return emp2.approver_id === eid || emp2.approver2_id === eid;
+    }
     var col = (level || 1) === 1 ? 'approver_id' : 'approver2_id';
     return emp2[col] === eid;
   }
@@ -1324,7 +1328,9 @@ async function handlePostback(postback, uid, client, replyToken) {
     var levelCol = currentLevel === 1 ? 'approver_id' : 'approver2_id';
     var designatedApprover = leaveEmp ? leaveEmp[levelCol] : null;
     var isDesignated = designatedApprover && designatedApprover === approver.id;
-    if (!approver.can_approve && !isDesignated) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+    // can_approve：可簽任意層級但限指定員工
+    var isAnyLevelDes = leaveEmp && (leaveEmp.approver_id===approver.id || leaveEmp.approver2_id===approver.id);
+    if (!isDesignated && !(approver.can_approve && isAnyLevelDes)) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
     if (leave.status !== 'pending') return client.replyMessage(replyToken, [withMenu('申請已處理過')]);
 
     if (data.indexOf('leave_approve_') === 0) {
@@ -1355,7 +1361,9 @@ async function handlePostback(postback, uid, client, replyToken) {
     var otLevelCol = otCurrentLevel === 1 ? 'approver_id' : 'approver2_id';
     var otDesignatedApprover = otEmp ? otEmp[otLevelCol] : null;
     var otDesignated = otDesignatedApprover && otDesignatedApprover === otApprover.id;
-    if (!otApprover.can_approve && !otDesignated) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+    // can_approve：可簽任意層級但限指定員工
+    var otAnyLevelDes = otEmp && (otEmp.approver_id===otApprover.id || otEmp.approver2_id===otApprover.id);
+    if (!otDesignated && !(otApprover.can_approve && otAnyLevelDes)) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
     if (ot.status !== 'pending') return client.replyMessage(replyToken, [withMenu('已處理過')]);
 
     if (data.indexOf('ot_approve_') === 0) {

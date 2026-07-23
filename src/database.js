@@ -429,9 +429,15 @@ async function updateLeaveStatus(id, status, approvedBy, rejectReason) {
   var isDesignated = designatedApprover && designatedApprover === approvedBy;
   var _apprRecord = approvedBy ? await getEmployeeById(approvedBy) : null;
   var _canApprAll = _apprRecord && _apprRecord.can_approve;
-  if (approvedBy !== null && !_canApprAll) {
-    if (!designatedApprover || !isDesignated) {
+  if (approvedBy !== null) {
+    // 檢查是否為指定簽核人（can_approve 可簽任意層級但限指定員工）
+    var _anyDesignated = _canApprAll && empRecord && (empRecord.approver_id===approvedBy || empRecord.approver2_id===approvedBy);
+    if (!_canApprAll && (!designatedApprover || !isDesignated)) {
       console.log('[DB] 跳過請假：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
+      return { advanced: false, notYourTurn: true };
+    }
+    if (_canApprAll && !_anyDesignated) {
+      console.log('[DB] 跳過請假：' + approvedBy + ' 有 can_approve 但非該員工 L1/L2 指定簽核人');
       return { advanced: false, notYourTurn: true };
     }
   }
@@ -618,9 +624,14 @@ async function updateOvertimeStatus(id, status, approvedBy, rejectReason) {
   var isDesignated = designatedApprover && designatedApprover === approvedBy;
   var _apprRecord2 = approvedBy ? await getEmployeeById(approvedBy) : null;
   var _canApprAll2 = _apprRecord2 && _apprRecord2.can_approve;
-  if (approvedBy !== null && !_canApprAll2) {
-    if (!designatedApprover || !isDesignated) {
+  if (approvedBy !== null) {
+    var _anyDesignated2 = _canApprAll2 && empRecord && (empRecord.approver_id===approvedBy || empRecord.approver2_id===approvedBy);
+    if (!_canApprAll2 && (!designatedApprover || !isDesignated)) {
       console.log('[DB] 跳過加班：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
+      return { advanced: false, notYourTurn: true };
+    }
+    if (_canApprAll2 && !_anyDesignated2) {
+      console.log('[DB] 跳過加班：' + approvedBy + ' 有 can_approve 但非該員工 L1/L2 指定簽核人');
       return { advanced: false, notYourTurn: true };
     }
   }

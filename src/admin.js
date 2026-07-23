@@ -293,7 +293,19 @@ router.get('/records', auth, async (req, res) => {
       var ciDateStr = d;
       var isHoliday2 = ciDay === 0 || ciDay === 6;
       if (!isHoliday2 && _holidaysArr.indexOf(ciDateStr) !== -1) isHoliday2 = true;
-      d2.status = (!isHoliday2 && ciH*60+ciM > _startH*60+_buf) ? '⚠️考勤異常' : '✅出勤';
+      // 遲到判斷
+      var isLate = !isHoliday2 && ciH*60+ciM > _startH*60+_buf;
+      // 提早下班判斷（早於 17:30 且非假日）
+      var hasCheckOut = !!d2.checkOut;
+      var isEarlyLeave = false;
+      if (hasCheckOut && !isHoliday2) {
+        var coDt = new Date(d2.checkOut.check_time);
+        var coH = coDt.getHours(), coM = coDt.getMinutes();
+        if (coH*60+coM < 1050) isEarlyLeave = true; // 17:30 = 1050 min
+      }
+      if (isLate || isEarlyLeave) d2.status = '⚠️考勤異常';
+      else if (!hasCheckOut) d2.status = '⚠️未下班';
+      else d2.status = '✅出勤';
     } else {
       // 檢查當天是否有核准的請假（使用 map 加速）
       var _leaveIds = leaveMap[e.id] || [];
@@ -340,6 +352,7 @@ router.get('/records', auth, async (req, res) => {
     }
     var statusBadge = d2.status === '❌曠職' ? '<span class="badge badge-out">❌曠職</span>'
       : d2.status === '⚠️考勤異常' ? '<span class="badge badge-warn">⚠️考勤異常</span>'
+      : d2.status === '⚠️未下班' ? '<span class="badge badge-warn">⚠️未下班</span>'
       : d2.status === '🏖請假' ? '<span class="badge badge-info">🏖' + (d2.leaveLabel || '請假') + '</span>'
       : d2.status === '📝已補卡' ? '<span class="badge badge-in">📝已補卡</span>'
       : '<span class="badge badge-in">✅出勤</span>';

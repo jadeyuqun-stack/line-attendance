@@ -933,7 +933,51 @@ async function doQuery(emp, client, replyToken, _prefix) {
       lines.push('  ' + noOutRecords[nr].date);
     }
   }
-  if (lateRecords.length === 0 && earlyLeaveRecords.length === 0 && noOutRecords.length === 0) {
+
+  // 曠職判斷（無打卡且無請假的工作日）
+  var _checkinDates = {};
+  for (var _cdi = 0; _cdi < monthCheckins.length; _cdi++) {
+    var _cd = monthCheckins[_cdi];
+    if (_cd.employee_id !== emp.id) continue;
+    var _cdt = new Date(_cd.check_time);
+    var _cds = _cdt.getFullYear() + '-' + String(_cdt.getMonth()+1).padStart(2,'0') + '-' + String(_cdt.getDate()).padStart(2,'0');
+    _checkinDates[_cds] = true;
+  }
+  var _leaveDates = {};
+  for (var _ldi = 0; _ldi < allLeaves.length; _ldi++) {
+    var _l = allLeaves[_ldi];
+    if (_l.employee_id !== emp.id || _l.status !== 'approved') continue;
+    var _ls = typeof _l.start_date === 'string' ? _l.start_date.substring(0,10) : '';
+    var _le = typeof _l.end_date === 'string' ? _l.end_date.substring(0,10) : _ls;
+    if (!_ls) continue;
+    var _c = new Date(_ls), _e = new Date(_le);
+    while (_c <= _e) {
+      var _ds = _c.getFullYear() + '-' + String(_c.getMonth()+1).padStart(2,'0') + '-' + String(_c.getDate()).padStart(2,'0');
+      _leaveDates[_ds] = true;
+      _c.setDate(_c.getDate() + 1);
+    }
+  }
+  var absentRecords = [];
+  var _cur = new Date(monthStart);
+  var _end = new Date(todayStr);
+  while (_cur <= _end) {
+    var _ds2 = _cur.getFullYear() + '-' + String(_cur.getMonth()+1).padStart(2,'0') + '-' + String(_cur.getDate()).padStart(2,'0');
+    var _dow2 = _cur.getDay();
+    _cur.setDate(_cur.getDate() + 1);
+    if (_dow2 === 0 || _dow2 === 6) continue;
+    if (await isHoliday(_ds2)) continue;
+    if (_checkinDates[_ds2]) continue;
+    if (_leaveDates[_ds2]) continue;
+    var _lbl = String(new Date(_ds2).getMonth()+1).padStart(2,'0') + '-' + String(new Date(_ds2).getDate()).padStart(2,'0');
+    absentRecords.push(_lbl);
+  }
+  if (absentRecords.length > 0) {
+    lines.push('\n❌ 曠職（' + absentRecords.length + ' 次）：');
+    for (var ar = 0; ar < absentRecords.length; ar++) {
+      lines.push('  ' + absentRecords[ar]);
+    }
+  }
+  if (lateRecords.length === 0 && earlyLeaveRecords.length === 0 && noOutRecords.length === 0 && absentRecords.length === 0) {
     lines.push('\n⚠️ 考勤異常：無');
   }
 

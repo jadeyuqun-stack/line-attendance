@@ -314,8 +314,15 @@ async function recordCheckin(empId, type, loc, inRange, dist) {
   );
   return { id: rows[0].id, check_time: rows[0].check_time, type };
 }
+async function getCheckinById(id) {
+  var { rows } = await pool.query('SELECT * FROM checkins WHERE id=$1', [id]);
+  return rows[0] || null;
+}
 async function deleteCheckin(id) {
   await pool.query('DELETE FROM checkins WHERE id=$1', [id]);
+}
+async function revertMissedPunch(id) {
+  await pool.query("UPDATE missed_punch SET status='pending', approved_by=NULL, approved_at=NULL WHERE id=$1", [id]);
 }
 async function updateCheckinTime(id, newTime) {
   // newTime 格式：'HH:MM'，保留原有日期，只改時間
@@ -1129,12 +1136,12 @@ module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
   listActiveEmployees, listAttendanceEmployees, getDesignatedEmployeeIds, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, hardDeleteEmployee, updateEmployee,
-  recordCheckin, deleteCheckin, updateCheckinTime, getTodayCheckins, queryCheckins, getCheckinSummary, getTodaySummary,
+  recordCheckin, getCheckinById, deleteCheckin, updateCheckinTime, getTodayCheckins, queryCheckins, getCheckinSummary, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, deleteLeaveRequest, getEmployeeById, findApprovers, setApprover, listApprovers,
   saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll, clearByDateRange,
   createOvertimeRequest, getOvertimeRequests, getOvertimeById, deleteOvertimeRequest, updateOvertimeStatus, getEmployeeOvertimeRequests,
-  createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus,
+  createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus, revertMissedPunch,
   addPendingNotification, getPendingNotifications, clearPendingNotifications,
   calcPeriodHours, calculateAnnualLeaveEntitlement, getAnnualLeaveBalance, getMarriageLeaveBalance, getFuneralLeaveBalance, getCompLeaveBalance, getAnnualLeaveChangesThisMonth,
   exportAllData, importAllData,

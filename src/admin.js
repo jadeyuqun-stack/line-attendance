@@ -165,7 +165,7 @@ router.get('/', auth, async (_, res) => {
       if (!leaveEmpIds[l.employee_id]) {
         leaveEmpIds[l.employee_id] = true;
         var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type === 'marriage' ? '婚假(陪產假)' : l.leave_type === 'funeral' ? '喪假' : l.leave_type === 'comp' ? '補休' : l.leave_type === 'other' ? '其他' : l.leave_type;
-        todayLeaves.push({ name: l.name, no: l.employee_no, dept: l.department, type: leaveLabel, start: lStart, end: lEnd });
+        var _st = (l.start_date||'').substring(11,16); var _et = (l.end_date||'').substring(11,16); todayLeaves.push({ name: l.name, no: l.employee_no, dept: l.department, type: leaveLabel, start: lStart, end: lEnd, startTime: _st, endTime: _et });
       }
     }
   }
@@ -189,6 +189,8 @@ router.get('/', auth, async (_, res) => {
   for (var lj = 0; lj < todayLeaves.length; lj++) {
     var tl = todayLeaves[lj];
     var dateRange = tl.start === tl.end ? tl.start : tl.start + ' ~ ' + tl.end;
+    var timeStr = (tl.startTime ? tl.startTime : '') + (tl.endTime && tl.endTime !== tl.startTime ? ' ~ ' + tl.endTime : '');
+    if (timeStr) dateRange += ' ' + timeStr;
     leaveRows += '<tr><td>'+h(tl.no)+'</td><td>'+h(tl.name)+'</td><td>'+h(tl.dept||'')+'</td><td>'+h(tl.type)+'</td><td>'+dateRange+'</td></tr>';
   }
   var leaveCount = todayLeaves.length;
@@ -295,13 +297,17 @@ router.get('/records', auth, async (req, res) => {
       if (!isHoliday2 && _holidaysArr.indexOf(ciDateStr) !== -1) isHoliday2 = true;
       // 遲到判斷
       var isLate = !isHoliday2 && ciH*60+ciM > _startH*60+_buf;
-      // 提早下班判斷（早於 17:30 且非假日）
+      // 提早下班判斷：淨工時（扣午休）< 8h
       var hasCheckOut = !!d2.checkOut;
       var isEarlyLeave = false;
       if (hasCheckOut && !isHoliday2) {
-        var coDt = new Date(d2.checkOut.check_time);
-        var coH = coDt.getHours(), coM = coDt.getMinutes();
-        if (coH*60+coM < 1050) isEarlyLeave = true; // 17:30 = 1050 min
+        var _ci = new Date(d2.checkIn.check_time), _co = new Date(d2.checkOut.check_time);
+        var _totalH = Math.round(Math.max(0,(_co-_ci)/3600000)*10)/10;
+        var _lunchStart = new Date(_ci); _lunchStart.setHours(12,0,0,0);
+        var _lunchEnd = new Date(_ci); _lunchEnd.setHours(13,0,0,0);
+        var _lunchOverlap = (_ci < _lunchEnd && _co > _lunchStart) ? 1 : 0;
+        var _netH = Math.round((_totalH - _lunchOverlap) * 10) / 10;
+        if (_netH < 8) isEarlyLeave = true;
       }
       if (isLate || isEarlyLeave) d2.status = '⚠️考勤異常';
       else if (!hasCheckOut) d2.status = '⚠️未下班';
@@ -792,7 +798,21 @@ router.delete('/api/checkins/clear', auth, async (_, res) => {
 });
 router.delete('/api/checkins/:id', auth, async (req, res) => {
   try {
-    await db.deleteCheckin(parseInt(req.params.id));
+    var cid = parseInt(req.params.id);
+    // 若該打卡來自補打卡核准，一併還原補打卡狀態
+    var checkin = await db.getCheckinById(cid);
+    if (checkin) {
+      var mpDate = new Date(checkin.check_time).toISOString().split('T')[0];
+      var missedRows = await db.getMissedPunches('approved', 500);
+      for (var mi = 0; mi < missedRows.length; mi++) {
+        var mp = missedRows[mi];
+        if (mp.employee_id === checkin.employee_id && mp.punch_type === checkin.type && mp.punch_date === mpDate) {
+          await db.revertMissedPunch(mp.id);
+          break;
+        }
+      }
+    }
+    await db.deleteCheckin(cid);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

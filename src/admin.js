@@ -371,7 +371,16 @@ router.get('/records', auth, async (req, res) => {
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'">'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
   // 本月考勤異常統計（含遲到/早退/未下班/曠職）
   var monthStart = new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")+"-01";
-  var monthRecords = await db.queryCheckins(null, monthStart, d, 5000, 0);
+  // 月模式：異常統計也看整個月；日模式只看當天
+  var anMonthStart, anEndDate;
+  if (month) {
+    anMonthStart = startDate;
+    anEndDate = endDate;
+  } else {
+    anMonthStart = d;
+    anEndDate = d;
+  }
+  var monthRecords = await db.queryCheckins(null, anMonthStart, anEndDate, 5000, 0);
   var startH2 = parseInt(await db.getSetting("work_start_hour") || "8");
   var buf2 = parseInt(await db.getSetting("late_buffer_minutes") || "30");
   // 建立逐日打卡對照：empId|date → { checkIn, checkOut }
@@ -405,9 +414,9 @@ router.get('/records', auth, async (req, res) => {
   for (var _mi3 = 0; _mi3 < _allMissed.length; _mi3++) {
     monthMissedMap[_allMissed[_mi3].employee_id + "|" + _allMissed[_mi3].punch_date] = true;
   }
-  // 分析每位員工每天的考勤狀態（遍歷整個月份的所有員工×工作日）
+  // 分析每位員工每天的考勤狀態（遍歷指定區間的所有員工×工作日）
   var anomalyMap = {};
-  var _curDate = new Date(monthStart), _endDate = new Date(d);
+  var _curDate = new Date(anMonthStart), _endDate = new Date(anEndDate);
   while (_curDate <= _endDate) {
     var _ds3 = _curDate.getFullYear() + "-" + String(_curDate.getMonth()+1).padStart(2,"0") + "-" + String(_curDate.getDate()).padStart(2,"0");
     var _dow3 = _curDate.getDay();
@@ -418,6 +427,8 @@ router.get('/records', auth, async (req, res) => {
     for (var _ei3 = 0; _ei3 < emps.length; _ei3++) {
       var _emp = emps[_ei3];
       var _eid = _emp.id;
+      // 員工篩選：如果有指定 eid，異常統計只看該員工
+      if (req.query.eid && parseInt(req.query.eid) !== _eid) continue;
       var _key3 = _eid + "|" + _ds3;
       var _md = monthDayMap[_key3];
       var _onLeave3 = monthLeaveMap[_key3];

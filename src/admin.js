@@ -152,24 +152,8 @@ router.get('/', auth, async (_, res) => {
     var r = recent[i];
     recentRows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.type==='check_in'?'<span class="badge badge-in">上班</span>':'<span class="badge badge-out">下班</span>')+'</td><td>'+fmt(r.check_time)+'</td><td>'+(r.in_range===false?'<span class="badge badge-warn">⚠️超出</span>':'-')+'</td></tr>';
   }
-  // 今日未打卡名單（排除請假人員）
-  var attendanceEmps = await db.listAttendanceEmployees();
-  var todayCheckins = await db.queryCheckins(null, todayStr, todayStr, 500, 0);
-  var checkedInIds = {};
-  for (var ci = 0; ci < todayCheckins.length; ci++) {
-    if (todayCheckins[ci].type === 'check_in') checkedInIds[todayCheckins[ci].employee_id] = true;
-  }
-  var notCheckedInRows = '';
-  var notCheckedCount = 0;
-  for (var ei = 0; ei < attendanceEmps.length; ei++) {
-    var emp = attendanceEmps[ei];
-    if (!checkedInIds[emp.id] && !leaveEmpIds[emp.id]) {
-      notCheckedCount++;
-      notCheckedInRows += '<tr><td>'+h(emp.employee_no)+'</td><td>'+h(emp.name)+'</td><td>'+h(emp.department||'')+'</td></tr>';
-    }
-  }
-  // 今日請假狀況
   var todayStr = new Date().toISOString().split('T')[0];
+  // 今日請假狀況
   var allLeaves = await db.getLeaveRequests('approved', 500);
   var todayLeaves = [];
   var leaveEmpIds = {};
@@ -183,6 +167,22 @@ router.get('/', auth, async (_, res) => {
         var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type === 'marriage' ? '婚假(陪產假)' : l.leave_type === 'funeral' ? '喪假' : l.leave_type === 'comp' ? '補休' : l.leave_type === 'other' ? '其他' : l.leave_type;
         todayLeaves.push({ name: l.name, no: l.employee_no, dept: l.department, type: leaveLabel, start: lStart, end: lEnd });
       }
+    }
+  }
+  // 今日未打卡名單（排除已打卡及請假人員）
+  var attendanceEmps = await db.listAttendanceEmployees();
+  var todayCheckins = await db.queryCheckins(null, todayStr, todayStr, 500, 0);
+  var checkedInIds = {};
+  for (var ci = 0; ci < todayCheckins.length; ci++) {
+    if (todayCheckins[ci].type === 'check_in') checkedInIds[todayCheckins[ci].employee_id] = true;
+  }
+  var notCheckedInRows = '';
+  var notCheckedCount = 0;
+  for (var ei = 0; ei < attendanceEmps.length; ei++) {
+    var emp = attendanceEmps[ei];
+    if (!checkedInIds[emp.id] && !leaveEmpIds[emp.id]) {
+      notCheckedCount++;
+      notCheckedInRows += '<tr><td>'+h(emp.employee_no)+'</td><td>'+h(emp.name)+'</td><td>'+h(emp.department||'')+'</td></tr>';
     }
   }
   var leaveRows = '';

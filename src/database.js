@@ -543,6 +543,9 @@ async function getMissedPunchById(id) {
   var { rows } = await pool.query('SELECT * FROM missed_punch WHERE id=$1', [id]);
   return rows[0] || null;
 }
+async function deleteMissedPunch(id) {
+  await pool.query("DELETE FROM missed_punch WHERE id=$1", [id]);
+}
 async function updateMissedPunchStatus(id, status, approvedBy, rejectReason) {
   if (approvedBy) {
     await pool.query("UPDATE missed_punch SET status=$1, approved_by=$2, approved_at=NOW(), reject_reason=$4 WHERE id=$3", [status, approvedBy, id, rejectReason || '']);
@@ -1141,7 +1144,7 @@ module.exports = {
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, deleteLeaveRequest, getEmployeeById, findApprovers, setApprover, listApprovers,
   saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll, clearByDateRange,
   createOvertimeRequest, getOvertimeRequests, getOvertimeById, deleteOvertimeRequest, updateOvertimeStatus, getEmployeeOvertimeRequests,
-  createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus, revertMissedPunch,
+  createMissedPunch, getMissedPunches, getMissedPunchById, updateMissedPunchStatus, revertMissedPunch, deleteMissedPunch,
   addPendingNotification, getPendingNotifications, clearPendingNotifications,
   calcPeriodHours, calculateAnnualLeaveEntitlement, getAnnualLeaveBalance, getMarriageLeaveBalance, getFuneralLeaveBalance, getCompLeaveBalance, getAnnualLeaveChangesThisMonth,
   exportAllData, importAllData,

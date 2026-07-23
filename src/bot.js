@@ -2192,6 +2192,102 @@ async function queryMonthAttendance(emp, client, replyToken) {
     empLateMap[c.employee_id].count++;
   }
 
+  // 取得下班時間設定（用於未下班判斷）
+  var workEndH = parseInt(await db.getSetting('work_end_hour') || '17');
+  var missedPunches = await db.getMissedPunches('approved', 500);
+
+  // 建立逐日打卡對照（employee_id|date → {checkIn, checkOut}）
+  var empDayMap = {};
+  for (var di = 0; di < allCheckins.length; di++) {
+    var dc = allCheckins[di];
+    var dct = new Date(dc.check_time);
+    var dds = dct.getFullYear() + '-' + String(dct.getMonth()+1).padStart(2,'0') + '-' + String(dct.getDate()).padStart(2,'0');
+    var dk = dc.employee_id + '|' + dds;
+    if (!empDayMap[dk]) empDayMap[dk] = { checkIn: null, checkOut: null };
+    if (dc.type === 'check_in') empDayMap[dk].checkIn = dc;
+    else if (dc.type === 'check_out') empDayMap[dk].checkOut = dc;
+  }
+
+  // 建立請假逐日對照（employee_id|date → true）
+  var leaveDayMap = {};
+  var missedDayMap = {};
+  for (var li2 = 0; li2 < allLeaves.length; li2++) {
+    var lv = allLeaves[li2];
+    if (Object.keys(designatedIds).length > 0 && !designatedIds[lv.employee_id]) continue;
+    var _ls2 = typeof lv.start_date === 'string' ? lv.start_date.substring(0,10) : '';
+    var _le2 = typeof lv.end_date === 'string' ? lv.end_date.substring(0,10) : _ls2;
+    if (!_ls2) continue;
+    var _c = new Date(_ls2), _e = new Date(_le2);
+    while (_c <= _e) {
+      var _ds = _c.getFullYear() + '-' + String(_c.getMonth()+1).padStart(2,'0') + '-' + String(_c.getDate()).padStart(2,'0');
+      leaveDayMap[lv.employee_id + '|' + _ds] = true;
+      _c.setDate(_c.getDate() + 1);
+    }
+  }
+  // 補打卡逐日對照
+  for (var mpi = 0; mpi < missedPunches.length; mpi++) {
+    var mp = missedPunches[mpi];
+    if (!mp.punch_date) continue;
+    missedDayMap[mp.employee_id + '|' + mp.punch_date] = mp.punch_type;
+  }
+
+  // 分析每位員工每天考勤（提早下班、未下班、曠職）
+  var empEarlyMap = {};
+  var empNoOutMap = {};
+  var empAbsentMap = {};
+  var workEndMin = workEndH * 60;
+  var _cur = new Date(monthStart);
+  var _today = new Date(today);
+  while (_cur <= _today) {
+    var _ds = _cur.getFullYear() + '-' + String(_cur.getMonth()+1).padStart(2,'0') + '-' + String(_cur.getDate()).padStart(2,'0');
+    var _dow = _cur.getDay();
+    _cur.setDate(_cur.getDate() + 1);
+    if (_dow === 0 || _dow === 6 || (await isHoliday(_ds))) continue;
+
+    for (var ai2 = 0; ai2 < allActive.length; ai2++) {
+      var ae = allActive[ai2];
+      if (Object.keys(designatedIds).length > 0 && !designatedIds[ae.id]) continue;
+      if (leaveDayMap[ae.id + '|' + _ds]) continue;
+
+      var dd = empDayMap[ae.id + '|' + _ds];
+      var _label = String(new Date(_ds).getMonth()+1).padStart(2,'0') + '/' + String(new Date(_ds).getDate()).padStart(2,'0');
+
+      // 曠職：無打卡
+      if (!dd || !dd.checkIn) {
+        if (!empAbsentMap[ae.id]) empAbsentMap[ae.id] = { name: ae.name, no: ae.employee_no, records: [], count: 0 };
+        empAbsentMap[ae.id].records.push(_label);
+        empAbsentMap[ae.id].count++;
+        continue;
+      }
+
+      // 提早下班（有打卡且有下班，淨工時 < 8h）
+      if (dd.checkOut) {
+        var ci4 = new Date(dd.checkIn.check_time);
+        var co4 = new Date(dd.checkOut.check_time);
+        var totalH4 = Math.round((co4 - ci4) / 3600000 * 10) / 10;
+        if (totalH4 > 0) {
+          var ls4 = new Date(ci4); ls4.setHours(12, 0, 0, 0);
+          var le4 = new Date(ci4); le4.setHours(13, 0, 0, 0);
+          var netH4 = (ci4 < le4 && co4 > ls4) ? Math.round((totalH4 - 1) * 10) / 10 : totalH4;
+          if (netH4 < 8) {
+            if (!empEarlyMap[ae.id]) empEarlyMap[ae.id] = { name: ae.name, no: ae.employee_no, records: [], count: 0 };
+            empEarlyMap[ae.id].records.push({ date: _label, netH: netH4 });
+            empEarlyMap[ae.id].count++;
+          }
+        }
+      } else {
+        // 未下班（有上班無下班，已過下班時間且無已核准補下班打卡）
+        var nowH = new Date();
+        var nowMin5 = nowH.getHours() * 60 + nowH.getMinutes();
+        if (nowMin5 >= workEndMin && missedDayMap[ae.id + '|' + _ds] !== 'check_out') {
+          if (!empNoOutMap[ae.id]) empNoOutMap[ae.id] = { name: ae.name, no: ae.employee_no, records: [], count: 0 };
+          empNoOutMap[ae.id].records.push(_label);
+          empNoOutMap[ae.id].count++;
+        }
+      }
+    }
+  }
+
   // 本月請假彙整（1號～月底）
   var empLeaveMap = {};
   for (var li = 0; li < allLeaves.length; li++) {
@@ -2260,7 +2356,7 @@ async function queryMonthAttendance(emp, client, replyToken) {
     else todayEmpMap[tc.employee_id].checkOut = tc;
   }
 
-  var checkedInCount = 0, lateTodayCount = 0, absentCount = 0;
+  var checkedInCount = 0, lateTodayCount = 0, absentCount = 0, earlyTodayCount = 0, noOutTodayCount = 0;
   var lateTodayNames = [], checkedInNames = [], absentNames = [], leaveTodayNames = [];
 
   var leaveTodayMap = {};
@@ -2299,9 +2395,29 @@ async function queryMonthAttendance(emp, client, replyToken) {
           lateTodayNames.push(ae.employee_no + ' ' + ae.name + '（' + String(ciTime.getHours()).padStart(2,'0') + ':' + String(ciTime.getMinutes()).padStart(2,'0') + '）');
         }
       }
-    } else if (!onLeaveToday) {
-      absentCount++;
-      absentNames.push(ae.employee_no + ' ' + ae.name);
+
+	      // 今日提早下班（不限於遲到）
+	      if (tm && tm.checkOut) {
+	        var _co5 = new Date(tm.checkOut.check_time);
+	        var _ci5 = new Date(tm.checkIn.check_time);
+	        var _th5 = Math.round((_co5 - _ci5) / 3600000 * 10) / 10;
+	        var _ls5 = new Date(_ci5); _ls5.setHours(12, 0, 0, 0);
+	        var _le5 = new Date(_ci5); _le5.setHours(13, 0, 0, 0);
+	        var _nh5 = (_ci5 < _le5 && _co5 > _ls5) ? Math.round((_th5 - 1) * 10) / 10 : _th5;
+	        if (_nh5 < 8 && !onLeaveToday) {
+	          earlyTodayCount++;
+	        }
+	      }
+	      // 今日未下班（不限於遲到）
+	      if (tm && tm.checkIn && !tm.checkOut && !onLeaveToday) {
+	        var _nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+	        if (_nowMin >= workEndMin && missedDayMap[ae.id + '|' + today] !== 'check_out') {
+	          noOutTodayCount++;
+	        }
+	      }
+	    } else if (!onLeaveToday) {
+	      absentCount++;
+	      absentNames.push(ae.employee_no + ' ' + ae.name);(ae.employee_no + ' ' + ae.name);
     }
   }
 
@@ -2319,6 +2435,12 @@ async function queryMonthAttendance(emp, client, replyToken) {
     lines.push('  ❌ 未打卡 ' + absentCount + ' 人：' + absentNames.join('、'));
   } else {
     lines.push('  ❌ 未打卡：0 人');
+  }
+  if (earlyTodayCount > 0) {
+    lines.push('  🔴 提早下班 ' + earlyTodayCount + ' 人');
+  }
+  if (noOutTodayCount > 0) {
+    lines.push('  🟡 未下班 ' + noOutTodayCount + ' 人');
   }
   if (lateTodayCount > 0) {
     lines.push('  ⚠️ 考勤異常 ' + lateTodayCount + ' 人：' + lateTodayNames.join('、'));
@@ -2339,6 +2461,58 @@ async function queryMonthAttendance(emp, client, replyToken) {
       }
     }
     if (totalLate > 0) lines.push('  📊 考勤異常合計：' + totalLate + ' 次');
+  }
+
+  // 提早下班累計
+  var earlyKeys = Object.keys(empEarlyMap);
+  if (earlyKeys.length > 0) {
+    earlyKeys.sort(function(a, b) { return (empEarlyMap[a].no || '').localeCompare(empEarlyMap[b].no || ''); });
+    lines.push('\n🔴 提早下班累計：');
+    var totalEarly = 0;
+    for (var ek = 0; ek < earlyKeys.length; ek++) {
+      var einfo = empEarlyMap[earlyKeys[ek]];
+      totalEarly += einfo.records.length;
+      lines.push('  ' + einfo.name + '（' + einfo.no + '） 提早下班 ' + einfo.records.length + ' 次');
+      for (var er = 0; er < einfo.records.length; er++) {
+        var erec = einfo.records[er];
+        lines.push('      ' + erec.date + ' 僅 ' + erec.netH + 'h');
+      }
+    }
+    if (totalEarly > 0) lines.push('  📊 提早下班合計：' + totalEarly + ' 次');
+  }
+
+  // 未下班累計
+  var noOutKeys = Object.keys(empNoOutMap);
+  if (noOutKeys.length > 0) {
+    noOutKeys.sort(function(a, b) { return (empNoOutMap[a].no || '').localeCompare(empNoOutMap[b].no || ''); });
+    lines.push('\n🟡 未下班累計：');
+    var totalNoOut = 0;
+    for (var nk = 0; nk < noOutKeys.length; nk++) {
+      var ninfo = empNoOutMap[noOutKeys[nk]];
+      totalNoOut += ninfo.records.length;
+      lines.push('  ' + ninfo.name + '（' + ninfo.no + '） 未下班 ' + ninfo.records.length + ' 次');
+      for (var nr = 0; nr < ninfo.records.length; nr++) {
+        lines.push('      ' + ninfo.records[nr]);
+      }
+    }
+    if (totalNoOut > 0) lines.push('  📊 未下班合計：' + totalNoOut + ' 次');
+  }
+
+  // 曠職累計
+  var absentKeys = Object.keys(empAbsentMap);
+  if (absentKeys.length > 0) {
+    absentKeys.sort(function(a, b) { return (empAbsentMap[a].no || '').localeCompare(empAbsentMap[b].no || ''); });
+    lines.push('\n❌ 曠職累計：');
+    var totalAbsent = 0;
+    for (var ak = 0; ak < absentKeys.length; ak++) {
+      var ainfo = empAbsentMap[absentKeys[ak]];
+      totalAbsent += ainfo.records.length;
+      lines.push('  ' + ainfo.name + '（' + ainfo.no + '） 曠職 ' + ainfo.records.length + ' 次');
+      for (var ar = 0; ar < ainfo.records.length; ar++) {
+        lines.push('      ' + ainfo.records[ar]);
+      }
+    }
+    if (totalAbsent > 0) lines.push('  📊 曠職合計：' + totalAbsent + ' 次');
   }
 
   if (leaveKeys.length > 0) {

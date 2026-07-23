@@ -1090,11 +1090,12 @@ router.get('/missed', auth, async function(_, res) {
     var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getMpApprover(r) : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' + (r.approver_name ? ' <small style="color:#27ae60">' + h(r.approver_name) + '</small>' : '') : '<span class="badge badge-out">已駁回</span>' + (r.approver_name ? ' <small style="color:#e74c3c">' + h(r.approver_name) + '</small>' : '');
     var ah = '';
     if (r.status === 'pending') ah = '<button onclick="approveMp('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectMp('+r.id+')" class="btn-sm btn-red">駁回</button>';
+    ah += ' <button onclick="deleteMp('+r.id+')" class="btn-sm btn-red" title="刪除">🗑</button>';
     rows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.punch_type==='check_in'?'🔵補上班':'🔴補下班')+'</td><td>'+h(r.punch_date)+' '+h(r.punch_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(r.reject_reason)+'</small>':'')+'</td><td>'+ah+'</td></tr>';
   }
   var body = '<div class="tabs"><a href="?status=" class="'+(status===''?'active':'')+'">全部</a><a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a><a href="?status=approved" class="'+(status==='approved'?'active':'')+'">✅ 已核准</a></div>';
   body += '<div class="card"><table><tr><th>編號</th><th>姓名</th><th>類型</th><th>時間</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="7">無補打卡記錄</td></tr>')+'</table></div>';
-  body += '<script>async function approveMp(id){await fetch("/admin/api/missed/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectMp(id){var reason=prompt("請輸入駁回原因：");if(reason===null)return;await fetch("/admin/api/missed/"+id+"/reject",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason})});location.reload();}</script>';
+  body += '<script>async function approveMp(id){await fetch("/admin/api/missed/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectMp(id){var reason=prompt("請輸入駁回原因：");if(reason===null)return;await fetch("/admin/api/missed/"+id+"/reject",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason})});location.reload();}async function deleteMp(id){if(!confirm("確定刪除此筆補打卡記錄？"))return;await fetch("/admin/api/missed/"+id,{method:"DELETE"});location.reload();}</script>';
   res.send(layout('補打卡管理', '補打卡', body));
 });
 router.put('/api/missed/:id/approve', auth, async function(req, res) {
@@ -1105,6 +1106,25 @@ router.put('/api/missed/:id/approve', auth, async function(req, res) {
   res.json({ success: true });
 });
 router.put('/api/missed/:id/reject', auth, express.json(), async function(req, res) { await db.updateMissedPunchStatus(parseInt(req.params.id), 'rejected', null, req.body.reason || ''); res.json({ success: true }); });
+router.delete('/api/missed/:id', auth, async function(req, res) {
+  try {
+    var mp = await db.getMissedPunchById(parseInt(req.params.id));
+    if (mp && mp.status === 'approved') {
+      // 若已核准並產生打卡記錄，一併刪除該打卡
+      var checkins = await db.queryCheckins(mp.employee_id, mp.punch_date, mp.punch_date, 10, 0);
+      for (var ci = 0; ci < checkins.length; ci++) {
+        if (checkins[ci].type === mp.punch_type) {
+          await db.deleteCheckin(checkins[ci].id);
+          break;
+        }
+      }
+    }
+    await db.deleteMissedPunch(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ===== 加班管理 =====
 router.get('/overtime', auth, async function(_, res) {

@@ -152,6 +152,22 @@ router.get('/', auth, async (_, res) => {
     var r = recent[i];
     recentRows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.type==='check_in'?'<span class="badge badge-in">上班</span>':'<span class="badge badge-out">下班</span>')+'</td><td>'+fmt(r.check_time)+'</td><td>'+(r.in_range===false?'<span class="badge badge-warn">⚠️超出</span>':'-')+'</td></tr>';
   }
+  // 今日未打卡名單（排除請假人員）
+  var attendanceEmps = await db.listAttendanceEmployees();
+  var todayCheckins = await db.queryCheckins(null, todayStr, todayStr, 500, 0);
+  var checkedInIds = {};
+  for (var ci = 0; ci < todayCheckins.length; ci++) {
+    if (todayCheckins[ci].type === 'check_in') checkedInIds[todayCheckins[ci].employee_id] = true;
+  }
+  var notCheckedInRows = '';
+  var notCheckedCount = 0;
+  for (var ei = 0; ei < attendanceEmps.length; ei++) {
+    var emp = attendanceEmps[ei];
+    if (!checkedInIds[emp.id] && !leaveEmpIds[emp.id]) {
+      notCheckedCount++;
+      notCheckedInRows += '<tr><td>'+h(emp.employee_no)+'</td><td>'+h(emp.name)+'</td><td>'+h(emp.department||'')+'</td></tr>';
+    }
+  }
   // 今日請假狀況
   var todayStr = new Date().toISOString().split('T')[0];
   var allLeaves = await db.getLeaveRequests('approved', 500);
@@ -187,6 +203,7 @@ router.get('/', auth, async (_, res) => {
     + '<div class="stat"><div class="icon orange">🏖</div><div class="info"><div class="num">'+leaveCount+'</div><div class="lbl">請假中（'+leavePct+'%）</div></div></div>'
     + '</div>'
     + '<div class="card"><h3>今日出勤率</h3><div style="font-size:36px;font-weight:700;color:#06c755;margin:8px 0">'+pct+'%</div><div class="progress"><div style="width:'+pct+'%"></div></div><p style="color:#999;font-size:12px;margin-top:4px">'+s.checked_in+' / '+s.total_employees+' 人已打卡</p></div>'
+    + '<div class="card"><h3>❌ 今日未打卡（'+notCheckedCount+' 人）</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th></tr>'+(notCheckedInRows||'<tr><td colspan="3">✅ 全員已打卡</td></tr>')+'</table></div>'
     + '<div class="card"><h3>🏖 今日請假狀況</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期</th></tr>'+(leaveRows||'<tr><td colspan="5">🎉 今日無人請假</td></tr>')+'</table></div>'
 	    + (function(){
 	      var _alcHtml = '';

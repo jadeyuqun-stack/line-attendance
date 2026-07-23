@@ -448,7 +448,7 @@ router.get('/records', auth, async (req, res) => {
       var am = anomalyMap[anomalyKeys[k]];
       var totalAnomaly = am.lateCount + am.earlyCount + am.noOutCount + am.absentCount;
       if (totalAnomaly === 0) continue;
-      lateSummary += "<tr><td>"+h(am.no)+"</td><td>"+h(am.name)+"</td><td>"+h(am.dept||'')+"</td><td>"+am.lateCount+"</td><td>"+am.earlyCount+"</td><td>"+am.noOutCount+"</td><td>"+am.absentCount+"</td><td style="font-weight:600">"+totalAnomaly+"</td><td>"+(am.totalLateMin||0)+"分</td><td style="font-size:12px">"+(am.details||[]).join("<br>")+"</td></tr>";
+      lateSummary += '<tr><td>'+h(am.no)+'</td><td>'+h(am.name)+'</td><td>'+h(am.dept||'')+'</td><td>'+am.lateCount+'</td><td>'+am.earlyCount+'</td><td>'+am.noOutCount+'</td><td>'+am.absentCount+'</td><td style="font-weight:600">'+totalAnomaly+'</td><td>'+(am.totalLateMin||0)+'分</td><td style="font-size:12px">'+(am.details||[]).join('<br>')+'</td></tr>';
     }
     lateSummary += "</table></div>";
   }

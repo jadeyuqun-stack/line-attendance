@@ -369,48 +369,86 @@ router.get('/records', auth, async (req, res) => {
   }
   var opts = '';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'">'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
-  // 本月考勤異常統計
+  // 本月考勤異常統計（含遲到/早退/未下班/曠職）
   var monthStart = new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")+"-01";
   var monthRecords = await db.queryCheckins(null, monthStart, d, 5000, 0);
   var startH2 = parseInt(await db.getSetting("work_start_hour") || "8");
   var buf2 = parseInt(await db.getSetting("late_buffer_minutes") || "30");
-  // 先找出每天最早的非遲到打卡，該日不重複計入考勤異常
-  var dateCovered = {};
+  // 建立逐日打卡對照：empId|date → { checkIn, checkOut }
+  var monthDayMap = {};
   for (var jj = 0; jj < monthRecords.length; jj++) {
     var mc = monthRecords[jj];
-    if (mc.type !== "check_in") continue;
     var mct = new Date(mc.check_time);
-    var mcTotalMin = mct.getHours() * 60 + mct.getMinutes();
-    if (mcTotalMin <= startH2 * 60 + buf2) {
-      var mcDateStr = mct.getFullYear() + "-" + String(mct.getMonth()+1).padStart(2,"0") + "-" + String(mct.getDate()).padStart(2,"0");
-      dateCovered[mc.employee_id + "|" + mcDateStr] = true;
+    var mcDateStr = mct.getFullYear() + "-" + String(mct.getMonth()+1).padStart(2,"0") + "-" + String(mct.getDate()).padStart(2,"0");
+    var key = mc.employee_id + "|" + mcDateStr;
+    if (!monthDayMap[key]) monthDayMap[key] = { emp: { id: mc.employee_id, name: mc.name, no: mc.employee_no, dept: mc.department }, checkIn: null, checkOut: null, date: mcDateStr };
+    if (mc.type === 'check_in' && !monthDayMap[key].checkIn) monthDayMap[key].checkIn = mc;
+    if (mc.type === 'check_out') monthDayMap[key].checkOut = mc;
+  }
+  // 建立請假逐日對照
+  var monthLeaveMap = {};
+  for (var _li3 = 0; _li3 < leaves.length; _li3++) {
+    var _lv2 = leaves[_li3];
+    var _ls2 = (typeof _lv2.start_date === 'string' ? _lv2.start_date.substring(0,10) : '');
+    var _le2 = (typeof _lv2.end_date === 'string' ? _lv2.end_date.substring(0,10) : _ls2);
+    if (!_ls2) continue;
+    var _cur = new Date(_ls2), _endD = new Date(_le2);
+    while (_cur <= _endD) {
+      var _ds2 = _cur.getFullYear() + "-" + String(_cur.getMonth()+1).padStart(2,"0") + "-" + String(_cur.getDate()).padStart(2,"0");
+      monthLeaveMap[_lv2.employee_id + "|" + _ds2] = true;
+      _cur.setDate(_cur.getDate() + 1);
     }
   }
-  var lateMap = {};
-  for (var j = 0; j < monthRecords.length; j++) {
-    var mr = monthRecords[j];
-    if (mr.type !== "check_in") continue;
-    var ciH = new Date(mr.check_time).getHours(), ciM = new Date(mr.check_time).getMinutes();
-    var lateMin = ciH*60+ciM - (startH2*60+buf2);
-    if (lateMin > 0) {
-      var mrDateStr = new Date(mr.check_time);
-      var mrFullDate = mrDateStr.getFullYear() + "-" + String(mrDateStr.getMonth()+1).padStart(2,"0") + "-" + String(mrDateStr.getDate()).padStart(2,"0");
-      // 當天已有非遲到打卡（含補打卡），跳過不計
-      if (dateCovered[mr.employee_id + "|" + mrFullDate]) continue;
-      if (!lateMap[mr.employee_id]) lateMap[mr.employee_id] = { name: mr.name, no: mr.employee_no, count: 0, totalMin: 0, dates: [] };
-      lateMap[mr.employee_id].count++;
-      lateMap[mr.employee_id].totalMin += lateMin;
-      var _dLabel = String(mrDateStr.getMonth()+1).padStart(2,"0") + "/" + String(mrDateStr.getDate()).padStart(2,"0");
-      if (lateMap[mr.employee_id].dates.indexOf(_dLabel) === -1) lateMap[mr.employee_id].dates.push(_dLabel);
+  // 補打卡逐日對照
+  var monthMissedMap = {};
+  var _allMissed = await db.getMissedPunches('approved', 500);
+  for (var _mi3 = 0; _mi3 < _allMissed.length; _mi3++) {
+    monthMissedMap[_allMissed[_mi3].employee_id + "|" + _allMissed[_mi3].punch_date] = true;
+  }
+  // 分析每位員工每天的考勤狀態
+  var anomalyMap = {}; // empId → { name, no, lateCount, earlyCount, absentCount, noOutCount, details[] }
+  var allEmpDays = {}; // collect all employee-date combos
+  // 從打卡記錄收集所有員工-日期
+  var monthDayKeys = Object.keys(monthDayMap);
+  for (var dk = 0; dk < monthDayKeys.length; dk++) {
+    var md = monthDayMap[monthDayKeys[dk]];
+    var eid = md.emp.id;
+    if (!anomalyMap[eid]) anomalyMap[eid] = { name: md.emp.name, no: md.emp.no, dept: md.emp.dept, lateCount: 0, earlyCount: 0, absentCount: 0, noOutCount: 0, totalLateMin: 0, details: [] };
+    var ds = md.date;
+    var dow2 = new Date(ds).getDay();
+    var isHol2 = dow2 === 0 || dow2 === 6 || _holidaysArr.indexOf(ds) >= 0;
+    if (isHol2) continue;
+    var hasCI = !!md.checkIn, hasCO = !!md.checkOut;
+    var onLeave = monthLeaveMap[eid + "|" + ds];
+    var hasMissedDay = monthMissedMap[eid + "|" + ds];
+    if (onLeave || hasMissedDay) continue;
+    var _label = String(new Date(ds).getMonth()+1).padStart(2,"0") + "/" + String(new Date(ds).getDate()).padStart(2,"0");
+    if (!hasCI) { anomalyMap[eid].absentCount++; anomalyMap[eid].details.push(_label + " 曠職"); continue; }
+    // 遲到
+    var ciH2 = new Date(md.checkIn.check_time).getHours(), ciM2 = new Date(md.checkIn.check_time).getMinutes();
+    var lateMin = ciH2*60+ciM2 - (startH2*60+buf2);
+    if (lateMin > 0) { anomalyMap[eid].lateCount++; anomalyMap[eid].totalLateMin += lateMin; anomalyMap[eid].details.push(_label + " 遲到" + lateMin + "分"); }
+    // 早退 / 未下班
+    if (!hasCO) { anomalyMap[eid].noOutCount++; anomalyMap[eid].details.push(_label + " 未下班"); }
+    else {
+      var _ci2 = new Date(md.checkIn.check_time), _co2 = new Date(md.checkOut.check_time);
+      var _th2 = Math.round(Math.max(0,(_co2-_ci2)/3600000)*10)/10;
+      var _ls5 = new Date(_ci2); _ls5.setHours(12,0,0,0);
+      var _le5 = new Date(_ci2); _le5.setHours(13,0,0,0);
+      var _lunchH2 = (_ci2 < _le5 && _co2 > _ls5) ? 1 : 0;
+      var _netH2 = Math.round((_th2 - _lunchH2) * 10) / 10;
+      if (_netH2 < 8) { anomalyMap[eid].earlyCount++; anomalyMap[eid].details.push(_label + " 早退(" + _netH2 + "h)"); }
     }
   }
-  var lateKeys = Object.keys(lateMap);
+  var anomalyKeys = Object.keys(anomalyMap);
   var lateSummary = "";
-  if (lateKeys.length > 0) {
-    lateSummary = '<div class="card"><h3>⚠️ 本月考勤異常統計</h3><table><tr><th>編號</th><th>姓名</th><th>考勤異常次數</th><th>異常日期</th><th>累計分鐘</th></tr>';
-    for (var k = 0; k < lateKeys.length; k++) {
-      var lm = lateMap[lateKeys[k]];
-      lateSummary += "<tr><td>"+h(lm.no)+"</td><td>"+h(lm.name)+"</td><td>"+lm.count+" 次</td><td>"+(lm.dates||[]).join(", ")+"</td><td>"+lm.totalMin+" 分鐘</td></tr>";
+  if (anomalyKeys.length > 0) {
+    lateSummary = '<div class="card"><h3>⚠️ 本月考勤異常統計</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>遲到</th><th>早退</th><th>未下班</th><th>曠職</th><th>總次數</th><th>累計遲到</th><th>異常日期</th></tr>';
+    for (var k = 0; k < anomalyKeys.length; k++) {
+      var am = anomalyMap[anomalyKeys[k]];
+      var totalAnomaly = am.lateCount + am.earlyCount + am.noOutCount + am.absentCount;
+      if (totalAnomaly === 0) continue;
+      lateSummary += "<tr><td>"+h(am.no)+"</td><td>"+h(am.name)+"</td><td>"+h(am.dept||'')+"</td><td>"+am.lateCount+"</td><td>"+am.earlyCount+"</td><td>"+am.noOutCount+"</td><td>"+am.absentCount+"</td><td style="font-weight:600">"+totalAnomaly+"</td><td>"+(am.totalLateMin||0)+"分</td><td style="font-size:12px">"+(am.details||[]).join("<br>")+"</td></tr>";
     }
     lateSummary += "</table></div>";
   }

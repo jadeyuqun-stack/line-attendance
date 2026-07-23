@@ -405,39 +405,42 @@ router.get('/records', auth, async (req, res) => {
   for (var _mi3 = 0; _mi3 < _allMissed.length; _mi3++) {
     monthMissedMap[_allMissed[_mi3].employee_id + "|" + _allMissed[_mi3].punch_date] = true;
   }
-  // 分析每位員工每天的考勤狀態
-  var anomalyMap = {}; // empId → { name, no, lateCount, earlyCount, absentCount, noOutCount, details[] }
-  var allEmpDays = {}; // collect all employee-date combos
-  // 從打卡記錄收集所有員工-日期
-  var monthDayKeys = Object.keys(monthDayMap);
-  for (var dk = 0; dk < monthDayKeys.length; dk++) {
-    var md = monthDayMap[monthDayKeys[dk]];
-    var eid = md.emp.id;
-    if (!anomalyMap[eid]) anomalyMap[eid] = { name: md.emp.name, no: md.emp.no, dept: md.emp.dept, lateCount: 0, earlyCount: 0, absentCount: 0, noOutCount: 0, totalLateMin: 0, details: [] };
-    var ds = md.date;
-    var dow2 = new Date(ds).getDay();
-    var isHol2 = dow2 === 0 || dow2 === 6 || _holidaysArr.indexOf(ds) >= 0;
-    if (isHol2) continue;
-    var hasCI = !!md.checkIn, hasCO = !!md.checkOut;
-    var onLeave = monthLeaveMap[eid + "|" + ds];
-    var hasMissedDay = monthMissedMap[eid + "|" + ds];
-    if (onLeave || hasMissedDay) continue;
-    var _label = String(new Date(ds).getMonth()+1).padStart(2,"0") + "/" + String(new Date(ds).getDate()).padStart(2,"0");
-    if (!hasCI) { anomalyMap[eid].absentCount++; anomalyMap[eid].details.push(_label + " 曠職"); continue; }
-    // 遲到
-    var ciH2 = new Date(md.checkIn.check_time).getHours(), ciM2 = new Date(md.checkIn.check_time).getMinutes();
-    var lateMin = ciH2*60+ciM2 - (startH2*60+buf2);
-    if (lateMin > 0) { anomalyMap[eid].lateCount++; anomalyMap[eid].totalLateMin += lateMin; anomalyMap[eid].details.push(_label + " 遲到" + lateMin + "分"); }
-    // 早退 / 未下班
-    if (!hasCO) { anomalyMap[eid].noOutCount++; anomalyMap[eid].details.push(_label + " 未下班"); }
-    else {
-      var _ci2 = new Date(md.checkIn.check_time), _co2 = new Date(md.checkOut.check_time);
-      var _th2 = Math.round(Math.max(0,(_co2-_ci2)/3600000)*10)/10;
-      var _ls5 = new Date(_ci2); _ls5.setHours(12,0,0,0);
-      var _le5 = new Date(_ci2); _le5.setHours(13,0,0,0);
-      var _lunchH2 = (_ci2 < _le5 && _co2 > _ls5) ? 1 : 0;
-      var _netH2 = Math.round((_th2 - _lunchH2) * 10) / 10;
-      if (_netH2 < 8) { anomalyMap[eid].earlyCount++; anomalyMap[eid].details.push(_label + " 早退(" + _netH2 + "h)"); }
+  // 分析每位員工每天的考勤狀態（遍歷整個月份的所有員工×工作日）
+  var anomalyMap = {};
+  var _curDate = new Date(monthStart), _endDate = new Date(d);
+  while (_curDate <= _endDate) {
+    var _ds3 = _curDate.getFullYear() + "-" + String(_curDate.getMonth()+1).padStart(2,"0") + "-" + String(_curDate.getDate()).padStart(2,"0");
+    var _dow3 = _curDate.getDay();
+    var _isHol3 = _dow3 === 0 || _dow3 === 6 || _holidaysArr.indexOf(_ds3) >= 0;
+    _curDate.setDate(_curDate.getDate() + 1);
+    if (_isHol3) continue;
+    var _label3 = String(new Date(_ds3).getMonth()+1).padStart(2,"0") + "/" + String(new Date(_ds3).getDate()).padStart(2,"0");
+    for (var _ei3 = 0; _ei3 < emps.length; _ei3++) {
+      var _emp = emps[_ei3];
+      var _eid = _emp.id;
+      var _key3 = _eid + "|" + _ds3;
+      var _md = monthDayMap[_key3];
+      var _onLeave3 = monthLeaveMap[_key3];
+      var _hasMissed3 = monthMissedMap[_key3];
+      if (_onLeave3 || _hasMissed3) continue;
+      if (!anomalyMap[_eid]) anomalyMap[_eid] = { name: _emp.name, no: _emp.employee_no, dept: _emp.department, lateCount: 0, earlyCount: 0, absentCount: 0, noOutCount: 0, totalLateMin: 0, details: [] };
+      // 曠職：無打卡記錄
+      if (!_md || !_md.checkIn) { anomalyMap[_eid].absentCount++; anomalyMap[_eid].details.push(_label3 + " 曠職"); continue; }
+      // 遲到
+      var _ciH3 = new Date(_md.checkIn.check_time).getHours(), _ciM3 = new Date(_md.checkIn.check_time).getMinutes();
+      var _lateMin3 = _ciH3*60+_ciM3 - (startH2*60+buf2);
+      if (_lateMin3 > 0) { anomalyMap[_eid].lateCount++; anomalyMap[_eid].totalLateMin += _lateMin3; anomalyMap[_eid].details.push(_label3 + " 遲到" + _lateMin3 + "分"); }
+      // 早退 / 未下班
+      if (!_md.checkOut) { anomalyMap[_eid].noOutCount++; anomalyMap[_eid].details.push(_label3 + " 未下班"); }
+      else {
+        var _ci3 = new Date(_md.checkIn.check_time), _co3 = new Date(_md.checkOut.check_time);
+        var _th3 = Math.round(Math.max(0,(_co3-_ci3)/3600000)*10)/10;
+        var _ls6x = new Date(_ci3); _ls6x.setHours(12,0,0,0);
+        var _le6x = new Date(_ci3); _le6x.setHours(13,0,0,0);
+        var _lunchH3 = (_ci3 < _le6x && _co3 > _ls6x) ? 1 : 0;
+        var _netH3 = Math.round((_th3 - _lunchH3) * 10) / 10;
+        if (_netH3 < 8) { anomalyMap[_eid].earlyCount++; anomalyMap[_eid].details.push(_label3 + " 早退(" + _netH3 + "h)"); }
+      }
     }
   }
   var anomalyKeys = Object.keys(anomalyMap);

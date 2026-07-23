@@ -875,12 +875,65 @@ async function doQuery(emp, client, replyToken, _prefix) {
     lateRecords.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: covered });
   }
   if (lateRecords.length > 0) {
-    lines.push('\n⚠️ 考勤異常（' + lateRecords.length + ' 次）：');
+    lines.push('\n⚠️ 遲到（' + lateRecords.length + ' 次）：');
     for (var lr = 0; lr < lateRecords.length; lr++) {
       var lr2 = lateRecords[lr];
       lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分' + (lr2.covered ? '' : ' （尚未請假）'));
     }
-  } else {
+  }
+
+  // 提早下班 / 未下班判斷
+  var empDayMap = {};
+  for (var dci = 0; dci < monthCheckins.length; dci++) {
+    var dc = monthCheckins[dci];
+    if (dc.employee_id !== emp.id) continue;
+    var dct = new Date(dc.check_time);
+    var dds = dct.getFullYear() + '-' + String(dct.getMonth()+1).padStart(2,'0') + '-' + String(dct.getDate()).padStart(2,'0');
+    if (!empDayMap[dds]) empDayMap[dds] = { checkIn: null, checkOut: null };
+    if (dc.type === 'check_in') empDayMap[dds].checkIn = dc;
+    else if (dc.type === 'check_out') empDayMap[dds].checkOut = dc;
+  }
+  var earlyLeaveRecords = [];
+  var noOutRecords = [];
+  var dDateKeys = Object.keys(empDayMap);
+  var workEndH5 = parseInt(await db.getSetting('work_end_hour') || '17');
+  for (var dk = 0; dk < dDateKeys.length; dk++) {
+    var dd = empDayMap[dDateKeys[dk]];
+    if (!dd.checkIn) continue;
+    var ci5 = new Date(dd.checkIn.check_time);
+    if (dd.checkOut) {
+      var co5 = new Date(dd.checkOut.check_time);
+      var totalH5 = Math.round((co5 - ci5) / 3600000 * 10) / 10;
+      if (totalH5 > 0) {
+        var ls5 = new Date(ci5); ls5.setHours(12, 0, 0, 0);
+        var le5 = new Date(ci5); le5.setHours(13, 0, 0, 0);
+        var netH5 = (ci5 < le5 && co5 > ls5) ? Math.round((totalH5 - 1) * 10) / 10 : totalH5;
+        if (netH5 < 8) {
+          var dLabel = String(ci5.getMonth()+1).padStart(2,'0') + '-' + String(ci5.getDate()).padStart(2,'0');
+          earlyLeaveRecords.push({ date: dLabel, netH: netH5 });
+        }
+      }
+    } else {
+      var nowH6 = new Date();
+      if (nowH6.getHours() * 60 + nowH6.getMinutes() >= workEndH5 * 60) {
+        var dLabel2 = String(ci5.getMonth()+1).padStart(2,'0') + '-' + String(ci5.getDate()).padStart(2,'0');
+        noOutRecords.push({ date: dLabel2 });
+      }
+    }
+  }
+  if (earlyLeaveRecords.length > 0) {
+    lines.push('\n🔴 提早下班（' + earlyLeaveRecords.length + ' 次）：');
+    for (var er = 0; er < earlyLeaveRecords.length; er++) {
+      lines.push('  ' + earlyLeaveRecords[er].date + ' 僅 ' + earlyLeaveRecords[er].netH + 'h');
+    }
+  }
+  if (noOutRecords.length > 0) {
+    lines.push('\n🟡 未下班（' + noOutRecords.length + ' 次）：');
+    for (var nr = 0; nr < noOutRecords.length; nr++) {
+      lines.push('  ' + noOutRecords[nr].date);
+    }
+  }
+  if (lateRecords.length === 0 && earlyLeaveRecords.length === 0 && noOutRecords.length === 0) {
     lines.push('\n⚠️ 考勤異常：無');
   }
 
@@ -2232,6 +2285,7 @@ async function queryMonthAttendance(emp, client, replyToken) {
   }
 
   // 分析每位員工每天考勤（提早下班、未下班、曠職）
+  var allActive = await db.listAttendanceEmployees();
   var empEarlyMap = {};
   var empNoOutMap = {};
   var empAbsentMap = {};

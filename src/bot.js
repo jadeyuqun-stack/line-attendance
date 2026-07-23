@@ -1942,38 +1942,93 @@ async function queryTodayAttendance(emp, client, replyToken) {
     allCheckins = allCheckins.filter(function(c) { return designatedIds[c.employee_id]; });
   }
 
-  var seen = {};
-  var lateList = [];
+  // 取得已核准補打卡（用於判斷未下班）
+  var missedPunches = await db.getMissedPunches('approved', 500);
+  var workEndH = parseInt(await db.getSetting('work_end_hour') || '17');
+
+  // 建立員工今日打卡對照表（checkIn / checkOut / GPS超出）
+  var todayEmpMap = {};
   var orList = [];
   var orSeen = {};
   for (var i = 0; i < allCheckins.length; i++) {
     var c = allCheckins[i];
-    if (c.type === 'check_in' && !seen[c.employee_id]) {
-      seen[c.employee_id] = true;
-      var ct = new Date(c.check_time);
-      var totalMin = ct.getHours() * 60 + ct.getMinutes();
-      if (totalMin > lateThreshold) {
-        var checkDateStr = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
-        if (!(await isHoliday(checkDateStr))) {
-          // 檢查是否被請假覆蓋
-          var covered = false;
-          var ctMs = ct.getTime();
-          for (var cl = 0; cl < allLeaves.length; cl++) {
-            var clv = allLeaves[cl];
-            if (clv.employee_id !== c.employee_id || clv.status !== 'approved') continue;
-            if (isCoveredByLeave(ctMs, clv.start_date, clv.end_date)) {
-              covered = true; break;
-            }
-          }
-          lateList.push({ employee_id: c.employee_id, check_time: ct, late_min: totalMin - lateThreshold, covered: covered });
-        }
-      }
+    if (!todayEmpMap[c.employee_id]) {
+      todayEmpMap[c.employee_id] = { checkIn: null, checkOut: null, name: c.name, no: c.employee_no };
     }
+    if (c.type === 'check_in') todayEmpMap[c.employee_id].checkIn = c;
+    else if (c.type === 'check_out' && !todayEmpMap[c.employee_id].checkOut) todayEmpMap[c.employee_id].checkOut = c;
+
     if (c.in_range === false && !orSeen[c.employee_id]) {
       orSeen[c.employee_id] = true;
       if (Object.keys(designatedIds).length > 0 && !designatedIds[c.employee_id]) continue;
       var gEmp = await db.getEmployeeById(c.employee_id);
       if (gEmp) orList.push(gEmp);
+    }
+  }
+
+  // 今日已核准補下班打卡（已補卡就不算未下班）
+  var missedOutToday = {};
+  for (var mi = 0; mi < missedPunches.length; mi++) {
+    var mp = missedPunches[mi];
+    if (mp.punch_date === today && mp.punch_type === 'check_out') {
+      missedOutToday[mp.employee_id] = true;
+    }
+  }
+
+  var lateList = [];
+  var earlyLeaveList = [];
+  var noOutList = [];
+  var empIds = Object.keys(todayEmpMap);
+  for (var j = 0; j < empIds.length; j++) {
+    var eid = parseInt(empIds[j]);
+    if (Object.keys(designatedIds).length > 0 && !designatedIds[eid]) continue;
+    var em = todayEmpMap[eid];
+    if (!em.checkIn) continue;
+
+    var ct = new Date(em.checkIn.check_time);
+    var totalMin = ct.getHours() * 60 + ct.getMinutes();
+
+    // 遲到判斷
+    if (totalMin > lateThreshold) {
+      var checkDateStr = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
+      if (!(await isHoliday(checkDateStr))) {
+        var covered = false;
+        var ctMs = ct.getTime();
+        for (var cl = 0; cl < allLeaves.length; cl++) {
+          var clv = allLeaves[cl];
+          if (clv.employee_id !== eid || clv.status !== 'approved') continue;
+          if (isCoveredByLeave(ctMs, clv.start_date, clv.end_date)) {
+            covered = true; break;
+          }
+        }
+        lateList.push({ employee_id: eid, check_time: ct, late_min: totalMin - lateThreshold, covered: covered });
+      }
+    }
+
+    // 提早下班判斷（淨工時 < 8h，扣除午休 1h）
+    if (em.checkOut) {
+      var co = new Date(em.checkOut.check_time);
+      var totalMs = co - ct;
+      if (totalMs > 0) {
+        var totalH = Math.round(totalMs / 3600000 * 10) / 10;
+        var lunchStart = new Date(ct); lunchStart.setHours(12, 0, 0, 0);
+        var lunchEnd = new Date(ct); lunchEnd.setHours(13, 0, 0, 0);
+        var spansLunch = ct < lunchEnd && co > lunchStart;
+        var netH = spansLunch ? Math.round((totalH - 1) * 10) / 10 : totalH;
+        if (netH < 8) {
+          earlyLeaveList.push({ employee_id: eid, name: em.name, no: em.no, checkIn: ct, checkOut: co, netHours: netH });
+        }
+      }
+    } else {
+      // 未下班：已過下班時間且無已核准補下班打卡才計為異常
+      if (!missedOutToday[eid]) {
+        var now = new Date();
+        var nowMin = now.getHours() * 60 + now.getMinutes();
+        var workEndMin = workEndH * 60;
+        if (nowMin >= workEndMin) {
+          noOutList.push({ employee_id: eid, name: em.name, no: em.no, checkIn: ct });
+        }
+      }
     }
   }
 
@@ -1996,24 +2051,42 @@ async function queryTodayAttendance(emp, client, replyToken) {
   for (var a = 0; a < allEmps.length; a++) {
     var ae = allEmps[a];
     if (Object.keys(designatedIds).length > 0 && !designatedIds[ae.id]) continue;
-    if (seen[ae.id]) continue;
+    if (todayEmpMap[ae.id] && todayEmpMap[ae.id].checkIn) continue;
     if (leaveEmpMap[ae.id]) continue;
     absentList.push(ae);
   }
 
-  if (lateList.length === 0 && absentList.length === 0 && orList.length === 0 && Object.keys(leaveEmpMap).length === 0) {
+  if (lateList.length === 0 && earlyLeaveList.length === 0 && noOutList.length === 0 && absentList.length === 0 && orList.length === 0 && Object.keys(leaveEmpMap).length === 0) {
     return client.replyMessage(replyToken, [withMenu('✅ 今日考勤正常，無異常人員')]);
   }
 
   var lines = ['📋 今日考勤狀態（' + today.substring(5) + '）'];
   if (lateList.length > 0) {
-    lines.push('\n⚠️ 考勤異常（' + lateList.length + ' 人）：');
+    lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
     for (var k = 0; k < lateList.length; k++) {
       var le = lateList[k];
       var e3 = await db.getEmployeeById(le.employee_id);
       var t = le.check_time;
       var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
       lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 考勤異常 ' + le.late_min + ' 分' + (le.covered ? '' : ' （尚未請假）'));
+    }
+  }
+  if (earlyLeaveList.length > 0) {
+    lines.push('\n🔴 提早下班（' + earlyLeaveList.length + ' 人）：');
+    for (var k2 = 0; k2 < earlyLeaveList.length; k2++) {
+      var el = earlyLeaveList[k2];
+      var e3 = await db.getEmployeeById(el.employee_id);
+      var ciStr = String(el.checkIn.getHours()).padStart(2, '0') + ':' + String(el.checkIn.getMinutes()).padStart(2, '0');
+      var coStr = String(el.checkOut.getHours()).padStart(2, '0') + ':' + String(el.checkOut.getMinutes()).padStart(2, '0');
+      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + el.employee_id) + ' ' + ciStr + '~' + coStr + ' 僅' + el.netHours + 'h');
+    }
+  }
+  if (noOutList.length > 0) {
+    lines.push('\n🟡 未下班（' + noOutList.length + ' 人）：');
+    for (var k3 = 0; k3 < noOutList.length; k3++) {
+      var no = noOutList[k3];
+      var e3 = await db.getEmployeeById(no.employee_id);
+      lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + no.employee_id));
     }
   }
   if (absentList.length > 0) {
@@ -2874,27 +2947,75 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 	var allLeaves = await db.getLeaveRequests('approved', 500);
 	var allEmps = await db.listAttendanceEmployees();
 
-	var seen = {};
-	var lateList = [];
+	var missedPunches = await db.getMissedPunches('approved', 500);
+	var workEndH = parseInt(await db.getSetting('work_end_hour') || '17');
+
+	var todayEmpMap = {};
 	var orList = [];
 	var orSeen = {};
 	for (var i = 0; i < allCheckins.length; i++) {
 		var c = allCheckins[i];
-		if (c.type === 'check_in' && !seen[c.employee_id]) {
-			seen[c.employee_id] = true;
-			var ct = new Date(c.check_time);
-			var totalMin = ct.getHours() * 60 + ct.getMinutes();
-			if (totalMin > lateThreshold) {
-				var checkDateStr = ct.getFullYear() + '-' + String(ct.getMonth()+1).padStart(2,'0') + '-' + String(ct.getDate()).padStart(2,'0');
-				if (!(await isHoliday(checkDateStr))) {
-					lateList.push({ employee_id: c.employee_id, check_time: ct, late_min: totalMin - lateThreshold });
-				}
-			}
+		if (!todayEmpMap[c.employee_id]) {
+			todayEmpMap[c.employee_id] = { checkIn: null, checkOut: null, name: c.name, no: c.employee_no };
 		}
+		if (c.type === 'check_in') todayEmpMap[c.employee_id].checkIn = c;
+		else if (c.type === 'check_out' && !todayEmpMap[c.employee_id].checkOut) todayEmpMap[c.employee_id].checkOut = c;
+
 		if (c.in_range === false && !orSeen[c.employee_id]) {
 			orSeen[c.employee_id] = true;
-			var gEmp = await db.getEmployeeById(c.employee_id);
-			if (gEmp) orList.push(gEmp);
+			var gEmp2 = await db.getEmployeeById(c.employee_id);
+			if (gEmp2) orList.push(gEmp2);
+		}
+	}
+
+	var missedOutToday = {};
+	for (var mi2 = 0; mi2 < missedPunches.length; mi2++) {
+		var mp2 = missedPunches[mi2];
+		if (mp2.punch_date === today && mp2.punch_type === 'check_out') {
+			missedOutToday[mp2.employee_id] = true;
+		}
+	}
+
+	var lateList = [];
+	var earlyLeaveList = [];
+	var noOutList = [];
+	var empIds2 = Object.keys(todayEmpMap);
+	for (var j2 = 0; j2 < empIds2.length; j2++) {
+		var eid2 = parseInt(empIds2[j2]);
+		var em2 = todayEmpMap[eid2];
+		if (!em2.checkIn) continue;
+
+		var ct2 = new Date(em2.checkIn.check_time);
+		var totalMin2 = ct2.getHours() * 60 + ct2.getMinutes();
+
+		if (totalMin2 > lateThreshold) {
+			var checkDateStr2 = ct2.getFullYear() + '-' + String(ct2.getMonth()+1).padStart(2,'0') + '-' + String(ct2.getDate()).padStart(2,'0');
+			if (!(await isHoliday(checkDateStr2))) {
+				lateList.push({ employee_id: eid2, check_time: ct2, late_min: totalMin2 - lateThreshold });
+			}
+		}
+
+		if (em2.checkOut) {
+			var co2 = new Date(em2.checkOut.check_time);
+			var totalMs2 = co2 - ct2;
+			if (totalMs2 > 0) {
+				var totalH2 = Math.round(totalMs2 / 3600000 * 10) / 10;
+				var ls2 = new Date(ct2); ls2.setHours(12, 0, 0, 0);
+				var le2 = new Date(ct2); le2.setHours(13, 0, 0, 0);
+				var sl2 = ct2 < le2 && co2 > ls2;
+				var netH2 = sl2 ? Math.round((totalH2 - 1) * 10) / 10 : totalH2;
+				if (netH2 < 8) {
+					earlyLeaveList.push({ employee_id: eid2, name: em2.name, no: em2.no, checkIn: ct2, checkOut: co2, netHours: netH2 });
+				}
+			}
+		} else {
+			if (!missedOutToday[eid2]) {
+				var now2 = new Date();
+				var nowMin2 = now2.getHours() * 60 + now2.getMinutes();
+				if (nowMin2 >= workEndH * 60) {
+					noOutList.push({ employee_id: eid2, name: em2.name, no: em2.no, checkIn: ct2 });
+				}
+			}
 		}
 	}
 
@@ -2905,8 +3026,8 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 		var als = typeof al.start_date === 'string' ? al.start_date.split('T')[0] : '';
 		var ale = typeof al.end_date === 'string' ? al.end_date.split('T')[0] : '';
 		if (als <= today && ale >= today) {
-			var lEmp = await db.getEmployeeById(al.employee_id);
-			if (lEmp) leaveEmpMap[al.employee_id] = lEmp.name + '（' + lEmp.employee_no + '）' + ' ' + (al.leave_type || '請假');
+			var lEmp3 = await db.getEmployeeById(al.employee_id);
+			if (lEmp3) leaveEmpMap[al.employee_id] = lEmp3.name + '（' + lEmp3.employee_no + '）' + ' ' + (al.leave_type || '請假');
 		}
 	}
 
@@ -2914,26 +3035,44 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 	var absentList = [];
 	for (var a = 0; a < allEmps.length; a++) {
 		var ae = allEmps[a];
-		if (seen[ae.id]) continue;
+		if (todayEmpMap[ae.id] && todayEmpMap[ae.id].checkIn) continue;
 		if (leaveEmpMap[ae.id]) continue;
 		absentList.push(ae);
 	}
 
-	if (lateList.length === 0 && absentList.length === 0 && orList.length === 0 && Object.keys(leaveEmpMap).length === 0) {
+	if (lateList.length === 0 && earlyLeaveList.length === 0 && noOutList.length === 0 && absentList.length === 0 && orList.length === 0 && Object.keys(leaveEmpMap).length === 0) {
 		return client.replyMessage(replyToken, [withMenu('✅ 今日公司考勤正常，無異常人員')]);
 	}
 
 	var lines = ['📋 今日公司考勤狀態'];
-		if (lateList.length > 0) {
-			lines.push('\n⚠️ 考勤異常（' + lateList.length + ' 人）：');
-			for (var k = 0; k < lateList.length; k++) {
-				var le = lateList[k];
-				var e3 = await db.getEmployeeById(le.employee_id);
-				var t = le.check_time;
-				var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
-				lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 考勤異常 ' + le.late_min + ' 分' + (le.covered ? '' : ' （尚未請假）'));
-			}
+	if (lateList.length > 0) {
+		lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
+		for (var k = 0; k < lateList.length; k++) {
+			var le = lateList[k];
+			var e3 = await db.getEmployeeById(le.employee_id);
+			var t = le.check_time;
+			var timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+			lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + le.employee_id) + ' ' + timeStr + ' 考勤異常 ' + le.late_min + ' 分');
 		}
+	}
+	if (earlyLeaveList.length > 0) {
+		lines.push('\n🔴 提早下班（' + earlyLeaveList.length + ' 人）：');
+		for (var k2 = 0; k2 < earlyLeaveList.length; k2++) {
+			var el = earlyLeaveList[k2];
+			var e3 = await db.getEmployeeById(el.employee_id);
+			var ciStr = String(el.checkIn.getHours()).padStart(2, '0') + ':' + String(el.checkIn.getMinutes()).padStart(2, '0');
+			var coStr = String(el.checkOut.getHours()).padStart(2, '0') + ':' + String(el.checkOut.getMinutes()).padStart(2, '0');
+			lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + el.employee_id) + ' ' + ciStr + '~' + coStr + ' 僅' + el.netHours + 'h');
+		}
+	}
+	if (noOutList.length > 0) {
+		lines.push('\n🟡 未下班（' + noOutList.length + ' 人）：');
+		for (var k3 = 0; k3 < noOutList.length; k3++) {
+			var no = noOutList[k3];
+			var e3 = await db.getEmployeeById(no.employee_id);
+			lines.push('  ' + (e3 ? e3.name + '（' + e3.employee_no + '）' : '員工#' + no.employee_id));
+		}
+	}
 	if (absentList.length > 0) {
 		lines.push('\n❌ 曠職（' + absentList.length + ' 人）：');
 		for (var m = 0; m < absentList.length; m++) {
@@ -2952,9 +3091,7 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 		for (var li2 = 0; li2 < leaveKeys.length; li2++) {
 			lines.push('  ' + leaveEmpMap[leaveKeys[li2]]);
 		}
-	}
-
-	var titleB1 = lines[0];
+	}var titleB1 = lines[0];
 	return sendTableImage(client, replyToken, titleB1, lines.join('\n'));
 }
 

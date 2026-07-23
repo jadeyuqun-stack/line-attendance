@@ -2473,39 +2473,4 @@ router.get('/debug-late-hours', auth, async function(req, res) {
 	}
 });
 
-// ===== 曠職補打卡（7/1-7/10） =====
-router.get('/migrate-missed-0710', auth, async function(_, res) {
-  try {
-    var emps = await db.listAttendanceEmployees();
-    var holidays = [];
-    try { holidays = JSON.parse(await db.getSetting('tw_holidays') || '[]'); } catch(ex) {}
-    var startDate = '2026-07-01', endDate = '2026-07-10';
-    var added = 0, skipped = 0;
-    for (var di = 0; di < emps.length; di++) {
-      var emp = emps[di];
-      var _cur = new Date(startDate), _end = new Date(endDate);
-      while (_cur <= _end) {
-        var ds = _cur.getFullYear() + '-' + String(_cur.getMonth()+1).padStart(2,'0') + '-' + String(_cur.getDate()).padStart(2,'0');
-        var dow = _cur.getDay();
-        _cur.setDate(_cur.getDate() + 1);
-        if (dow === 0 || dow === 6 || holidays.indexOf(ds) >= 0) continue;
-        // 檢查當天是否已有打卡
-        var existing = await db.queryCheckins(emp.id, ds, ds, 5, 0);
-        var hasCheckin = false;
-        for (var ci = 0; ci < existing.length; ci++) {
-          if (existing[ci].type === 'check_in') { hasCheckin = true; break; }
-        }
-        if (hasCheckin) { skipped++; continue; }
-        // 補打卡
-        await db.insertManualCheckin(emp.id, 'check_in', ds + ' 08:00:00');
-        await db.insertManualCheckin(emp.id, 'check_out', ds + ' 17:00:00');
-        added++;
-      }
-    }
-    res.send('<h3>✅ 曠職補打卡完成</h3><p>補打卡 ' + added + ' 人天，跳過 ' + skipped + ' 人天（已有打卡）</p><a href="/admin">返回</a>');
-  } catch(e) {
-    res.status(500).send('❌ 錯誤：' + e.message);
-  }
-});
-
 module.exports = router;

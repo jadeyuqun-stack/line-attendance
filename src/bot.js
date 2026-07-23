@@ -843,7 +843,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
   var startM = parseInt(await db.getSetting('work_start_minute') || '0');
   var lateThreshold = startH * 60 + startM + lateMin;
 
-  var monthCheckins = await db.queryCheckins(null, monthStart, todayStr, 500, 0);
+  var monthCheckins = await db.queryCheckins(null, monthStart, todayStr, 5000, 0);
   var allLeaves = await db.getLeaveRequests('approved', 2000);
   var allOTs = await db.getOvertimeRequests('approved', 500);
 

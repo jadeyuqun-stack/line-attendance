@@ -875,7 +875,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
     lateRecords.push({ date: dateStr, time: timeStr, lateMin: lateMins, covered: covered });
   }
   if (lateRecords.length > 0) {
-    lines.push('\n⚠️ 遲到（' + lateRecords.length + ' 次）：');
+    lines.push('\n⚠️ 考勤異常（' + lateRecords.length + ' 次）：');
     for (var lr = 0; lr < lateRecords.length; lr++) {
       var lr2 = lateRecords[lr];
       lines.push('  ' + lr2.date + ' ' + lr2.time + ' 晚 ' + lr2.lateMin + ' 分' + (lr2.covered ? '' : ' （尚未請假）'));
@@ -2159,7 +2159,7 @@ async function queryTodayAttendance(emp, client, replyToken) {
 
   var lines = ['📋 今日考勤狀態（' + today.substring(5) + '）'];
   if (lateList.length > 0) {
-    lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
+    lines.push('\n⚠️ 考勤異常（' + lateList.length + ' 人）：');
     for (var k = 0; k < lateList.length; k++) {
       var le = lateList[k];
       var e3 = await db.getEmployeeById(le.employee_id);
@@ -3318,7 +3318,7 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 
 	var lines = ['📋 今日公司考勤狀態'];
 	if (lateList.length > 0) {
-		lines.push('\n⚠️ 遲到（' + lateList.length + ' 人）：');
+		lines.push('\n⚠️ 考勤異常（' + lateList.length + ' 人）：');
 		for (var k = 0; k < lateList.length; k++) {
 			var le = lateList[k];
 			var e3 = await db.getEmployeeById(le.employee_id);
@@ -3689,9 +3689,11 @@ function textToImage(title, bodyText) {
     '👤': '* ',
     '🔵': '+ ',
     '🔴': '- ',
+    '🟡': ': ',
     '💍': 'R ',
     '💐': 'F ',
     '⏰': 'C ',
+    '👥': '# ',
     '📋': '',
     '📅': '',
     '📦': ''
@@ -3700,15 +3702,16 @@ function textToImage(title, bodyText) {
   var markerToEmoji = {
     '!': '⚠', 'X': '❌', 'V': '✅', '@': '📍',
     '~': '🏖', 'O': '🕐', '=': '📊', '*': '👤',
-    '+': '🔵', '-': '🔴',
-    'R': '💍', 'F': '💐', 'C': '⏰'
+    '+': '🔵', '-': '🔴', ':': '🟡',
+    'R': '💍', 'F': '💐', 'C': '⏰', '#': '👥'
   };
   // 標記對應的顏色（emoji 圖片載入失敗時降級用）
   var iconColors = {
     '!': '#f59e0b', 'X': '#ef4444', 'V': '#22c55e', '@': '#3b82f6',
     '~': '#eab308', 'O': '#a855f7', '=': '#10b981', '*': '#6b7280',
     '+': '#3b82f6', '-': '#ef4444',
-    'R': '#e91e63', 'F': '#9c27b0', 'C': '#ff9800'
+    'R': '#e91e63', 'F': '#9c27b0', 'C': '#ff9800',
+    ':': '#eab308', '#': '#6b7280'
   };
   var emojiKeys = Object.keys(emojiMap);
   for (var ei = 0; ei < emojiKeys.length; ei++) {

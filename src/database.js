@@ -314,6 +314,13 @@ async function recordCheckin(empId, type, loc, inRange, dist) {
   );
   return { id: rows[0].id, check_time: rows[0].check_time, type };
 }
+async function insertManualCheckin(empId, type, checkTime) {
+  var { rows } = await pool.query(
+    "INSERT INTO checkins (employee_id, type, check_time) VALUES ($1,$2,$3::timestamp AT TIME ZONE 'Asia/Taipei') RETURNING id",
+    [empId, type, checkTime]
+  );
+  return rows[0].id;
+}
 async function getCheckinById(id) {
   var { rows } = await pool.query('SELECT * FROM checkins WHERE id=$1', [id]);
   return rows[0] || null;
@@ -1139,7 +1146,7 @@ module.exports = {
   initDatabase,
   getEmployeeByLineId, getEmployeeByNo, bindLineUser, updateLineUserId,
   listActiveEmployees, listAttendanceEmployees, getDesignatedEmployeeIds, listInactiveEmployees, createEmployee, deactivateEmployee, reactivateEmployee, hardDeleteEmployee, updateEmployee,
-  recordCheckin, getCheckinById, deleteCheckin, updateCheckinTime, getTodayCheckins, queryCheckins, getCheckinSummary, getTodaySummary,
+  recordCheckin, insertManualCheckin, getCheckinById, deleteCheckin, updateCheckinTime, getTodayCheckins, queryCheckins, getCheckinSummary, getTodaySummary,
   getSetting, setSetting,
   createLeaveRequest, getLeaveRequests, getEmployeeLeaveRequests, updateLeaveStatus, getLeaveById, deleteLeaveRequest, getEmployeeById, findApprovers, setApprover, listApprovers,
   saveSalaryRecords, getSalaryRecords, deleteSalaryRecords, clearAll, clearByDateRange,

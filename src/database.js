@@ -781,7 +781,8 @@ async function calculateAnnualLeaveEntitlement(hireDate, refDate) {
   return { entitlement_days: baseDays, entitlement_hours: baseDays * 8 };
 }
 
-// 查當月與下月特休額度有變動的人員（年資跨級距）
+// 查當月與下月特休有更新的人員
+// 目的：提醒管理員本月特休年資已更新，可確認餘額並轉薪資
 // 同時回傳剩餘特休時數
 async function getAnnualLeaveChangesThisMonth() {
   var now = new Date();
@@ -806,30 +807,24 @@ async function getAnnualLeaveChangesThisMonth() {
     var remaining = 0;
     try { var _ab = await getAnnualLeaveBalance(e.id); remaining = _ab.remaining_hours; } catch(ex) {}
 
-    // 本月變動
-    if (oldCalc.entitlement_days !== thisCalc.entitlement_days) {
-      var effDate = new Date(now.getFullYear(), hireDate2.getMonth(), hireDate2.getDate());
-      var effStr = effDate.getFullYear() + '-' + String(effDate.getMonth()+1).padStart(2,'0') + '-' + String(effDate.getDate()).padStart(2,'0');
+    // 本月：每年紀念日觸及即更新。只要紀念日落在本月範圍內就算
+    var hireAnnivThisMonth = new Date(thisMonthEnd.getFullYear(), hireDate2.getMonth(), hireDate2.getDate());
+    if (hireAnnivThisMonth >= lastMonthEnd && hireAnnivThisMonth <= thisMonthEnd) {
       thisMonth.push({
         name: e.name, employee_no: e.employee_no, hire_date: e.hire_date,
-        effective_date: effStr,
+        effective_date: hireAnnivThisMonth.getFullYear() + '-' + String(hireAnnivThisMonth.getMonth()+1).padStart(2,'0') + '-' + String(hireAnnivThisMonth.getDate()).padStart(2,'0'),
         old_days: oldCalc.entitlement_days, old_hours: oldCalc.entitlement_hours,
         new_days: thisCalc.entitlement_days, new_hours: thisCalc.entitlement_hours,
         remaining_hours: remaining
       });
     }
 
-    // 下月變動（紀念日落在下個月）
-    if (thisCalc.entitlement_days !== nextCalc.entitlement_days) {
-      // 下月紀念日
-      var _nm = now.getMonth() + 1; // 下個月
-      var effDate2 = new Date(now.getFullYear(), _nm, hireDate2.getDate());
-      // 若該月無此日（如 2/30），取該月最後一天
-      if (effDate2.getMonth() !== _nm) effDate2 = new Date(now.getFullYear(), _nm + 1, 0);
-      var effStr2 = effDate2.getFullYear() + '-' + String(effDate2.getMonth()+1).padStart(2,'0') + '-' + String(effDate2.getDate()).padStart(2,'0');
+    // 下月：紀念日落在下月
+    var hireAnnivNextMonth = new Date(nextMonthEnd.getFullYear(), hireDate2.getMonth(), hireDate2.getDate());
+    if (hireAnnivNextMonth > thisMonthEnd && hireAnnivNextMonth <= nextMonthEnd) {
       nextMonth.push({
         name: e.name, employee_no: e.employee_no, hire_date: e.hire_date,
-        effective_date: effStr2,
+        effective_date: hireAnnivNextMonth.getFullYear() + '-' + String(hireAnnivNextMonth.getMonth()+1).padStart(2,'0') + '-' + String(hireAnnivNextMonth.getDate()).padStart(2,'0'),
         old_days: thisCalc.entitlement_days, old_hours: thisCalc.entitlement_hours,
         new_days: nextCalc.entitlement_days, new_hours: nextCalc.entitlement_hours,
         remaining_hours: remaining

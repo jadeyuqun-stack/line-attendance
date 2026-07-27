@@ -859,20 +859,31 @@ async function getAnnualLeaveBalance(employeeId) {
   if (isNaN(hire.getTime())) return { entitlement_days: 0, entitlement_hours: 0, used_hours: 0, remaining_hours: 0 };
 
   var now = new Date();
-  // 改為曆年制（1/1 ~ 12/31）計算特休，符合勞基法規範
-  var currentYear = now.getFullYear();
-  var periodStart = new Date(currentYear, 0, 1);       // 今年 1/1
-  var periodEnd = new Date(currentYear, 11, 31);        // 今年 12/31
 
+  // 入職週年紀念日判定
+  var hireAnnivThis = new Date(now.getFullYear(), hire.getMonth(), hire.getDate());
+  var periodStart, periodEnd;
+  if (now >= hireAnnivThis) {
+    // 已過今年紀念日，週期：今年紀念日 ~ 明年紀念日
+    periodStart = hireAnnivThis;
+    periodEnd = new Date(now.getFullYear() + 1, hire.getMonth(), hire.getDate());
+  } else {
+    // 尚未到今年紀念日，週期：去年紀念日 ~ 今年紀念日
+    periodStart = new Date(now.getFullYear() - 1, hire.getMonth(), hire.getDate());
+    periodEnd = hireAnnivThis;
+  }
+
+  // 特休額度由 calculateAnnualLeaveEntitlement 依年資計算（已處理半年比例）
   var calc = await calculateAnnualLeaveEntitlement(_hireDate, now);
   var entitlementHours = calc.entitlement_hours;
 
-  // 查詢此年度內已核准特休
-  var startStr = periodStart.getFullYear() + '-' + String(periodStart.getMonth() + 1).padStart(2, '0') + '-' + String(periodStart.getDate()).padStart(2, '0');
-  var endStr = periodEnd.getFullYear() + '-' + String(periodEnd.getMonth() + 1).padStart(2, '0') + '-' + String(periodEnd.getDate()).padStart(2, '0');
+  // 查詢此入職週年週期內已核准特休
+  // 為處理週年跨年的情況，以今年 1/1 作為查詢起點，確保涵蓋所有可能的請假期間
+  var queryStartStr = now.getFullYear() + '-01-01';
+  var queryEndStr = periodEnd.getFullYear() + '-' + String(periodEnd.getMonth() + 1).padStart(2, '0') + '-' + String(periodEnd.getDate()).padStart(2, '0');
   var { rows: approved } = await pool.query(
     "SELECT * FROM leave_requests WHERE employee_id=$1 AND leave_type='annual' AND status='approved' AND start_date >= $2 AND start_date <= $3",
-    [employeeId, startStr, endStr]
+    [employeeId, queryStartStr, queryEndStr]
   );
   var systemUsed = 0;
   for (var i = 0; i < approved.length; i++) {
@@ -883,8 +894,8 @@ async function getAnnualLeaveBalance(employeeId) {
 
   // 自動歸零：新週期首次查詢時清空手動補登（透過 reset_period 避免重複清）
   var resetPeriod = emp.annual_leave_manual_reset_period || '';
-  if (manualUsed > 0 && systemUsed === 0 && resetPeriod !== startStr) {
-    await pool.query("UPDATE employees SET annual_leave_used_manual=0, annual_leave_manual_reset_period=$1, updated_at=NOW() WHERE id=$2", [startStr, employeeId]);
+  if (manualUsed > 0 && systemUsed === 0 && resetPeriod !== queryStartStr) {
+    await pool.query("UPDATE employees SET annual_leave_used_manual=0, annual_leave_manual_reset_period=$1, updated_at=NOW() WHERE id=$2", [queryStartStr, employeeId]);
     manualUsed = 0;
   }
   var totalUsed = systemUsed + manualUsed;

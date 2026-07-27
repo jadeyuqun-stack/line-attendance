@@ -859,30 +859,19 @@ async function getAnnualLeaveBalance(employeeId) {
   if (isNaN(hire.getTime())) return { entitlement_days: 0, entitlement_hours: 0, used_hours: 0, remaining_hours: 0 };
 
   var now = new Date();
-  // 今年度的入職紀念日
-  var hireAnnivThis = new Date(now.getFullYear(), hire.getMonth(), hire.getDate());
+  // 改為曆年制（1/1 ~ 12/31）計算特休，符合勞基法規範
+  var currentYear = now.getFullYear();
+  var periodStart = new Date(currentYear, 0, 1);       // 今年 1/1
+  var periodEnd = new Date(currentYear, 11, 31);        // 今年 12/31
 
-  // 判斷目前所在的入職週期（紀念日 ~ 次年紀念日）
-  var periodStart, periodEnd;
-  if (now >= hireAnnivThis) {
-    // 已過今年紀念日，週期：今年紀念日 ~ 明年紀念日
-    periodStart = hireAnnivThis;
-    periodEnd = new Date(now.getFullYear() + 1, hire.getMonth(), hire.getDate());
-  } else {
-    // 尚未到今年紀念日，週期：去年紀念日 ~ 今年紀念日
-    periodStart = new Date(now.getFullYear() - 1, hire.getMonth(), hire.getDate());
-    periodEnd = hireAnnivThis;
-  }
-
-  // 以週期起始日的年資計算特休額度
   var calc = await calculateAnnualLeaveEntitlement(_hireDate, now);
   var entitlementHours = calc.entitlement_hours;
 
-  // 查詢此入職週期內已核准特休
+  // 查詢此年度內已核准特休
   var startStr = periodStart.getFullYear() + '-' + String(periodStart.getMonth() + 1).padStart(2, '0') + '-' + String(periodStart.getDate()).padStart(2, '0');
   var endStr = periodEnd.getFullYear() + '-' + String(periodEnd.getMonth() + 1).padStart(2, '0') + '-' + String(periodEnd.getDate()).padStart(2, '0');
   var { rows: approved } = await pool.query(
-    "SELECT * FROM leave_requests WHERE employee_id=$1 AND leave_type='annual' AND status='approved' AND start_date >= $2 AND start_date < $3",
+    "SELECT * FROM leave_requests WHERE employee_id=$1 AND leave_type='annual' AND status='approved' AND start_date >= $2 AND start_date <= $3",
     [employeeId, startStr, endStr]
   );
   var systemUsed = 0;

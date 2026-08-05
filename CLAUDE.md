@@ -142,10 +142,10 @@ src/
 ### 簽核邏輯
 - 三階簽核：`approver_id`(L1) → `approver2_id`(L2) → `approver3_id`(L3)
 - `updateLeaveStatus`/`updateOvertimeStatus` 回傳 `{ advanced, level, approvers }`
-- **LINE 端簽核**：必須是該階指定簽核人（L1/L2），或具有 `can_approve` 全體簽核權限
+- **LINE 端簽核**：必須是該階指定簽核人（L1/L2）；`can_approve` 額外只能簽「員工無任何指定簽核人」的項目
 - **若該階無指定簽核人**：LINE 端不可簽核，僅後台管理員可簽（`approvedBy = null`）
 - **不可跨部門**：只看 L1/L2 指定關係，不看 department 欄位
-- `can_approve` 為全體簽核權限，可跳過指定簽核人檢查
+- 統一判斷：`bot.js` 的 `isMyTurnToApprove()`（請假/加班）、`isMyTurnMissedPunch()`（補打卡）；待簽核查詢、批次核准、`updateLeaveStatus`/`updateOvertimeStatus` 皆一致（批次核准 `canBatch` 亦層級敏感）
 - 後台單筆/批次 API 以 `approvedBy = null` 代表管理員操作，跳過權限檢查
 - 核准/駁回時寫入 `pending_notifications` 表，bot 下次處理訊息時推送通知
 

@@ -89,7 +89,8 @@ async function doSendReport(client) {
     }
 
     // 取得今日請假（含時數，已扣除週末）
-    var leaveMap = {}; // employee_id → { name, no, type, hours }
+    var leaveMap = {}; // employee_id → { name, no, type, hours, start, end }
+    var leaveTypeLabelMap = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休', other: '其他' };
     var allLeaves = await db.getLeaveRequests('approved', 500);
     for (var li = 0; li < allLeaves.length; li++) {
       var l = allLeaves[li];
@@ -97,9 +98,9 @@ async function doSendReport(client) {
       var lEnd = typeof l.end_date === 'string' ? l.end_date.substring(0, 10) : lStart;
       if (lStart <= todayStr && lEnd >= todayStr) {
         if (!leaveMap[l.employee_id]) {
-          var leaveLabel = l.leave_type === 'annual' ? '特休' : l.leave_type === 'personal' ? '事假' : l.leave_type === 'sick' ? '病假' : l.leave_type === 'official' ? '公假' : l.leave_type === 'outing' ? '外出' : l.leave_type;
+          var leaveLabel = leaveTypeLabelMap[l.leave_type] || l.leave_type || '請假';
           var leaveHoursTotal = bot.leaveHours(l.start_date, l.end_date);
-          leaveMap[l.employee_id] = { name: l.name, no: l.employee_no, type: leaveLabel, hours: leaveHoursTotal };
+          leaveMap[l.employee_id] = { name: l.name, no: l.employee_no, type: leaveLabel, hours: leaveHoursTotal, start: fmtDtShort(l.start_date), end: fmtDtShort(l.end_date) };
         }
       }
     }
@@ -118,7 +119,8 @@ async function doSendReport(client) {
 
       // 請假人員一律列入（不論有無打卡）
       if (onLeave) {
-        leaveList.push(emp.employee_no + ' ' + onLeave.name + '（' + onLeave.type + '，' + onLeave.hours + 'h）');
+        var leavePeriod = (onLeave.start === onLeave.end) ? onLeave.start : (onLeave.start + ' ~ ' + onLeave.end);
+        leaveList.push(emp.employee_no + ' ' + onLeave.name + '（' + onLeave.type + '，' + leavePeriod + '，' + onLeave.hours + 'h）');
       }
 
       if (ci && ci.checkIn) {
@@ -182,6 +184,27 @@ async function doSendReport(client) {
 
 function fmtTime(d) {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+// 格式化請假起訖時間字串：2026-07-30T08:00 → 2026-07-30 08:00；整日 → 2026-07-30
+function fmtDtShort(str) {
+  if (!str) return '';
+  var s = typeof str === 'string' ? str : String(str);
+  var tIdx = s.indexOf('T');
+  if (tIdx !== -1) {
+    var datePart = s.substring(0, tIdx);
+    var timePart = s.substring(tIdx + 1, tIdx + 6);
+    if (timePart === '00:00') return datePart;
+    return datePart + ' ' + timePart;
+  }
+  var spIdx = s.indexOf(' ');
+  if (spIdx !== -1) {
+    var dp = s.substring(0, spIdx);
+    var tp = s.substring(spIdx + 1, spIdx + 6);
+    if (tp === '00:00') return dp;
+    return dp + ' ' + tp;
+  }
+  return s;
 }
 
 /**

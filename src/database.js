@@ -444,14 +444,10 @@ async function updateLeaveStatus(id, status, approvedBy, rejectReason) {
   var _apprRecord = approvedBy ? await getEmployeeById(approvedBy) : null;
   var _canApprAll = _apprRecord && _apprRecord.can_approve;
   if (approvedBy !== null) {
-    // 檢查是否為指定簽核人（can_approve 可簽任意層級但限指定員工）
-    var _anyDesignated = _canApprAll && empRecord && (empRecord.approver_id===approvedBy || empRecord.approver2_id===approvedBy);
-    if (!_canApprAll && (!designatedApprover || !isDesignated)) {
+    // can_approve 全體簽核僅限「員工無指定簽核人」；否則必須是該階指定簽核人
+    var _noAppr = empRecord && !empRecord.approver_id && !empRecord.approver2_id;
+    if (!(_canApprAll && _noAppr) && !isDesignated) {
       console.log('[DB] 跳過請假：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
-      return { advanced: false, notYourTurn: true };
-    }
-    if (_canApprAll && !_anyDesignated) {
-      console.log('[DB] 跳過請假：' + approvedBy + ' 有 can_approve 但非該員工 L1/L2 指定簽核人');
       return { advanced: false, notYourTurn: true };
     }
   }
@@ -642,13 +638,10 @@ async function updateOvertimeStatus(id, status, approvedBy, rejectReason) {
   var _apprRecord2 = approvedBy ? await getEmployeeById(approvedBy) : null;
   var _canApprAll2 = _apprRecord2 && _apprRecord2.can_approve;
   if (approvedBy !== null) {
-    var _anyDesignated2 = _canApprAll2 && empRecord && (empRecord.approver_id===approvedBy || empRecord.approver2_id===approvedBy);
-    if (!_canApprAll2 && (!designatedApprover || !isDesignated)) {
+    // can_approve 全體簽核僅限「員工無指定簽核人」；否則必須是該階指定簽核人
+    var _noAppr2 = empRecord && !empRecord.approver_id && !empRecord.approver2_id;
+    if (!(_canApprAll2 && _noAppr2) && !isDesignated) {
       console.log('[DB] 跳過加班：' + approvedBy + ' 不是第 ' + currentLevel + ' 階簽核人' + (designatedApprover ? '（指定為 ' + designatedApprover + '）' : '（無指定簽核人，僅後台可簽）'));
-      return { advanced: false, notYourTurn: true };
-    }
-    if (_canApprAll2 && !_anyDesignated2) {
-      console.log('[DB] 跳過加班：' + approvedBy + ' 有 can_approve 但非該員工 L1/L2 指定簽核人');
       return { advanced: false, notYourTurn: true };
     }
   }
@@ -759,9 +752,9 @@ async function calculateAnnualLeaveEntitlement(hireDate, refDate) {
 
   if (yearsOfService < 1) {
     // 未滿一年：以天數計算比例
-    var sixMonthsAgo = new Date(now);
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    if (hire > sixMonthsAgo) return { entitlement_days: 0, entitlement_hours: 0 }; // 未滿半年
+    // 滿半年判定：入職日 + 6 個月（避免「now − 6 個月」遇月底溢位提早發放）
+    var sixMonthMark = new Date(hire.getFullYear(), hire.getMonth() + 6, hire.getDate());
+    if (now < sixMonthMark) return { entitlement_days: 0, entitlement_hours: 0 }; // 未滿半年
     var dec31 = new Date(currentYear, 11, 31);
     var daysFromHire = Math.round((dec31 - hire) / 86400000) + 1;
     if (daysFromHire < 1) return { entitlement_days: 0, entitlement_hours: 0 };
@@ -807,24 +800,38 @@ async function getAnnualLeaveChangesThisMonth() {
     var remaining = 0;
     try { var _ab = await getAnnualLeaveBalance(e.id); remaining = _ab.remaining_hours; } catch(ex) {}
 
-    // 本月：每年紀念日觸及即更新。只要紀念日落在本月範圍內就算
+    // 本月：每年紀念日 或 入職滿半年 觸及即更新（只要事件日落在本月範圍內就算）
     var hireAnnivThisMonth = new Date(thisMonthEnd.getFullYear(), hireDate2.getMonth(), hireDate2.getDate());
+    var sixMonthsThisMonth = new Date(hireDate2.getFullYear(), hireDate2.getMonth() + 6, hireDate2.getDate());
+    var effThisMonth = null;
     if (hireAnnivThisMonth >= lastMonthEnd && hireAnnivThisMonth <= thisMonthEnd) {
+      effThisMonth = hireAnnivThisMonth;
+    } else if (sixMonthsThisMonth >= lastMonthEnd && sixMonthsThisMonth <= thisMonthEnd) {
+      effThisMonth = sixMonthsThisMonth;
+    }
+    if (effThisMonth) {
       thisMonth.push({
         name: e.name, employee_no: e.employee_no, hire_date: e.hire_date,
-        effective_date: hireAnnivThisMonth.getFullYear() + '-' + String(hireAnnivThisMonth.getMonth()+1).padStart(2,'0') + '-' + String(hireAnnivThisMonth.getDate()).padStart(2,'0'),
+        effective_date: effThisMonth.getFullYear() + '-' + String(effThisMonth.getMonth()+1).padStart(2,'0') + '-' + String(effThisMonth.getDate()).padStart(2,'0'),
         old_days: oldCalc.entitlement_days, old_hours: oldCalc.entitlement_hours,
         new_days: thisCalc.entitlement_days, new_hours: thisCalc.entitlement_hours,
         remaining_hours: remaining
       });
     }
 
-    // 下月：紀念日落在下月
+    // 下月：紀念日 或 入職滿半年 落在下月
     var hireAnnivNextMonth = new Date(nextMonthEnd.getFullYear(), hireDate2.getMonth(), hireDate2.getDate());
+    var sixMonthsNextMonth = new Date(hireDate2.getFullYear(), hireDate2.getMonth() + 6, hireDate2.getDate());
+    var effNextMonth = null;
     if (hireAnnivNextMonth > thisMonthEnd && hireAnnivNextMonth <= nextMonthEnd) {
+      effNextMonth = hireAnnivNextMonth;
+    } else if (sixMonthsNextMonth > thisMonthEnd && sixMonthsNextMonth <= nextMonthEnd) {
+      effNextMonth = sixMonthsNextMonth;
+    }
+    if (effNextMonth) {
       nextMonth.push({
         name: e.name, employee_no: e.employee_no, hire_date: e.hire_date,
-        effective_date: hireAnnivNextMonth.getFullYear() + '-' + String(hireAnnivNextMonth.getMonth()+1).padStart(2,'0') + '-' + String(hireAnnivNextMonth.getDate()).padStart(2,'0'),
+        effective_date: effNextMonth.getFullYear() + '-' + String(effNextMonth.getMonth()+1).padStart(2,'0') + '-' + String(effNextMonth.getDate()).padStart(2,'0'),
         old_days: thisCalc.entitlement_days, old_hours: thisCalc.entitlement_hours,
         new_days: nextCalc.entitlement_days, new_hours: nextCalc.entitlement_hours,
         remaining_hours: remaining

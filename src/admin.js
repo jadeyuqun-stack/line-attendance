@@ -404,7 +404,7 @@ router.get('/records', auth, async (req, res) => {
     var _cur = new Date(_ls2), _endD = new Date(_le2);
     while (_cur <= _endD) {
       var _ds2 = _cur.getFullYear() + "-" + String(_cur.getMonth()+1).padStart(2,"0") + "-" + String(_cur.getDate()).padStart(2,"0");
-      monthLeaveMap[_lv2.employee_id + "|" + _ds2] = true;
+      monthLeaveMap[_lv2.employee_id + "|" + _ds2] = _lv2.leave_type;
       _cur.setDate(_cur.getDate() + 1);
     }
   }
@@ -466,10 +466,87 @@ router.get('/records', auth, async (req, res) => {
     }
     lateSummary += "</table></div>";
   }
+  // 月模式：逐日打卡明細表（每位員工每天一列，結合打卡/請假/補打卡）
+  var monthTableHtml = '';
+  if (month) {
+    var empIdMap = {};
+    for (var _eim = 0; _eim < emps.length; _eim++) empIdMap[emps[_eim].id] = emps[_eim];
+    var monthCellMap = {};
+    var _dayKeys = Object.keys(monthDayMap);
+    for (var _dki = 0; _dki < _dayKeys.length; _dki++) {
+      var _mcell = monthDayMap[_dayKeys[_dki]];
+      monthCellMap[_dayKeys[_dki]] = { emp: _mcell.emp, date: _mcell.date, checkIn: _mcell.checkIn, checkOut: _mcell.checkOut, leaveType: '', missed: false };
+    }
+    var _lvKeys = Object.keys(monthLeaveMap);
+    for (var _lki = 0; _lki < _lvKeys.length; _lki++) {
+      var _lvk = _lvKeys[_lki];
+      if (!monthCellMap[_lvk]) {
+        var _lvp = _lvk.split('|');
+        var _eidL = parseInt(_lvp[0]);
+        var _empL = empIdMap[_eidL];
+        if (!_empL) continue;
+        monthCellMap[_lvk] = { emp: { id: _empL.id, name: _empL.name, no: _empL.employee_no, dept: _empL.department }, date: _lvp[1], checkIn: null, checkOut: null, leaveType: '', missed: false };
+      }
+      monthCellMap[_lvk].leaveType = monthLeaveMap[_lvk];
+    }
+    var _msKeys = Object.keys(monthMissedMap);
+    for (var _msk2 = 0; _msk2 < _msKeys.length; _msk2++) {
+      var _msk = _msKeys[_msk2];
+      if (!monthCellMap[_msk]) {
+        var _msp = _msk.split('|');
+        var _eidM = parseInt(_msp[0]);
+        var _empM = empIdMap[_eidM];
+        if (!_empM) continue;
+        monthCellMap[_msk] = { emp: { id: _empM.id, name: _empM.name, no: _empM.employee_no, dept: _empM.department }, date: _msp[1], checkIn: null, checkOut: null, leaveType: '', missed: true };
+      } else {
+        monthCellMap[_msk].missed = true;
+      }
+    }
+    var _mKeys = Object.keys(monthCellMap).sort();
+    var monthRows2 = '';
+    for (var _mi5 = 0; _mi5 < _mKeys.length; _mi5++) {
+      var _mc2 = monthCellMap[_mKeys[_mi5]];
+      if (req.query.eid && parseInt(req.query.eid) !== _mc2.emp.id) continue;
+      var _cI2 = _mc2.checkIn, _cO2 = _mc2.checkOut;
+      var _stBadge = '';
+      var _inHtml2 = _cI2 ? fmt(_cI2.check_time) : '<span style="color:#ccc">--:--</span>';
+      var _outHtml2 = _cO2 ? fmt(_cO2.check_time) : '<span style="color:#ccc">--:--</span>';
+      var _hTxt2 = '-';
+      if (_cI2) {
+        var _ciD2 = new Date(_cI2.check_time);
+        var _dow2 = _ciD2.getDay();
+        var _hol2 = _dow2 === 0 || _dow2 === 6 || _holidaysArr.indexOf(_mc2.date) !== -1;
+        var _late2 = !_hol2 && (_ciD2.getHours()*60 + _ciD2.getMinutes() > _startH*60 + _buf);
+        var _early2 = false;
+        if (_cO2 && !_hol2) {
+          var _coD2 = new Date(_cO2.check_time);
+          var _th2 = Math.round(Math.max(0, (_coD2 - _ciD2) / 3600000) * 10) / 10;
+          var _ls2x = new Date(_ciD2); _ls2x.setHours(12, 0, 0, 0);
+          var _le2x = new Date(_ciD2); _le2x.setHours(13, 0, 0, 0);
+          var _ld2 = (_ciD2 < _le2x && _coD2 > _ls2x) ? 1 : 0;
+          var _nh2 = Math.round((_th2 - _ld2) * 10) / 10;
+          _hTxt2 = _th2 + 'h / ' + _nh2 + 'h';
+          if (_nh2 < 8) _early2 = true;
+        }
+        if (_late2 || _early2) _stBadge = '<span class="badge badge-warn">⚠️考勤異常</span>';
+        else if (!_cO2) _stBadge = '<span class="badge badge-warn">⚠️未下班</span>';
+        else _stBadge = '<span class="badge badge-in">✅出勤</span>';
+      } else if (_mc2.leaveType) {
+        var _lvLbl2 = _mc2.leaveType === "annual" ? "特休" : _mc2.leaveType === "personal" ? "事假" : _mc2.leaveType === "sick" ? "病假" : _mc2.leaveType === "official" ? "公假" : _mc2.leaveType === "outing" ? "外出" : _mc2.leaveType === "marriage" ? "婚假(陪產假)" : _mc2.leaveType === "funeral" ? "喪假" : _mc2.leaveType === "comp" ? "補休" : _mc2.leaveType === "other" ? "其他" : _mc2.leaveType;
+        _stBadge = '<span class="badge badge-info">🏖' + _lvLbl2 + '</span>';
+      } else if (_mc2.missed) {
+        _stBadge = '<span class="badge badge-in">📝已補卡</span>';
+      } else {
+        _stBadge = '<span class="badge badge-out">❌曠職</span>';
+      }
+      monthRows2 += '<tr><td>' + _mc2.date + '</td><td>' + h(_mc2.emp.no) + '</td><td>' + h(_mc2.emp.name) + '</td><td>' + h(_mc2.emp.dept || '') + '</td><td>' + _inHtml2 + '</td><td>' + _outHtml2 + '</td><td>' + _hTxt2 + '</td><td>' + _stBadge + '</td></tr>';
+    }
+    monthTableHtml = '<div class="card"><h3>' + startDate + ' ~ ' + endDate + ' 打卡明細</h3><table><tr><th>日期</th><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th></tr>' + (monthRows2 || '<tr><td colspan="8">該月份無打卡資料</td></tr>') + '</table></div>';
+  }
   var monthVal = month || d.substring(0,7);
   var body = '<div class="card"><form class="inline" method="GET"><div><label>日期</label><input type="date" name="date" value="'+d+'"></div><div><label>月份</label><input type="month" name="month" value="'+h(month)+'" style="width:160px"></div><div><label>員工</label><select name="eid"><option value="">全部員工</option>'+opts+'</select></div><button class="btn">🔍 查詢</button></form></div>'
     + lateSummary
-    + '<div class="card"><h3>'+(month ? startDate+' ~ '+endDate : d)+' 打卡記錄' + (absentCount > 0 ? '（曠職 '+absentCount+' 人）' : '') + '</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th><th>操作</th></tr>'+rows+'</table></div>'
+    + (month ? monthTableHtml : '<div class="card"><h3>'+d+' 打卡記錄' + (absentCount > 0 ? '（曠職 '+absentCount+' 人）' : '') + '</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>上班</th><th>下班</th><th>工時</th><th>考勤</th><th>操作</th></tr>'+rows+'</table></div>')
     + '<button onclick="clearCheckins()" class="btn-sm btn-red">🗑 清除所有打卡記錄</button>'
     + '<script>async function clearCheckins(){if(!confirm("⚠️ 確定刪除所有打卡記錄？"))return;await fetch("/admin/api/checkins/clear",{method:"DELETE"});location.reload();}async function deleteCheckin(id){if(!confirm("確定刪除此筆打卡記錄？"))return;var r=await fetch("/admin/api/checkins/"+id,{method:"DELETE"});if(r.ok)location.reload();else alert("刪除失敗");}var editingId=null;var editingPrefix="";function editTime(id,prefix){if(editingId&&editingId!==id)cancelEdit();var el=document.getElementById(prefix+"_"+id);if(!el)return;var current=el.textContent.trim();var match=current.match(/(\\d{2}:\\d{2})/);var oldTime=match?match[1]:"";editingId=id;editingPrefix=prefix;el.innerHTML="<input type=\'time\' id=\'edit_time_input\' value=\'"+oldTime+"\' style=\'width:90px;font-size:12px;padding:2px 4px\'> <button onclick=\'saveTime()\' class=\'btn-sm\' style=\'font-size:10px;padding:1px 5px;background:#06c755;color:#fff;border:none;border-radius:3px;cursor:pointer\'>✓</button> <button onclick=\'cancelEdit()\' class=\'btn-sm\' style=\'font-size:10px;padding:1px 5px;background:#e74c3c;color:#fff;border:none;border-radius:3px;cursor:pointer\'>✕</button>";}function cancelEdit(){if(!editingId)return;location.reload();}async function saveTime(){if(!editingId)return;var input=document.getElementById("edit_time_input");if(!input)return;var newTime=input.value;if(!newTime){alert("請選擇時間");return;}var r=await fetch("/admin/api/checkins/"+editingId,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({time:newTime})});if(r.ok){location.reload();}else{var err=await r.json();alert("修改失敗："+err.error);}}</script>';
   res.send(layout('打卡記錄', '打卡記錄', body));
@@ -1156,18 +1233,25 @@ router.get('/overtime', auth, async function(_, res) {
       if (sd.indexOf(filterMonth) !== 0) continue;
     }
     var sb = r.status === 'pending' ? '<span class="badge badge-warn">待審核</span>' + getOtApprover(r) : r.status === 'approved' ? '<span class="badge badge-in">已核准</span>' + (r.approver_name ? ' <small style="color:#27ae60">' + h(r.approver_name) + '</small>' : '') : '<span class="badge badge-out">已駁回</span>' + (r.approver_name ? ' <small style="color:#e74c3c">' + h(r.approver_name) + '</small>' : '');
+    // 加班時數（開始~結束，與匯出一致）
+    var otHoursTxt = '-';
+    if (r.start_time && r.end_time) {
+      var _osT = new Date(r.start_time), _oeT = new Date(r.end_time);
+      var _diffH = (_oeT - _osT) / 3600000;
+      if (_diffH > 0) otHoursTxt = Math.round(_diffH * 10) / 10 + 'h';
+    }
     var ah = '';
     var otCb = r.status === 'pending' ? '<input type="checkbox" class="otCb" value="'+r.id+'" style="width:auto;height:auto">' : '';
     if (r.status === 'pending') ah = '<button onclick="approveOt('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectOt('+r.id+')" class="btn-sm btn-red">駁回</button>';
     ah += ' <button onclick="deleteOt('+r.id+')" class="btn-sm btn-red" title="刪除">🗑</button>';
-    rows += '<tr><td>'+otCb+'</td><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+h(r.department||'')+'</td><td>'+h(r.start_time)+' ~ '+h(r.end_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(r.reject_reason)+'</small>':'')+'</td><td>'+ah+'</td></tr>';
+    rows += '<tr><td>'+otCb+'</td><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+h(r.department||'')+'</td><td>'+h(r.start_time)+' ~ '+h(r.end_time)+'</td><td>'+otHoursTxt+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(r.reject_reason)+'</small>':'')+'</td><td>'+ah+'</td></tr>';
   }
   var opts = '<option value="">全部員工</option>';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'"'+(filterEid===emps[j].id?' selected':'')+'>'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
   var filterBar = '<div class="card"><form class="inline" method="GET"><div><label>員工</label><select name="eid">'+opts+'</select></div><div><label>狀態</label><select name="status"><option value=""'+(status===''?' selected':'')+'>全部</option><option value="pending"'+(status==='pending'?' selected':'')+'>待審核</option><option value="approved"'+(status==='approved'?' selected':'')+'>已核准</option><option value="rejected"'+(status==='rejected'?' selected':'')+'>已駁回</option></select></div><div><label>月份</label><input name="month" value="'+h(filterMonth)+'" placeholder="2026-06" style="width:120px"></div><button class="btn">🔍 篩選</button></form></div>';
   var body = filterBar
     + '<div style="margin-bottom:8px"><button onclick="batchOt(\"approved\")" class="btn-sm btn">✅ 批次核准</button> <button onclick="batchOt(\"rejected\")" class="btn-sm btn-red">❌ 批次駁回</button></div>'
-    + '<div class="card"><table><tr><th><input type="checkbox" onclick="toggleAll(\"otCb\")" style="width:auto;height:auto"></th><th>編號</th><th>姓名</th><th>部門</th><th>時間</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="8">無加班記錄</td></tr>')+'</table></div>'
+    + '<div class="card"><table><tr><th><input type="checkbox" onclick="toggleAll(\"otCb\")" style="width:auto;height:auto"></th><th>編號</th><th>姓名</th><th>部門</th><th>時間</th><th>時數</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="9">無加班記錄</td></tr>')+'</table></div>'
     + '<div style="margin-top:12px"><button onclick="clearOt()" class="btn-sm btn-red">🗑 清除所有加班記錄</button></div><script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){var reason=prompt("請輸入駁回原因：");if(reason===null)return;await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason})});location.reload();}async function clearOt(){if(!confirm("⚠️ 確定刪除所有加班記錄？"))return;await fetch("/admin/api/overtime/clear",{method:"DELETE"});location.reload();}async function deleteOt(id){if(!confirm("確定刪除此筆加班？"))return;await fetch("/admin/api/overtime/"+id,{method:"DELETE"});location.reload();}function toggleAll(cls){var cbs=document.querySelectorAll("."+cls);for(var i=0;i<cbs.length;i++)cbs[i].checked=event.target.checked;}async function batchOt(action){var cbs=document.querySelectorAll(".otCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+(action==="approved"?"核准":"駁回")+" "+ids.length+" 筆？"))return;await fetch("/admin/api/overtimes/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
   res.send(layout('加班管理', '加班管理', body));
 });

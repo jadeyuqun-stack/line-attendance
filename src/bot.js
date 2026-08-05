@@ -144,15 +144,15 @@ async function checkPendingApprovals(client, uid, replyToken) {
     var myLeaves = [], myOTs = [], myMPs = [];
     for (var li = 0; li < leaves.length; li++) {
       var le = await db.getEmployeeById(leaves[li].employee_id);
-      if (le) { var lv = leaves[li].approval_level || 1; var col = lv === 1 ? 'approver_id' : 'approver2_id'; var noAppL = !le.approver_id && !le.approver2_id ; if (le[col] === emp.id || (emp.can_approve && noAppL)) myLeaves.push(leaves[li]); }
+      if (le && isMyTurnToApprove(le, emp, leaves[li])) myLeaves.push(leaves[li]);
     }
     for (var oi = 0; oi < ots.length; oi++) {
       var oe = await db.getEmployeeById(ots[oi].employee_id);
-      if (oe) { var lv2 = ots[oi].approval_level || 1; var col2 = lv2 === 1 ? 'approver_id' : 'approver2_id'; var noAppO = !oe.approver_id && !oe.approver2_id; if (oe[col2] === emp.id || (emp.can_approve && noAppO)) myOTs.push(ots[oi]); }
+      if (oe && isMyTurnToApprove(oe, emp, ots[oi])) myOTs.push(ots[oi]);
     }
     for (var mi = 0; mi < mps.length; mi++) {
       var me = await db.getEmployeeById(mps[mi].employee_id);
-      if (me) { var noAppM = !me.approver_id && !me.approver2_id; if (me.approver_id === emp.id || me.approver2_id === emp.id ||  (emp.can_approve && noAppM)) myMPs.push(mps[mi]); }
+      if (me && isMyTurnMissedPunch(me, emp)) myMPs.push(mps[mi]);
     }
     return myLeaves.length + myOTs.length + myMPs.length;
   } catch(e) { return 0; }
@@ -332,6 +332,23 @@ function calcHours(s, e) {
   return d > 0 ? Math.round(d / 3600000 * 10) / 10 : 0;
 }
 
+// 判斷簽核人可否處理該請假/加班申請（該階指定簽核人，或 can_approve 且員工無指定簽核人）
+function isMyTurnToApprove(emp, approver, rec) {
+  if (!emp || !approver || !rec) return false;
+  var level = rec.approval_level || 1;
+  var col = level === 1 ? 'approver_id' : 'approver2_id';
+  var designated = emp[col];
+  var noApp = !emp.approver_id && !emp.approver2_id;
+  return (designated && designated === approver.id) || (approver.can_approve && noApp);
+}
+
+// 判斷簽核人可否處理該補打卡申請（L1/L2 指定人，或 can_approve 且員工無指定簽核人）
+function isMyTurnMissedPunch(emp, approver) {
+  if (!emp || !approver) return false;
+  var noApp = !emp.approver_id && !emp.approver2_id;
+  return emp.approver_id === approver.id || emp.approver2_id === approver.id || (approver.can_approve && noApp);
+}
+
 async function getOverdueApprovalReminder(emp) {
   if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆' && emp.role !== '簽核人員')) return null;
   var hoursStr = await db.getSetting('approval_remind_hours') || '0';
@@ -346,29 +363,19 @@ async function getOverdueApprovalReminder(emp) {
     var le = await db.getEmployeeById(pendingLeaves[li].employee_id);
     if (!le) continue;
     if (pendingLeaves[li].created_at && new Date(pendingLeaves[li].created_at) >= threshold) continue;
-    var lv = pendingLeaves[li].approval_level || 1;
-    var col = lv === 1 ? 'approver_id' : 'approver2_id';
-    var isDes = le[col] === emp.id;
-    var noApp = !le.approver_id && !le.approver2_id ;
-    if (isDes || (emp.can_approve && noApp)) count++;
+    if (isMyTurnToApprove(le, emp, pendingLeaves[li])) count++;
   }
   for (var oi = 0; oi < pendingOTs.length; oi++) {
     var oe = await db.getEmployeeById(pendingOTs[oi].employee_id);
     if (!oe) continue;
     if (pendingOTs[oi].created_at && new Date(pendingOTs[oi].created_at) >= threshold) continue;
-    var lv2 = pendingOTs[oi].approval_level || 1;
-    var col2 = lv2 === 1 ? 'approver_id' : 'approver2_id';
-    var isDes2 = oe[col2] === emp.id;
-    var noApp2 = !oe.approver_id && !oe.approver2_id;
-    if (isDes2 || (emp.can_approve && noApp2)) count++;
+    if (isMyTurnToApprove(oe, emp, pendingOTs[oi])) count++;
   }
   for (var mi = 0; mi < pendingMPs.length; mi++) {
     var me = await db.getEmployeeById(pendingMPs[mi].employee_id);
     if (!me) continue;
     if (pendingMPs[mi].created_at && new Date(pendingMPs[mi].created_at) >= threshold) continue;
-    var noApp3 = !me.approver_id && !me.approver2_id;
-    var isDes3 = me.approver_id === emp.id || me.approver2_id === emp.id || me.approver3_id === emp.id;
-    if (isDes3 || (emp.can_approve && noApp3)) count++;
+    if (isMyTurnMissedPunch(me, emp)) count++;
   }
   if (count === 0) return null;
   return '您有 ' + count + ' 筆待簽核申請已超過 ' + hours + ' 小時未處理。';
@@ -385,27 +392,17 @@ async function countPendingForApprover(emp) {
     for (var i = 0; i < pl.length; i++) {
       var e = await db.getEmployeeById(pl[i].employee_id);
       if (!e) continue;
-      var lv = pl[i].approval_level || 1;
-      var col = lv === 1 ? 'approver_id' : 'approver2_id';
-      var isDes = e[col] === emp.id;
-      var noApprover = !e.approver_id && !e.approver2_id;
-      if (isDes || (emp.can_approve && noApprover)) c++;
+      if (isMyTurnToApprove(e, emp, pl[i])) c++;
     }
     for (var i = 0; i < po.length; i++) {
       var e = await db.getEmployeeById(po[i].employee_id);
       if (!e) continue;
-      var lv2 = po[i].approval_level || 1;
-      var col2 = lv2 === 1 ? 'approver_id' : 'approver2_id';
-      var isDes2 = e[col2] === emp.id;
-      var noApprover2 = !e.approver_id && !e.approver2_id;
-      if (isDes2 || (emp.can_approve && noApprover2)) c++;
+      if (isMyTurnToApprove(e, emp, po[i])) c++;
     }
     for (var i = 0; i < pm.length; i++) {
       var e = await db.getEmployeeById(pm[i].employee_id);
       if (!e) continue;
-      var noApprover3 = !e.approver_id && !e.approver2_id;
-      var isDes3 = e.approver_id === emp.id || e.approver2_id === emp.id || e.approver3_id === emp.id;
-      if (isDes3 || (emp.can_approve && noApprover3)) c++;
+      if (isMyTurnMissedPunch(e, emp)) c++;
     }
     return c;
   } catch(e) { return 0; }
@@ -422,15 +419,15 @@ async function checkPendingApprovalsCmd(emp, client, replyToken, uid, _prefix) {
     var items = [];
     for (var li = 0; li < leaves.length; li++) {
       var le = await db.getEmployeeById(leaves[li].employee_id);
-      if (le) { var lv = leaves[li].approval_level || 1; var col = lv === 1 ? 'approver_id' : 'approver2_id'; var noAppL = !le.approver_id && !le.approver2_id ; if (le[col] === emp.id || (emp.can_approve && noAppL)) items.push({ type: 'leave', data: leaves[li], empName: le.name, empNo: le.employee_no }); }
+      if (le && isMyTurnToApprove(le, emp, leaves[li])) items.push({ type: 'leave', data: leaves[li], empName: le.name, empNo: le.employee_no });
     }
     for (var oi = 0; oi < ots.length; oi++) {
       var oe = await db.getEmployeeById(ots[oi].employee_id);
-      if (oe) { var lv2 = ots[oi].approval_level || 1; var col2 = lv2 === 1 ? 'approver_id' : 'approver2_id'; var noAppO = !oe.approver_id && !oe.approver2_id; if (oe[col2] === emp.id || (emp.can_approve && noAppO)) items.push({ type: 'ot', data: ots[oi], empName: oe.name, empNo: oe.employee_no }); }
+      if (oe && isMyTurnToApprove(oe, emp, ots[oi])) items.push({ type: 'ot', data: ots[oi], empName: oe.name, empNo: oe.employee_no });
     }
     for (var mi = 0; mi < mps.length; mi++) {
       var me = await db.getEmployeeById(mps[mi].employee_id);
-      if (me) { var noAppM = !me.approver_id && !me.approver2_id; if (me.approver_id === emp.id || me.approver2_id === emp.id ||  (emp.can_approve && noAppM)) items.push({ type: 'missed', data: mps[mi], empName: me.name, empNo: me.employee_no }); }
+      if (me && isMyTurnMissedPunch(me, emp)) items.push({ type: 'missed', data: mps[mi], empName: me.name, empNo: me.employee_no });
     }
     if (items.length === 0) return client.replyMessage(replyToken, [withMenu('✅ 目前無待簽核項目')]);
     // 儲存到 state
@@ -643,12 +640,15 @@ async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
   var mps = await db.getMissedPunches('pending', 200);
   var lines = [];
   function canBatch(emp2, eid, appr, level) {
-    // can_approve 可簽任意層級但限指定員工；一般簽核人員只認該階
-    if (appr && appr.can_approve) {
-      return emp2.approver_id === eid || emp2.approver2_id === eid;
+    // 與待簽核查詢一致：只認「該階指定簽核人」；can_approve 額外可簽無指定簽核人的員工
+    if (level === undefined) {
+      // 補打卡無層級概念，L1/L2 指定人皆可
+      return emp2.approver_id === eid || emp2.approver2_id === eid || (appr && appr.can_approve && !emp2.approver_id && !emp2.approver2_id);
     }
     var col = (level || 1) === 1 ? 'approver_id' : 'approver2_id';
-    return emp2[col] === eid;
+    var designated = emp2[col];
+    if (designated && designated === eid) return true;
+    return appr && appr.can_approve && !emp2.approver_id && !emp2.approver2_id;
   }
   for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch(e, emp.id, emp, leaves[i].approval_level)) { var _r1 = await db.updateLeaveStatus(leaves[i].id, 'approved', emp.id); if (!_r1 || !_r1.notYourTurn) { lines.push('🏖 ' + e.name + ' ' + leaveTypeLabel(leaves[i].leave_type) + ' ' + fmtDt(leaves[i].start_date)); if (e.line_user_id) { if (!_r1 || !_r1.advanced) await db.addPendingNotification(e.id, '🎉 請假已核准！\n' + fmtDt(leaves[i].start_date) + ' ~ ' + fmtDt(leaves[i].end_date)); else await db.addPendingNotification(e.id, '📋 請假進度\n\n已通過簽核，等待下一階審核。\n時間：' + fmtDt(leaves[i].start_date) + ' ~ ' + fmtDt(leaves[i].end_date)); } } } }
   for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch(e, emp.id, emp, ots[i].approval_level)) { var _r2 = await db.updateOvertimeStatus(ots[i].id, 'approved', emp.id); if (!_r2 || !_r2.notYourTurn) { lines.push('🕐 ' + e.name + ' 加班 ' + fmtDt(ots[i].start_time)); if (e.line_user_id) { if (!_r2 || !_r2.advanced) await db.addPendingNotification(e.id, '🎉 加班已核准！\n' + fmtDt(ots[i].start_time) + ' ~ ' + fmtDt(ots[i].end_time)); else await db.addPendingNotification(e.id, '🕐 加班進度\n\n已通過簽核，等待下一階審核。\n時間：' + fmtDt(ots[i].start_time) + ' ~ ' + fmtDt(ots[i].end_time)); } } } }
@@ -666,12 +666,15 @@ async function batchRejectAll(emp, client, replyToken, _prefix, uid) {
   var mps = await db.getMissedPunches('pending', 200);
   var lCount = 0, otCount = 0, mpCount = 0;
   function canBatch2(emp2, eid, appr, level) {
-    // can_approve 可簽任意層級但限指定員工；一般簽核人員只認該階
-    if (appr && appr.can_approve) {
-      return emp2.approver_id === eid || emp2.approver2_id === eid;
+    // 與待簽核查詢一致：只認「該階指定簽核人」；can_approve 額外可簽無指定簽核人的員工
+    if (level === undefined) {
+      // 補打卡無層級概念，L1/L2 指定人皆可
+      return emp2.approver_id === eid || emp2.approver2_id === eid || (appr && appr.can_approve && !emp2.approver_id && !emp2.approver2_id);
     }
     var col = (level || 1) === 1 ? 'approver_id' : 'approver2_id';
-    return emp2[col] === eid;
+    var designated = emp2[col];
+    if (designated && designated === eid) return true;
+    return appr && appr.can_approve && !emp2.approver_id && !emp2.approver2_id;
   }
   for (var i = 0; i < leaves.length; i++) { var e = await db.getEmployeeById(leaves[i].employee_id); if (e && canBatch2(e, emp.id, emp, leaves[i].approval_level)) { await db.updateLeaveStatus(leaves[i].id, 'rejected', emp.id); lCount++; if (e.line_user_id) await db.addPendingNotification(e.id, '❌ 請假被駁回\n時間：' + fmtDt(leaves[i].start_date) + ' ~ ' + fmtDt(leaves[i].end_date)); } }
   for (var i = 0; i < ots.length; i++) { var e = await db.getEmployeeById(ots[i].employee_id); if (e && canBatch2(e, emp.id, emp, ots[i].approval_level)) { await db.updateOvertimeStatus(ots[i].id, 'rejected', emp.id); otCount++; if (e.line_user_id) await db.addPendingNotification(e.id, '❌ 加班被駁回\n時間：' + fmtDt(ots[i].start_time) + ' ~ ' + fmtDt(ots[i].end_time)); } }

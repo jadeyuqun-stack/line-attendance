@@ -6,7 +6,7 @@ var express = require('express');
 var db = require('./database');
 var router = express.Router();
 
-// ===== CSS（精簡，不包 admin 側欄） =====
+// ===== CSS =====
 var EMP_CSS = [
 	'*{margin:0;padding:0;box-sizing:border-box}',
 	'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;background:#f5f6fa;color:#333;min-height:100vh}',
@@ -15,7 +15,12 @@ var EMP_CSS = [
 	'.topbar h1{font-size:18px}',
 	'.topbar .user{font-size:13px;opacity:0.9}',
 	'.topbar a{color:#fff;margin-left:12px;font-size:13px}',
-	'.container{max-width:1200px;margin:20px auto;padding:0 16px}',
+	'.layout{display:flex;min-height:calc(100vh - 52px)}',
+	'.sidebar{width:180px;background:#fff;border-right:1px solid #eee;padding:16px 0}',
+	'.sidebar a{display:block;padding:12px 20px;font-size:14px;color:#333;border-left:4px solid transparent}',
+	'.sidebar a:hover{background:#f5f6fa}',
+	'.sidebar a.active{background:#e6f9ee;border-left-color:#06c755;font-weight:700;color:#06c755}',
+	'.container{flex:1;padding:20px;max-width:1400px}',
 	'.card{background:#fff;border-radius:10px;padding:20px 24px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:20px}',
 	'.card h3{font-size:16px;margin-bottom:12px;color:#2d3436}',
 	'.card p{font-size:13px;color:#999;margin-bottom:8px}',
@@ -42,17 +47,26 @@ var EMP_CSS = [
 	'.login-box input{margin-bottom:12px;padding:10px 14px}',
 	'.login-box .btn{width:100%;justify-content:center}',
 	'.err{background:#fdecea;color:#e74c3c;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px}',
-	'.item-row{display:flex;gap:8px;align-items:end;margin-bottom:8px}',
-	'.item-row>div{flex:1}',
+	'.day-block{border:1px solid #eee;border-radius:8px;padding:12px;margin-bottom:12px}',
+	'.day-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}',
+	'.day-head b{font-size:14px}',
+	'.slot-row{display:flex;gap:6px;flex-wrap:wrap}',
+	'.slot-cell{flex:1;min-width:120px}',
+	'.slot-cell select{font-size:12px;padding:5px 6px}',
+	'.amt-line{text-align:center;font-size:13px;font-weight:700;color:#06c755;padding:2px;border-bottom:2px solid #e0e0e0}',
+	'.slot-cell.placeholder .amt-line{color:#ccc;border-bottom-style:dashed}',
+	'.day-total{color:#06c755;font-weight:700;font-size:14px}',
 	'small{color:#999;font-size:11px}',
 ].join('\n');
 
 function h(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-function empLayout(title, body, emp) {
+function empLayout(title, body, emp, active) {
+	var menu = '<a href="/emp/allowances"' + (active==='allowances' ? ' class="active"' : '') + '>📝 津貼輸入</a>'
+		+ '<a href="/emp/allowance-items"' + (active==='items' ? ' class="active"' : '') + '>📋 津貼定義</a>';
 	return '<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + title + '</title><style>' + EMP_CSS + '</style></head><body>'
 		+ '<div class="topbar"><h1>📋 玉群環境科技考勤系統</h1><div class="user">' + (emp ? h(emp.name) + '（' + h(emp.department||'') + '・' + (emp.role||'員工') + '）<a href="/emp/logout">登出</a>' : '') + '</div></div>'
-		+ '<div class="container">' + body + '</div></body></html>';
+		+ '<div class="layout"><div class="sidebar">' + menu + '</div><div class="container">' + body + '</div></div></body></html>';
 }
 
 // ===== 登入中介層 =====
@@ -69,7 +83,6 @@ router.get('/login', function(req, res) {
 router.post('/login', express.urlencoded({ extended: true }), async function(req, res) {
 	var emp = await db.verifyEmployeePassword(req.body.employee_no, req.body.password);
 	if (!emp) return res.redirect('/emp/login?err=1');
-	// 只有主任/經理/簽核人員可登入
 	var supervisorRoles = ['主任', '經理', '簽核人員'];
 	if (supervisorRoles.indexOf(emp.role) === -1) return res.redirect('/emp/login?err=1');
 	req.session.empId = emp.id;
@@ -81,12 +94,11 @@ router.get('/logout', function(req, res) {
 	res.redirect('/emp/login');
 });
 
-// ===== 首頁 =====
 router.get('/', authEmp, function(req, res) {
 	res.redirect('/emp/allowances');
 });
 
-// ===== 津貼填寫頁面（選員工 + 項目下拉 + 每日 5 槽可新增） =====
+// ===== 津貼輸入頁面（選員工 + 每日 5 下拉＋2 預留空位，金額自動顯示） =====
 router.get('/allowances', authEmp, async function(req, res) {
 	var supervisor = await db.getEmployeeById(req.session.empId);
 	if (!supervisor) return res.redirect('/emp/login');
@@ -97,7 +109,6 @@ router.get('/allowances', authEmp, async function(req, res) {
 	var items = await db.listAllowanceItems();
 	var activeItems = items.filter(function(it) { return it.active !== false; });
 
-	// 月份範圍
 	var monthParts = month.split('-');
 	var mYear = parseInt(monthParts[0]), mMonth = parseInt(monthParts[1]);
 	var monthStart = month + '-01';
@@ -106,20 +117,20 @@ router.get('/allowances', authEmp, async function(req, res) {
 	var days = [];
 	for (var d = 1; d <= parseInt(lastDay); d++) days.push(String(d).padStart(2,'0'));
 
-	// 員工下拉選項
+	// 員工下拉
 	var empOpts = '';
 	for (var ei = 0; ei < deptEmployees.length; ei++) {
 		var de = deptEmployees[ei];
 		empOpts += '<option value="' + de.id + '"' + (de.id === selEid ? ' selected' : '') + '>' + h(de.employee_no) + ' ' + h(de.name) + '</option>';
 	}
-	// 津貼項目下拉選項
-	var itemOpts = '<option value="">— 選擇項目 —</option>';
+	// 津貼項目下拉（含 data-amount）
+	var itemOpts = '<option value="" data-amount="">— 選擇項目 —</option>';
 	for (var ii = 0; ii < activeItems.length; ii++) {
 		var ait = activeItems[ii];
-		itemOpts += '<option value="' + ait.id + '">' + h(ait.name) + '（' + (ait.amount||0) + ' 元）</option>';
+		itemOpts += '<option value="' + ait.id + '" data-amount="' + (ait.amount||0) + '">' + h(ait.name) + '（' + (ait.amount||0) + ' 元）</option>';
 	}
 
-	// 依選擇的員工讀取既有津貼（work_date|item_id → 記錄）
+	// 既有津貼（date → [{item_id, amount}]）
 	var allowanceMap = {};
 	var selEmp = null;
 	if (selEid) {
@@ -129,11 +140,88 @@ router.get('/allowances', authEmp, async function(req, res) {
 			var ex = existing[ai];
 			var dkey = String(ex.work_date).substring(8,10);
 			if (!allowanceMap[dkey]) allowanceMap[dkey] = [];
-			allowanceMap[dkey].push({ item_id: ex.item_id, amount: ex.amount, note: ex.note || '' });
+			allowanceMap[dkey].push({ item_id: ex.item_id, amount: ex.amount });
 		}
 	}
 
-	// ---- 津貼項目維護區 ----
+	// ---- 津貼輸入主體 ----
+	var selectBar = '<div class="card"><h3>📝 津貼輸入</h3><div class="form-inline">'
+		+ '<div><label>月份</label><input type="month" id="fillMonth" value="' + month + '" onchange="changeFilter()"></div>'
+		+ '<div><label>人員</label><select id="fillEmp" onchange="changeFilter()" style="min-width:200px"><option value="">選擇人員</option>' + empOpts + '</select></div>'
+		+ '</div></div>';
+
+	var formSection = '';
+	if (selEmp) {
+		var dayBlocks = '';
+		for (var di = 0; di < days.length; di++) {
+			var dkey = days[di];
+			var recs = allowanceMap[dkey] || [];
+			var cellCount = Math.max(7, recs.length); // 5 下拉 + 2 預留空位
+			var cells = '';
+			for (var r = 0; r < cellCount; r++) {
+				var rec = recs[r] || null;
+				var selOpts = itemOpts;
+				if (rec && rec.item_id) {
+					var re = new RegExp('value="' + rec.item_id + '"');
+					selOpts = selOpts.replace(re, 'value="' + rec.item_id + '" selected');
+				}
+				var isPlaceholder = !rec && r >= 5;
+				cells += '<div class="slot-cell' + (isPlaceholder ? ' placeholder' : '') + '">'
+					+ '<select class="alw-item">' + selOpts + '</select>'
+					+ '<div class="amt-line">' + (rec && rec.amount ? rec.amount : '') + '</div>'
+					+ '</div>';
+			}
+			dayBlocks += '<div class="day-block" data-eid="' + selEid + '" data-date="' + dkey + '">'
+				+ '<div class="day-head"><b>' + month.substring(5) + '-' + dkey + '</b><span>每日合計：<span class="day-total">0</span> 元</span></div>'
+				+ '<div class="slot-row">' + cells + '</div>'
+				+ '<div style="margin-top:8px"><button type="button" class="btn-sm btn-outline add-entry">＋ 新增下拉</button></div>'
+				+ '</div>';
+		}
+		formSection = '<div class="card"><h3>' + h(selEmp.employee_no) + ' ' + h(selEmp.name) + '（' + h(selEmp.department||'') + '）' + month + ' 津貼</h3>'
+			+ '<p>每日第一行選擇津貼項目（預留 2 個可新增下拉），第二行金額由津貼定義自動顯示。儲存後可隨時回來編輯。</p>'
+			+ '<div style="margin-bottom:12px">📊 當月合計：<b id="monthtotal" style="color:#06c755;font-size:18px">0</b> 元</div>'
+			+ '<div id="allowForm">' + dayBlocks + '</div>'
+			+ '<div style="margin-top:16px"><button onclick="saveAll()" class="btn">💾 全部儲存</button> <span id="saveMsg" style="font-size:13px"></span></div>'
+			+ '</div>';
+	} else {
+		formSection = '<div class="card"><p style="color:#999">⬆️ 請先在上方選擇人員，即可在同一頁面看到該員整個月的津貼輸入。</p></div>';
+	}
+
+	var script = '<script>'
+		+ 'function changeFilter(){var m=document.getElementById("fillMonth").value;var e=document.getElementById("fillEmp").value;var q="?month="+m;if(e)q+="&eid="+e;location.href="/emp/allowances"+q;}'
+		// 重算每日與當月合計（金額來自所選項目的 data-amount）
+		+ 'function recalcDay(block){var s=0;block.querySelectorAll(\'.slot-cell\').forEach(function(cell){var sel=cell.querySelector(\'.alw-item\');var amt=0;if(sel&&sel.value){var opt=sel.options[sel.selectedIndex];if(opt&&opt.dataset.amount)amt=parseFloat(opt.dataset.amount)||0;}var line=cell.querySelector(\'.amt-line\');if(line)line.textContent=amt?amt:\'\';s+=amt;});var dt=block.querySelector(\'.day-total\');if(dt)dt.textContent=s;var mt=0;document.querySelectorAll(\'.day-total\').forEach(function(t){mt+=(parseFloat(t.textContent)||0);});document.getElementById(\'monthtotal\').textContent=mt;}'
+		// 新增一個下拉格（配對金額行）
+		+ 'function addEntry(block){var eid=block.dataset.eid;var date=block.dataset.date;var tpl=block.querySelector(\'.slot-cell\');var cell=tpl.cloneNode(true);cell.querySelector(\'.alw-item\').value=\'\';cell.querySelector(\'.amt-line\').textContent=\'\';cell.classList.remove(\'placeholder\');block.querySelector(\'.slot-row\').appendChild(cell);recalcDay(block);}'
+		// 同一天同一項目不可重複選
+		+ 'function updateDayOptions(block){var cells=block.querySelectorAll(\'.slot-cell\');var chosen=[];cells.forEach(function(c){if(c.querySelector(\'.alw-item\').value)chosen.push(c.querySelector(\'.alw-item\').value);});cells.forEach(function(c){var sel=c.querySelector(\'.alw-item\');Array.prototype.forEach.call(sel.options,function(opt){opt.disabled=false;});Array.prototype.forEach.call(sel.options,function(opt){if(opt.value&&chosen.indexOf(opt.value)!==-1&&opt.value!==sel.value)opt.disabled=true;});});}'
+		// 事件委派
+		+ 'document.getElementById(\'allowForm\').addEventListener(\'click\',function(ev){var t=ev.target;if(t.classList.contains(\'add-entry\')){addEntry(t.closest(\'.day-block\'));}});'
+		+ 'document.getElementById(\'allowForm\').addEventListener(\'change\',function(ev){var blk=ev.target.closest(\'.day-block\');updateDayOptions(blk);recalcDay(blk);});'
+		+ 'document.querySelectorAll(\'.day-block\').forEach(function(blk){updateDayOptions(blk);recalcDay(blk);});'
+		+ 'async function saveAll(){'
+		+ 'var rows=[];var month=document.getElementById(\'fillMonth\').value;'
+		+ 'document.querySelectorAll(\'.day-block\').forEach(function(blk){var eid=parseInt(blk.dataset.eid);var date=blk.dataset.date;'
+		+ 'blk.querySelectorAll(\'.slot-cell\').forEach(function(cell){var sel=cell.querySelector(\'.alw-item\');if(sel&&sel.value){'
+		+ 'var opt=sel.options[sel.selectedIndex];var amt=parseFloat(opt.dataset.amount)||0;'
+		+ 'if(amt>0)rows.push({employee_id:eid,work_date:month+"-"+date,item_id:parseInt(sel.value),amount:amt});'
+		+ '}});});'
+		+ 'var r=await fetch("/emp/api/allowances",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rows:rows})});'
+		+ 'var j=await r.json();var el=document.getElementById(\'saveMsg\');'
+		+ 'j.success?el.innerHTML="<span style=\\"color:#06c755\\">✅ 已儲存 "+j.count+" 筆</span>":el.innerHTML="<span style=\\"color:#e74c3c\\">❌ 失敗："+(j.error||"")+"</span>";'
+		+ 'setTimeout(function(){el.innerHTML="";},3000);'
+		+ '}'
+		+ '</script>';
+
+	var body = selectBar + formSection + script;
+	res.send(empLayout('津貼輸入', body, supervisor, 'allowances'));
+});
+
+// ===== 津貼定義頁面（項目管理，主管與管理員皆可維護） =====
+router.get('/allowance-items', authEmp, async function(req, res) {
+	var supervisor = await db.getEmployeeById(req.session.empId);
+	if (!supervisor) return res.redirect('/emp/login');
+	var items = await db.listAllowanceItems();
 	var itemRows = '';
 	for (var mi = 0; mi < items.length; mi++) {
 		var it = items[mi];
@@ -143,100 +231,26 @@ router.get('/allowances', authEmp, async function(req, res) {
 			+ '<td>' + (it.amount || 0) + '</td>'
 			+ '<td>' + activeLabel + '</td>'
 			+ '<td>'
-			+ '<button onclick="editItem(' + it.id + ',\'' + h(it.name) + '\',' + (it.amount||0) + ',' + (it.active !== false) + ')" class="btn-sm btn-outline">✏️</button> '
+			+ '<button onclick="editItem(' + it.id + ',\'' + h(it.name) + '\',' + (it.amount||0) + ')" class="btn-sm btn-outline">✏️ 編輯</button> '
 			+ '<button onclick="toggleItem(' + it.id + ')" class="btn-sm btn-outline">' + (it.active === false ? '啟用' : '停用') + '</button>'
 			+ '</td></tr>';
 	}
-
-	var itemSection = '<div class="card"><h3>📋 津貼項目維護</h3><p>新增或編輯津貼項目（全公司共用）。金額為預設值，填寫時可調整。</p>'
-		+ '<div class="form-inline" style="margin-bottom:12px"><div><label>項目名稱</label><input id="newItemName" placeholder="例如：伙食津貼"></div><div><label>預設金額</label><input id="newItemAmount" type="number" step="1" placeholder="例如：3000" style="width:120px"></div><div style="align-self:end"><button onclick="addItem()" class="btn btn-sm">➕ 新增</button></div></div>'
-		+ '<table><tr><th>名稱</th><th>預設金額</th><th>狀態</th><th>操作</th></tr>' + (itemRows || '<tr><td colspan="4">尚無津貼項目</td></tr>') + '</table></div>';
-
-	// ---- 填寫區（選員工後顯示逐日 5 槽） ----
-	var formSection = '';
-	if (selEmp) {
-		var dayBlocks = '';
-		for (var di = 0; di < days.length; di++) {
-			var dkey = days[di];
-			var recs = allowanceMap[dkey] || [];
-			var rowCount = Math.max(5, recs.length);
-			var rowsHtml = '';
-			for (var r = 0; r < rowCount; r++) {
-				var rec = recs[r] || {};
-				var selOpts = itemOpts;
-				if (rec.item_id) {
-					var re = new RegExp('value="' + rec.item_id + '"');
-					selOpts = selOpts.replace(re, 'value="' + rec.item_id + '" selected');
-				}
-				var rowId = 'note_' + selEid + '_' + dkey + '_' + r;
-				rowsHtml += '<div class="entry-row">'
-					+ '<select class="alw-item" style="flex:2">' + selOpts + '</select>'
-					+ '<input type="number" step="1" min="0" class="alw-amt" value="' + (rec.amount !== undefined ? rec.amount : '') + '" placeholder="金額" style="flex:1;width:90px;text-align:center">'
-					+ '<input type="text" class="alw-note" id="' + rowId + '" value="' + h(rec.note || '') + '" placeholder="備註" style="flex:2">'
-					+ '<button type="button" class="btn-sm btn-outline remove-entry" title="移除">✕</button>'
-					+ '</div>';
-			}
-			dayBlocks += '<div class="day-block" data-eid="' + selEid + '" data-date="' + dkey + '">'
-				+ '<div class="day-head"><b>' + month.substring(5) + '-' + dkey + '</b>　每日合計：<span class="day-total">0</span></div>'
-				+ '<div class="rows">' + rowsHtml + '</div>'
-				+ '<button type="button" class="btn-sm btn-outline add-entry">＋ 新增</button>'
-				+ '</div>';
-		}
-		formSection = '<div class="card"><h3>📝 津貼填寫 — ' + h(selEmp.employee_no) + ' ' + h(selEmp.name) + '（' + h(selEmp.department||'') + '）' + month + '</h3>'
-			+ '<p style="color:#e74c3c;font-weight:600">每月底前填寫完成。選擇員工與津貼項目，自動加總每日與當月金額，可事後編輯。</p>'
-			+ '<div style="margin-bottom:12px">📊 當月合計：<b id="monthtotal" style="color:#06c755;font-size:18px">0</b></div>'
-			+ '<div id="allowForm">' + dayBlocks + '</div>'
-			+ '<div style="margin-top:16px"><button onclick="saveAll()" class="btn">💾 全部儲存</button> <span id="saveMsg" style="font-size:13px"></span></div>'
-			+ '</div>';
-	} else {
-		formSection = '<div class="card"><p style="color:#999">⬆️ 請先選擇員工以開始填寫津貼。</p></div>';
-	}
-
-	// 選單列
-	var selectBar = '<div class="card"><h3>📝 津貼填寫</h3><div class="form-inline">'
-		+ '<div><label>月份</label><input type="month" id="fillMonth" value="' + month + '" onchange="changeFilter()"></div>'
-		+ '<div><label>員工</label><select id="fillEmp" onchange="changeFilter()"><option value="">選擇員工</option>' + empOpts + '</select></div>'
-		+ '</div></div>';
-
-	var script = '<script>'
-		+ 'function changeFilter(){var m=document.getElementById("fillMonth").value;var e=document.getElementById("fillEmp").value;var q="?month="+m;if(e)q+="&eid="+e;location.href="/emp/allowances"+q;}'
-		// 加總
-		+ 'function recalcDay(block){var s=0;block.querySelectorAll(\'.alw-amt\').forEach(function(inp){var v=parseFloat(inp.value);if(!isNaN(v)&&v>0)s+=v;});block.querySelector(\'.day-total\').textContent=s;var mt=0;document.querySelectorAll(\'.day-total\').forEach(function(t){mt+=(parseFloat(t.textContent)||0);});document.getElementById(\'monthtotal\').textContent=mt;}'
-		// 新增一行
-		+ 'function addEntry(block){var eid=block.dataset.eid;var date=block.dataset.date;var rows=block.querySelector(\'.rows\');var row=document.createElement(\'div\');var first=block.querySelector(\'.entry-row\');row.className=first.className;row.innerHTML=first.innerHTML;var n=rows.querySelectorAll(\'.entry-row\').length;row.querySelector(\'.alw-amt\').value=\'\';row.querySelector(\'.alw-note\').value=\'\';row.querySelector(\'.alw-note\').id=\'note_\'+eid+\'_\'+date+\'_\'+n;rows.appendChild(row);updateDayOptions(block);recalcDay(block);}'
-		// 同一天同一項目不可重複選（disable）
-		+ 'function updateDayOptions(block){var selects=block.querySelectorAll(\'.alw-item\');selects.forEach(function(sel){Array.prototype.forEach.call(sel.options,function(opt){opt.disabled=false;});});var chosen=[];selects.forEach(function(sel){if(sel.value)chosen.push(sel.value);});selects.forEach(function(sel){Array.prototype.forEach.call(sel.options,function(opt){if(opt.value&&chosen.indexOf(opt.value)!==-1&&opt.value!==sel.value)opt.disabled=true;});});}'
-		// 事件委派
-		+ 'document.getElementById(\'allowForm\').addEventListener(\'click\',function(ev){var t=ev.target;if(t.classList.contains(\'add-entry\')){addEntry(t.closest(\'.day-block\'));}else if(t.classList.contains(\'remove-entry\')){var blk=t.closest(\'.day-block\');if(blk.querySelectorAll(\'.entry-row\').length>1){t.closest(\'.entry-row\').remove();updateDayOptions(blk);recalcDay(blk);}}});'
-		+ 'document.getElementById(\'allowForm\').addEventListener(\'input\',function(ev){recalcDay(ev.target.closest(\'.day-block\'));});'
-		+ 'document.getElementById(\'allowForm\').addEventListener(\'change\',function(ev){var blk=ev.target.closest(\'.day-block\');updateDayOptions(blk);recalcDay(blk);});'
-		+ 'document.querySelectorAll(\'.day-block\').forEach(function(blk){updateDayOptions(blk);recalcDay(blk);});'
-		+ 'async function saveAll(){'
-		+ 'var rows=[];var month=document.getElementById(\'fillMonth\').value;'
-		+ 'document.querySelectorAll(\'.day-block\').forEach(function(blk){var eid=parseInt(blk.dataset.eid);var date=blk.dataset.date;'
-		+ 'blk.querySelectorAll(\'.entry-row\').forEach(function(row){var sel=row.querySelector(\'.alw-item\');var amt=parseFloat(row.querySelector(\'.alw-amt\').value);if(sel.value&&!isNaN(amt)&&amt>0){'
-		+ 'var note=row.querySelector(\'.alw-note\').value;rows.push({employee_id:eid,work_date:month+"-"+date,item_id:parseInt(sel.value),amount:amt,note:note});'
-		+ '}});});'
-		+ 'var r=await fetch("/emp/api/allowances",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rows:rows})});'
-		+ 'var j=await r.json();var el=document.getElementById(\'saveMsg\');'
-		+ 'j.success?el.innerHTML="<span style=\\"color:#06c755\\">✅ 已儲存 "+j.count+" 筆</span>":el.innerHTML="<span style=\\"color:#e74c3c\\">❌ 失敗："+(j.error||"")+"</span>";'
-		+ 'setTimeout(function(){el.innerHTML="";},3000);'
-		+ '}'
-		// 項目維護 JS
+	var body = '<div class="card"><h3>📋 津貼項目定義</h3><p>定義津貼項目與金額（全公司共用，主管與管理員皆可維護）。津貼輸入時以這些金額自動帶出。</p>'
+		+ '<div class="form-inline" style="margin-bottom:12px"><div><label>項目名稱</label><input id="newItemName" placeholder="例如：伙食津貼"></div><div><label>金額（元）</label><input id="newItemAmount" type="number" step="1" placeholder="例如：3000" style="width:140px"></div><div style="align-self:end"><button onclick="addItem()" class="btn btn-sm">➕ 新增</button></div></div>'
+		+ '<table><tr><th>名稱</th><th>金額（元）</th><th>狀態</th><th>操作</th></tr>' + (itemRows || '<tr><td colspan="4">尚無津貼項目</td></tr>') + '</table></div>'
+		+ '<script>'
 		+ 'async function addItem(){var n=document.getElementById("newItemName").value.trim();var a=parseFloat(document.getElementById("newItemAmount").value)||0;if(!n){alert("請輸入項目名稱");return;}'
 		+ 'var r=await fetch("/emp/api/allowance-items",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n,amount:a})});'
 		+ 'var j=await r.json();j.success?location.reload():alert(j.error);}'
-		+ 'async function editItem(id,oldName,oldAmt,active){var n=prompt("項目名稱：",oldName);if(!n)return;var a=parseFloat(prompt("預設金額：",oldAmt));if(isNaN(a))a=0;'
+		+ 'async function editItem(id,oldName,oldAmt){var n=prompt("項目名稱：",oldName);if(!n)return;var a=parseFloat(prompt("金額（元）：",oldAmt));if(isNaN(a))a=0;'
 		+ 'var r=await fetch("/emp/api/allowance-items/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n,amount:a})});'
 		+ 'var j=await r.json();j.success?location.reload():alert(j.error);}'
 		+ 'async function toggleItem(id){var r=await fetch("/emp/api/allowance-items/"+id+"/toggle",{method:"PUT"});var j=await r.json();j.success?location.reload():alert(j.error);}'
 		+ '</script>';
-
-	var body = itemSection + selectBar + formSection + '<style>.entry-row{display:flex;gap:6px;align-items:center;margin-bottom:4px}.day-block{border:1px solid #eee;border-radius:8px;padding:10px 12px;margin-bottom:10px}.day-head{margin-bottom:6px}.day-block .rows{}</style>' + script;
-	res.send(empLayout('津貼填寫', body, supervisor));
+	res.send(empLayout('津貼定義', body, supervisor, 'items'));
 });
 
-// ===== API：批次儲存津貼（逐日） =====
+// ===== API：批次儲存津貼（逐日，金額以津貼定義為準） =====
 router.post('/api/allowances', authEmp, express.json(), async function(req, res) {
 	var supervisor = await db.getEmployeeById(req.session.empId);
 	if (!supervisor) return res.status(401).json({ error: '未登入' });
@@ -245,19 +259,20 @@ router.post('/api/allowances', authEmp, express.json(), async function(req, res)
 	var deptEmployees = await db.listEmployeesByDepartment(supervisor.department);
 	var allowedIds = {};
 	for (var i = 0; i < deptEmployees.length; i++) allowedIds[deptEmployees[i].id] = true;
-	// 允許的項目 id
-	var allowedItems = {};
+
+	// 允許的項目與金額（金額以定義為準）
+	var itemAmount = {};
 	var items = await db.listAllowanceItems();
-	for (var k = 0; k < items.length; k++) allowedItems[items[k].id] = true;
+	for (var k = 0; k < items.length; k++) itemAmount[items[k].id] = parseFloat(items[k].amount) || 0;
 
 	var count = 0;
 	for (var j = 0; j < rows.length; j++) {
 		var row = rows[j];
 		if (!allowedIds[row.employee_id]) continue; // 不屬本部門 → 跳過
 		if (!row.work_date || !/^\d{4}-\d{2}-\d{2}$/.test(String(row.work_date))) continue;
-		if (!allowedItems[row.item_id]) continue;    // 無效項目 → 跳過
-		if (row.amount <= 0) continue;
-		await db.setAllowance(row.employee_id, String(row.work_date), row.item_id, row.amount, row.note || '', supervisor.id);
+		var amt = itemAmount[row.item_id];
+		if (!amt) continue; // 無效項目或金額 0
+		await db.setAllowance(row.employee_id, String(row.work_date), row.item_id, amt, '', supervisor.id);
 		count++;
 	}
 	res.json({ success: true, count: count });

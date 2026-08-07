@@ -63,6 +63,7 @@ function h(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 
 function empLayout(title, body, emp, active) {
 	var menu = '<a href="/emp/allowances"' + (active==='allowances' ? ' class="active"' : '') + '>📝 津貼輸入</a>'
+		+ '<a href="/emp/allowance-summary"' + (active==='summary' ? ' class="active"' : '') + '>📊 津貼匯總</a>'
 		+ '<a href="/emp/allowance-items"' + (active==='items' ? ' class="active"' : '') + '>📋 津貼定義</a>';
 	return '<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + title + '</title><style>' + EMP_CSS + '</style></head><body>'
 		+ '<div class="topbar"><h1>📋 玉群環境科技考勤系統</h1><div class="user">' + (emp ? h(emp.name) + '（' + h(emp.department||'') + '・' + (emp.role||'員工') + '）<a href="/emp/logout">登出</a>' : '') + '</div></div>'
@@ -144,6 +145,41 @@ router.get('/allowances', authEmp, async function(req, res) {
 		}
 	}
 
+	// 高溫津貼項目（名稱含「高溫」）
+	var highTempId = null;
+	for (var ht = 0; ht < activeItems.length; ht++) {
+		if (activeItems[ht].name.indexOf('高溫') !== -1) { highTempId = activeItems[ht].id; break; }
+	}
+	// 未出勤日（無打卡/無請假/無補打卡的工作日）
+	var absentDays = {};
+	if (selEid) {
+		var ciRecs = await db.queryCheckins(selEid, monthStart, monthEnd, 500, 0);
+		var ciSet = {};
+		for (var ci2 = 0; ci2 < ciRecs.length; ci2++) ciSet[String(ciRecs[ci2].check_time).substring(0,10)] = true;
+		var lvAll = await db.getLeaveRequests('approved', 2000);
+		var lvSet = {};
+		for (var lv2 = 0; lv2 < lvAll.length; lv2++) {
+			var lvx = lvAll[lv2];
+			if (lvx.employee_id !== selEid) continue;
+			var lvs = String(lvx.start_date).substring(0,10), lve = String(lvx.end_date || lvx.start_date).substring(0,10);
+			var cc = new Date(lvs);
+			while (cc <= new Date(lve)) {
+				lvSet[cc.getFullYear()+'-'+String(cc.getMonth()+1).padStart(2,'0')+'-'+String(cc.getDate()).padStart(2,'0')] = true;
+				cc.setDate(cc.getDate()+1);
+			}
+		}
+		var mpAll = await db.getMissedPunches('approved', 500);
+		var mpSet = {};
+		for (var mp2 = 0; mp2 < mpAll.length; mp2++) if (mpAll[mp2].employee_id === selEid) mpSet[mpAll[mp2].punch_date] = true;
+		for (var ab = 0; ab < days.length; ab++) {
+			var ds = month + '-' + days[ab];
+			var dow = new Date(ds).getDay();
+			if (dow === 0 || dow === 6) continue;
+			if (ciSet[ds] || lvSet[ds] || mpSet[ds]) continue;
+			absentDays[days[ab]] = true;
+		}
+	}
+
 	// ---- 津貼輸入主體 ----
 	var selectBar = '<div class="card"><h3>📝 津貼輸入</h3><div class="form-inline">'
 		+ '<div><label>月份</label><input type="month" id="fillMonth" value="' + month + '" onchange="changeFilter()"></div>'
@@ -172,14 +208,14 @@ router.get('/allowances', authEmp, async function(req, res) {
 					+ '</div>';
 			}
 			dayBlocks += '<div class="day-block" data-eid="' + selEid + '" data-date="' + dkey + '">'
-				+ '<div class="day-head"><b>' + month.substring(5) + '-' + dkey + '</b><span>每日合計：<span class="day-total">0</span> 元</span></div>'
+				+ '<div class="day-head"><b>' + month.substring(5) + '-' + dkey + '</b>' + (absentDays[dkey] ? ' <span class="badge badge-warn">未出勤</span>' : '') + '<span>每日合計：<span class="day-total">0</span> 元</span></div>'
 				+ '<div class="slot-row">' + cells + '</div>'
 				+ '<div style="margin-top:8px"><button type="button" class="btn-sm btn-outline add-entry">＋ 新增下拉</button></div>'
 				+ '</div>';
 		}
 		formSection = '<div class="card"><h3>' + h(selEmp.employee_no) + ' ' + h(selEmp.name) + '（' + h(selEmp.department||'') + '）' + month + ' 津貼</h3>'
 			+ '<p>每日第一行選擇津貼項目（預留 2 個可新增下拉），第二行金額由津貼定義自動顯示。儲存後可隨時回來編輯。</p>'
-			+ '<div style="margin-bottom:12px">📊 當月合計：<b id="monthtotal" style="color:#06c755;font-size:18px">0</b> 元</div>'
+			+ '<div style="margin-bottom:12px;display:flex;align-items:center;gap:12px">' + (highTempId ? '<button type="button" onclick="selectAllHighTemp(' + highTempId + ')" class="btn btn-outline" style="padding:8px 16px">🔥 高溫津貼一次全選</button>' : '') + '<span>📊 當月合計：<b id="monthtotal" style="color:#06c755;font-size:18px">0</b> 元</span></div>'
 			+ '<div id="allowForm">' + dayBlocks + '</div>'
 			+ '<div style="margin-top:16px"><button onclick="saveAll()" class="btn">💾 全部儲存</button> <span id="saveMsg" style="font-size:13px"></span></div>'
 			+ '</div>';
@@ -193,6 +229,7 @@ router.get('/allowances', authEmp, async function(req, res) {
 		+ 'function recalcDay(block){var s=0;block.querySelectorAll(\'.slot-cell\').forEach(function(cell){var sel=cell.querySelector(\'.alw-item\');var amt=0;if(sel&&sel.value){var opt=sel.options[sel.selectedIndex];if(opt&&opt.dataset.amount)amt=parseFloat(opt.dataset.amount)||0;}var line=cell.querySelector(\'.amt-line\');if(line)line.textContent=amt?amt:\'\';s+=amt;});var dt=block.querySelector(\'.day-total\');if(dt)dt.textContent=s;var mt=0;document.querySelectorAll(\'.day-total\').forEach(function(t){mt+=(parseFloat(t.textContent)||0);});document.getElementById(\'monthtotal\').textContent=mt;}'
 		// 新增一個下拉格（配對金額行）
 		+ 'function addEntry(block){var eid=block.dataset.eid;var date=block.dataset.date;var tpl=block.querySelector(\'.slot-cell\');var cell=tpl.cloneNode(true);cell.querySelector(\'.alw-item\').value=\'\';cell.querySelector(\'.amt-line\').textContent=\'\';cell.classList.remove(\'placeholder\');block.querySelector(\'.slot-row\').appendChild(cell);recalcDay(block);}'
+		+ 'function selectAllHighTemp(itemId){document.querySelectorAll(\'.day-block\').forEach(function(blk){var cells=blk.querySelectorAll(\'.slot-cell\');var found=false;cells.forEach(function(c){if(c.querySelector(\'.alw-item\').value===String(itemId))found=true;});if(found)return;var target=null;for(var i=0;i<cells.length;i++){if(!cells[i].querySelector(\'.alw-item\').value){target=cells[i];break;}}if(!target){addEntry(blk);target=blk.querySelector(\'.slot-cell:last-of-type\');}target.querySelector(\'.alw-item\').value=String(itemId);updateDayOptions(blk);recalcDay(blk);});alert(\'🔥 已將高溫津貼全選（未出勤日請個別取消）\');}'
 		// 同一天同一項目不可重複選
 		+ 'function updateDayOptions(block){var cells=block.querySelectorAll(\'.slot-cell\');var chosen=[];cells.forEach(function(c){if(c.querySelector(\'.alw-item\').value)chosen.push(c.querySelector(\'.alw-item\').value);});cells.forEach(function(c){var sel=c.querySelector(\'.alw-item\');Array.prototype.forEach.call(sel.options,function(opt){opt.disabled=false;});Array.prototype.forEach.call(sel.options,function(opt){if(opt.value&&chosen.indexOf(opt.value)!==-1&&opt.value!==sel.value)opt.disabled=true;});});}'
 		// 事件委派
@@ -216,6 +253,57 @@ router.get('/allowances', authEmp, async function(req, res) {
 	var body = selectBar + formSection + script;
 	res.send(empLayout('津貼輸入', body, supervisor, 'allowances'));
 });
+
+// ===== 津貼匯總頁面（每人當月累計津貼金額） =====
+router.get('/allowance-summary', authEmp, async function(req, res) {
+	var supervisor = await db.getEmployeeById(req.session.empId);
+	if (!supervisor) return res.redirect('/emp/login');
+	var month = req.query.month || (new Date().getFullYear() + '-' + String(new Date().getMonth()+1).padStart(2,'0'));
+
+	var deptEmployees = await db.listEmployeesByDepartment(supervisor.department);
+	var items = await db.listAllowanceItems();
+	var activeItems = items.filter(function(it) { return it.active !== false; });
+
+	// 匯總該月該部門津貼
+	var rows = await db.getAllowancesByMonth(month, supervisor.department);
+	var agg = {};
+	for (var i = 0; i < deptEmployees.length; i++) {
+		var de = deptEmployees[i];
+		agg[de.id] = { no: de.employee_no, name: de.name, dept: de.department||'', total: 0, items: {} };
+	}
+	for (var j = 0; j < rows.length; j++) {
+		var r = rows[j];
+		if (!agg[r.employee_id]) continue;
+		var amt = parseFloat(r.amount) || 0;
+		agg[r.employee_id].total += amt;
+		agg[r.employee_id].items[r.item_id] = (agg[r.employee_id].items[r.item_id] || 0) + amt;
+	}
+
+	var th = '<th>編號</th><th>姓名</th><th>部門</th><th>當月合計（元）</th>';
+	for (var k = 0; k < activeItems.length; k++) th += '<th>' + h(activeItems[k].name) + '</th>';
+	var tr = '';
+	var totalAll = 0;
+	for (var m = 0; m < deptEmployees.length; m++) {
+		var em = deptEmployees[m];
+		var a = agg[em.id];
+		if (a.total <= 0) continue;
+		totalAll += a.total;
+		tr += '<tr><td>' + h(a.no) + '</td><td>' + h(a.name) + '</td><td>' + h(a.dept) + '</td><td style="font-weight:700;color:#06c755">' + a.total + '</td>';
+		for (var n = 0; n < activeItems.length; n++) {
+			tr += '<td>' + (a.items[activeItems[n].id] ? a.items[activeItems[n].id] : '') + '</td>';
+		}
+		tr += '</tr>';
+	}
+
+	var body = '<div class="card"><h3>📊 津貼匯總 — ' + h(supervisor.department||'') + ' 部門（' + month + '）</h3>'
+		+ '<div class="form-inline" style="margin-bottom:16px"><div><label>月份</label><input type="month" id="sumMonth" value="' + month + '" onchange="changeMonth()"></div></div>'
+		+ '<p style="color:#666">顯示每人當月累計津貼金額（含高溫津貼）。僅列當月津貼 > 0 的人員。</p>'
+		+ '<table><tr>' + th + '</tr>' + (tr || '<tr><td colspan="' + (activeItems.length + 4) + '">本月尚無津貼紀錄</td></tr>') + '</table>'
+		+ '<div style="margin-top:12px;font-size:15px">💰 部門當月合計：<b style="color:#06c755">' + totalAll + '</b> 元</div>'
+		+ '<script>function changeMonth(){var m=document.getElementById("sumMonth").value;if(m)location.href="/emp/allowance-summary?month="+m;}</script>';
+	res.send(empLayout('津貼匯總', body, supervisor, 'summary'));
+});
+
 
 // ===== 津貼定義頁面（項目管理，主管與管理員皆可維護） =====
 router.get('/allowance-items', authEmp, async function(req, res) {

@@ -1848,7 +1848,7 @@ async function exportLeaveHours(startStr, endStr) {
 
 
 // ===== 月結彙總匯出（共用函式） =====
-var MONTHLY_HEADERS = ['員工編號','姓名','部門','出勤天數','請假天數(整日)','請假時數合計(h)','特休(h)','事假(h)','病假(h)','補休(h)','公假(h)','婚假/陪產假(h)','喪假(h)','考勤異常次數','考勤異常分鐘合計','考勤異常請假時數合計(h)','曠職天數','未下班次數','加班總時數合計(h)','加班-2小時內(h)','加班-超過2小時(h)','津貼(元)'];
+var MONTHLY_HEADERS = ['員工編號','姓名','部門','出勤天數','請假時數合計(h)','特休(h)','事假(h)','病假(h)','補休(h)','公假(h)','婚假/陪產假(h)','喪假(h)','考勤異常次數','考勤異常分鐘合計','考勤異常請假時數合計(h)','曠職天數','未下班次數','加班總時數合計(h)','加班-2小時內(h)','加班-超過2小時(h)','津貼(元)'];
 
 async function buildMonthlySummary(startDate, endDate) {
 	var summaryRows = await db.getCheckinSummary(startDate, endDate);
@@ -1995,7 +1995,7 @@ async function buildMonthlySummary(startDate, endDate) {
 		var allowanceAmt = allowanceMap[_eid] || '';
 		data.push([
 			sm.no, sm.name, sm.dept,
-			sm.workDays, sm.leaveDays, Math.round(sm.leaveHours * 10) / 10,
+			sm.workDays, Math.round(sm.leaveHours * 10) / 10,
 			Math.round(sm.annualH * 10) / 10, Math.round(sm.personalH * 10) / 10,
 			Math.round(sm.sickH * 10) / 10, Math.round(sm.compH * 10) / 10,
 			Math.round(sm.officialH * 10) / 10, Math.round(sm.marriageH * 10) / 10,

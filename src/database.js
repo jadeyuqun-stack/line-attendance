@@ -174,20 +174,26 @@ async function initDatabase() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  // 津貼記錄表（每月每人每項目一筆，重複寫入則更新金額）
+  // 津貼記錄表（每人每日每項目一筆，重複寫入則更新金額）
   await pool.query(`
     CREATE TABLE IF NOT EXISTS allowances (
       id SERIAL PRIMARY KEY,
       employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+      work_date TEXT NOT NULL DEFAULT '',
       month_label VARCHAR(7) NOT NULL,
       item_id INTEGER REFERENCES allowance_items(id),
       amount NUMERIC(10,2) NOT NULL DEFAULT 0,
       note TEXT DEFAULT '',
       created_by INTEGER REFERENCES employees(id),
       created_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(employee_id, month_label, item_id)
+      UNIQUE(employee_id, work_date, item_id)
     )
   `);
+  // 舊版 month_label 唯一約束相容（若已存在則移除）
+  try { await pool.query("ALTER TABLE allowances DROP CONSTRAINT IF EXISTS allowances_employee_id_month_label_item_id_key"); } catch(e) {}
+  try { await pool.query("ALTER TABLE allowances ADD COLUMN IF NOT EXISTS work_date TEXT DEFAULT ''"); } catch(e) {}
+  // 舊資料以每月 1 日補填 work_date
+  try { await pool.query("UPDATE allowances SET work_date = month_label || '-01' WHERE work_date = '' AND month_label <> ''"); } catch(e) {}
 
   const defaults = [
     ['company_name', process.env.COMPANY_NAME || '公司'],
@@ -1171,8 +1177,8 @@ async function importAllData(data) {
     if (data.allowances && data.allowances.length > 0) {
       for (var alw of data.allowances) {
         await client.query(
-          'INSERT INTO allowances (id, employee_id, month_label, item_id, amount, note, created_by, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING',
-          [alw.id, alw.employee_id, alw.month_label, alw.item_id, alw.amount||0, alw.note||'', alw.created_by, alw.created_at]
+          'INSERT INTO allowances (id, employee_id, work_date, month_label, item_id, amount, note, created_by, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING',
+          [alw.id, alw.employee_id, alw.work_date||'', alw.month_label||'', alw.item_id, alw.amount||0, alw.note||'', alw.created_by, alw.created_at]
         );
       }
       var maxAlw = data.allowances.reduce(function(m, a) { return a.id > m ? a.id : m; }, 0);
@@ -1269,19 +1275,21 @@ async function updateAllowanceItem(id, name, amount, active) {
   return true;
 }
 
-// =========== 津貼記錄 ===========
-async function setAllowance(employeeId, monthLabel, itemId, amount, note, createdBy) {
+// =========== 津貼記錄（每日粒度） ===========
+async function setAllowance(employeeId, workDate, itemId, amount, note, createdBy) {
+  var monthLabel = String(workDate).substring(0, 7);
   await pool.query(
-    "INSERT INTO allowances (employee_id, month_label, item_id, amount, note, created_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (employee_id, month_label, item_id) DO UPDATE SET amount=$4, note=$5, created_by=$6",
-    [employeeId, monthLabel, itemId, amount, note || '', createdBy]
+    "INSERT INTO allowances (employee_id, work_date, month_label, item_id, amount, note, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (employee_id, work_date, item_id) DO UPDATE SET month_label=$3, amount=$5, note=$6, created_by=$7",
+    [employeeId, workDate, monthLabel, itemId, amount, note || '', createdBy]
   );
   return true;
 }
 
-async function getAllowancesByEmployee(employeeId, monthLabel) {
+// 查某員工某日期範圍的津貼（填表預填用）
+async function getAllowancesByEmployee(employeeId, startDate, endDate) {
   var { rows } = await pool.query(
-    "SELECT a.*, ai.name AS item_name, ai.amount AS item_default FROM allowances a JOIN allowance_items ai ON a.item_id=ai.id WHERE a.employee_id=$1 AND a.month_label=$2 ORDER BY ai.id, ai.name",
-    [employeeId, monthLabel]
+    "SELECT a.*, ai.name AS item_name, ai.amount AS item_default FROM allowances a JOIN allowance_items ai ON a.item_id=ai.id WHERE a.employee_id=$1 AND a.work_date>=$2 AND a.work_date<=$3 ORDER BY a.work_date, ai.id",
+    [employeeId, startDate, endDate]
   );
   return rows;
 }
@@ -1290,15 +1298,16 @@ async function getAllowancesByMonth(monthLabel, department) {
   var sql = "SELECT a.*, e.employee_no, e.name AS emp_name, e.department, ai.name AS item_name FROM allowances a JOIN employees e ON a.employee_id=e.id JOIN allowance_items ai ON a.item_id=ai.id WHERE a.month_label=$1";
   var p = [monthLabel], i = 2;
   if (department) { sql += " AND e.department=$" + i++; p.push(department); }
-  sql += " ORDER BY e.department, e.employee_no, ai.id";
+  sql += " ORDER BY e.department, e.employee_no, a.work_date, ai.id";
   var { rows } = await pool.query(sql, p);
   return rows;
 }
 
-async function getAllowanceTotals(startMonth, endMonth) {
+// 日期範圍津貼合計（月結彙總用）
+async function getAllowanceTotals(startDate, endDate) {
   var { rows } = await pool.query(
-    "SELECT employee_id, SUM(amount)::NUMERIC(10,2) AS total FROM allowances WHERE month_label>=$1 AND month_label<=$2 GROUP BY employee_id",
-    [startMonth, endMonth]
+    "SELECT employee_id, SUM(amount)::NUMERIC(10,2) AS total FROM allowances WHERE work_date>=$1 AND work_date<=$2 GROUP BY employee_id",
+    [startDate, endDate]
   );
   return rows;
 }

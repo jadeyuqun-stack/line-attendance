@@ -86,7 +86,7 @@ router.get('/', authEmp, function(req, res) {
 	res.redirect('/emp/allowances');
 });
 
-// ===== 津貼填寫頁面 =====
+// ===== 津貼填寫頁面（逐日填寫 + 自動加總每日/當月） =====
 router.get('/allowances', authEmp, async function(req, res) {
 	var supervisor = await db.getEmployeeById(req.session.empId);
 	if (!supervisor) return res.redirect('/emp/login');
@@ -96,14 +96,27 @@ router.get('/allowances', authEmp, async function(req, res) {
 	var items = await db.listAllowanceItems();
 	var activeItems = items.filter(function(it) { return it.active !== false; });
 
-	// 預填本月已存的津貼
+	// 月份範圍
+	var monthParts = month.split('-');
+	var mYear = parseInt(monthParts[0]), mMonth = parseInt(monthParts[1]);
+	var monthStart = month + '-01';
+	var lastDay = String(new Date(mYear, mMonth, 0).getDate()).padStart(2,'0');
+	var monthEnd = month + '-' + lastDay;
+	var days = [];
+	for (var d = 1; d <= parseInt(lastDay); d++) days.push(String(d).padStart(2,'0'));
+
+	// 預填已存的津貼（以 work_date|item_id 為 key）
 	var allowanceMap = {};
 	for (var ei = 0; ei < deptEmployees.length; ei++) {
 		var eid = deptEmployees[ei].id;
 		allowanceMap[eid] = {};
-		var existing = await db.getAllowancesByEmployee(eid, month);
+		var existing = await db.getAllowancesByEmployee(eid, monthStart, monthEnd);
 		for (var ai = 0; ai < existing.length; ai++) {
-			allowanceMap[eid][existing[ai].item_id] = existing[ai];
+			var ex = existing[ai];
+			var dkey = String(ex.work_date).substring(8,10);
+			if (!allowanceMap[eid][dkey]) allowanceMap[eid][dkey] = { amt: {}, note: '' };
+			allowanceMap[eid][dkey].amt[ex.item_id] = ex.amount;
+			if (ex.note) allowanceMap[eid][dkey].note = ex.note;
 		}
 	}
 
@@ -129,51 +142,67 @@ router.get('/allowances', authEmp, async function(req, res) {
 		+ '<div class="form-inline" style="margin-bottom:12px"><div><label>項目名稱</label><input id="newItemName" placeholder="例如：伙食津貼"></div><div><label>預設金額</label><input id="newItemAmount" type="number" step="1" placeholder="例如：3000" style="width:120px"></div><div style="align-self:end"><button onclick="addItem()" class="btn btn-sm">➕ 新增</button></div></div>'
 		+ '<table><tr><th>名稱</th><th>預設金額</th><th>狀態</th><th>操作</th></tr>' + (itemRows || '<tr><td colspan="4">尚無津貼項目</td></tr>') + '</table></div>';
 
-	// ---- 填寫區 ----
-	var fillRows = '';
+	// ---- 填寫區（逐日） ----
+	var fillSections = '';
 	for (var efi = 0; efi < deptEmployees.length; efi++) {
 		var emp2 = deptEmployees[efi];
-		var amp = allowanceMap[emp2.id];
-		var itemCells = '';
+		var amp = allowanceMap[emp2.id] || {};
+		// 表頭
+		var thItems = '';
 		for (var aii = 0; aii < activeItems.length; aii++) {
-			var aitem = activeItems[aii];
-			var existingAmt = amp && amp[aitem.id] ? amp[aitem.id].amount : '';
-			var existingNote = amp && amp[aitem.id] ? (amp[aitem.id].note || '') : '';
-			itemCells += '<div class="item-row">'
-				+ '<div style="flex:2"><label style="font-size:11px">' + h(aitem.name) + '</label><input type="number" step="1" class="alw-amt" data-eid="' + emp2.id + '" data-item="' + aitem.id + '" value="' + existingAmt + '" placeholder="' + (aitem.amount||0) + '" style="width:100%"></div>'
-				+ '<div style="flex:3"><label style="font-size:11px">備註</label><input type="text" class="alw-note" data-eid="' + emp2.id + '" data-item="' + aitem.id + '" value="' + h(existingNote) + '" placeholder="（選填）"></div>'
-				+ '</div>';
+			thItems += '<th style="min-width:90px">' + h(activeItems[aii].name) + '<br><small style="color:#999">預設 ' + (activeItems[aii].amount||0) + '</small></th>';
 		}
-		fillRows += '<tr>'
-			+ '<td>' + h(emp2.employee_no) + '</td>'
-			+ '<td>' + h(emp2.name) + '</td>'
-			+ '<td>' + h(emp2.department||'') + '</td>'
-			+ '<td style="text-align:left">' + (itemCells || '<span style="color:#999">無可用項目</span>') + '</td>'
-			+ '</tr>';
+		// 每日列
+		var dayRows = '';
+		for (var di = 0; di < days.length; di++) {
+			var dkey = days[di];
+			var dcell = amp[dkey] || { amt: {}, note: '' };
+			var tds = '';
+			for (var aii2 = 0; aii2 < activeItems.length; aii2++) {
+				var item2 = activeItems[aii2];
+				var val = dcell.amt[item2.id] !== undefined ? dcell.amt[item2.id] : '';
+				tds += '<td><input type="number" step="1" min="0" class="alw-amt" data-eid="' + emp2.id + '" data-item="' + item2.id + '" data-date="' + dkey + '" value="' + val + '" placeholder="' + (item2.amount||0) + '" style="width:80px;text-align:center"></td>';
+			}
+			dayRows += '<tr>'
+				+ '<td style="white-space:nowrap;font-weight:600">' + month.substring(5) + '-' + dkey + '</td>'
+				+ tds
+				+ '<td class="day-total" data-eid="' + emp2.id + '" data-date="' + dkey + '" style="font-weight:600;color:#06c755">0</td>'
+				+ '<td style="min-width:140px"><input type="text" class="alw-note" id="note_' + emp2.id + '_' + dkey + '" data-eid="' + emp2.id + '" data-date="' + dkey + '" value="' + h(dcell.note) + '" placeholder="備註" style="width:100%"></td>'
+				+ '</tr>';
+		}
+		fillSections += '<div class="card" style="page-break-inside:avoid"><h3>' + h(emp2.employee_no) + ' ' + h(emp2.name) + '（' + h(emp2.department||'') + '）</h3>'
+			+ '<table style="min-width:100%"><tr><th style="width:80px">日期</th>' + thItems + '<th style="width:90px">每日合計</th><th style="width:140px">備註</th></tr>'
+			+ dayRows
+			+ '<tr style="background:#e6f9ee"><td colspan="' + (activeItems.length + 1) + '" style="font-weight:700">📊 當月合計</td><td id="monthtotal_' + emp2.id + '" style="font-weight:700;color:#06c755">0</td><td></td></tr>'
+			+ '</table></div>';
 	}
 
 	var fillSection = '<div class="card"><h3>📝 津貼填寫 — ' + h(supervisor.department||'') + ' 部門（' + month + '）</h3>'
-		+ '<p style="color:#e74c3c;font-weight:600">每月底前填寫完成。切換月份可查看/編輯過往記錄。</p>'
+		+ '<p style="color:#e74c3c;font-weight:600">每月底前填寫完成。填寫時自動加總每日與當月金額，可事後編輯。切換月份可查看/編輯過往記錄。</p>'
 		+ '<div class="form-inline" style="margin-bottom:16px"><div><label>月份</label><input type="month" id="fillMonth" value="' + month + '" onchange="changeMonth()"></div>'
 		+ '<div style="align-self:end"><button onclick="saveAll()" class="btn">💾 全部儲存</button></div>'
 		+ '<div style="align-self:end"><span id="saveMsg" style="font-size:13px"></span></div></div>'
-		+ '<table><tr><th style="width:80px">編號</th><th style="width:80px">姓名</th><th style="width:80px">部門</th><th>津貼項目（金額 / 備註）</th></tr>'
-		+ (fillRows || '<tr><td colspan="4">尚無部門員工</td></tr>')
-		+ '</table></div>';
+		+ (fillSections || '<p style="color:#999">尚無部門員工</p>')
+		+ '</div>';
 
 	var script = '<script>'
 		+ 'function changeMonth(){var m=document.getElementById("fillMonth").value;if(m)location.href="/emp/allowances?month="+m;}'
+		// 自動加總
+		+ 'function recalcAll(){var sums={};document.querySelectorAll(\'.alw-amt\').forEach(function(inp){var k=inp.dataset.eid+"_"+inp.dataset.date;var v=parseFloat(inp.value);if(!isNaN(v)&&v>0){sums[k]=(sums[k]||0)+v;}});document.querySelectorAll(\'.day-total\').forEach(function(cell){var k=cell.dataset.eid+"_"+cell.dataset.date;cell.textContent=sums[k]||0;});var mt={};document.querySelectorAll(\'.day-total\').forEach(function(cell){var eid=cell.dataset.eid;var v=parseFloat(cell.textContent)||0;mt[eid]=(mt[eid]||0)+v;});for(var ee in mt){var el=document.getElementById(\'monthtotal_\'+ee);if(el)el.textContent=mt[ee];}}'
+		+ 'document.querySelectorAll(\'.alw-amt\').forEach(function(inp){inp.addEventListener(\'input\',recalcAll);});'
+		+ 'recalcAll();'
 		+ 'async function saveAll(){'
-		+ 'var rows=[];var month=document.getElementById("fillMonth").value;'
-		+ 'document.querySelectorAll(".alw-amt").forEach(function(el){'
-		+ 'var v=parseFloat(el.value);if(!isNaN(v)&&v>=0){'
-		+ 'var eid=parseInt(el.dataset.eid);var item=parseInt(el.dataset.item);'
-		+ 'var noteEl=document.querySelector(".alw-note[data-eid=\'"+eid+"\'][data-item=\'"+item+"\']");'
-		+ 'rows.push({employee_id:eid,item_id:item,amount:v,note:noteEl?noteEl.value:""});'
+		+ 'var rows=[];'
+		+ 'document.querySelectorAll(\'.alw-amt\').forEach(function(el){'
+		+ 'var v=parseFloat(el.value);if(!isNaN(v)&&v>0){'
+		+ 'var eid=parseInt(el.dataset.eid);var item=parseInt(el.dataset.item);var date=el.dataset.date;'
+		+ 'var month=document.getElementById(\'fillMonth\').value;'
+		+ 'var noteEl=document.getElementById(\'note_\'+eid+\'_\'+date);'
+		+ 'rows.push({employee_id:eid,work_date:month+"-"+date,item_id:item,amount:v,note:noteEl?noteEl.value:""});'
 		+ '}});'
-		+ 'var r=await fetch("/emp/api/allowances",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({month:month,rows:rows})});'
-		+ 'var j=await r.json();var el=document.getElementById("saveMsg");'
-		+ 'j.success?el.innerHTML="<span style=\'color:#06c755\'>✅ 已儲存 "+j.count+" 筆</span>":el.innerHTML="<span style=\'color:#e74c3c\'>❌ 失敗："+(j.error||"")+"</span>";'
+		+ 'var r=await fetch("/emp/api/allowances",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rows:rows})});'
+		+ 'var j=await r.json();var el=document.getElementById(\'saveMsg\');'
+		+ 'j.success?el.innerHTML="<span style=\\"color:#06c755\\">✅ 已儲存 "+j.count+" 筆</span>":el.innerHTML="<span style=\\"color:#e74c3c\\">❌ 失敗："+(j.error||"")+"</span>";'
 		+ 'setTimeout(function(){el.innerHTML="";},3000);'
 		+ '}'
 		// 項目維護 JS
@@ -190,12 +219,11 @@ router.get('/allowances', authEmp, async function(req, res) {
 	res.send(empLayout('津貼填寫', body, supervisor));
 });
 
-// ===== API：批次儲存津貼 =====
+// ===== API：批次儲存津貼（逐日） =====
 router.post('/api/allowances', authEmp, express.json(), async function(req, res) {
 	var supervisor = await db.getEmployeeById(req.session.empId);
 	if (!supervisor) return res.status(401).json({ error: '未登入' });
 
-	var month = req.body.month;
 	var rows = req.body.rows || [];
 	var deptEmployees = await db.listEmployeesByDepartment(supervisor.department);
 	var allowedIds = {};
@@ -205,8 +233,9 @@ router.post('/api/allowances', authEmp, express.json(), async function(req, res)
 	for (var j = 0; j < rows.length; j++) {
 		var row = rows[j];
 		if (!allowedIds[row.employee_id]) continue; // 不屬本部門 → 跳過
+		if (!row.work_date || !/^\d{4}-\d{2}-\d{2}$/.test(String(row.work_date))) continue;
 		if (row.amount <= 0) continue;
-		await db.setAllowance(row.employee_id, month, row.item_id, row.amount, row.note || '', supervisor.id);
+		await db.setAllowance(row.employee_id, String(row.work_date), row.item_id, row.amount, row.note || '', supervisor.id);
 		count++;
 	}
 	res.json({ success: true, count: count });

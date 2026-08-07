@@ -1245,7 +1245,7 @@ async function listEmployeesByDepartment(department) {
 // =========== 津貼項目 ===========
 async function listAllowanceItems() {
   var { rows } = await pool.query(
-    "SELECT * FROM allowance_items ORDER BY active DESC, sort_order"
+    "SELECT * FROM allowance_items ORDER BY active DESC, id"
   );
   return rows;
 }
@@ -1280,7 +1280,7 @@ async function setAllowance(employeeId, monthLabel, itemId, amount, note, create
 
 async function getAllowancesByEmployee(employeeId, monthLabel) {
   var { rows } = await pool.query(
-    "SELECT a.*, ai.name AS item_name, ai.amount AS item_default FROM allowances a JOIN allowance_items ai ON a.item_id=ai.id WHERE a.employee_id=$1 AND a.month_label=$2 ORDER BY ai.sort_order, ai.name",
+    "SELECT a.*, ai.name AS item_name, ai.amount AS item_default FROM allowances a JOIN allowance_items ai ON a.item_id=ai.id WHERE a.employee_id=$1 AND a.month_label=$2 ORDER BY ai.id, ai.name",
     [employeeId, monthLabel]
   );
   return rows;
@@ -1290,7 +1290,7 @@ async function getAllowancesByMonth(monthLabel, department) {
   var sql = "SELECT a.*, e.employee_no, e.name AS emp_name, e.department, ai.name AS item_name FROM allowances a JOIN employees e ON a.employee_id=e.id JOIN allowance_items ai ON a.item_id=ai.id WHERE a.month_label=$1";
   var p = [monthLabel], i = 2;
   if (department) { sql += " AND e.department=$" + i++; p.push(department); }
-  sql += " ORDER BY e.department, e.employee_no, ai.sort_order";
+  sql += " ORDER BY e.department, e.employee_no, ai.id";
   var { rows } = await pool.query(sql, p);
   return rows;
 }

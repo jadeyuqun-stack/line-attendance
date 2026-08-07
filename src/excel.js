@@ -38,15 +38,20 @@ async function addSheet(wb, sheetName, options) {
 	// 表頭列
 	var headerRow = ws.getRow(rowIdx);
 	headerRow.height = 20;
+	var thinBorder = { style: 'thin', color: { argb: 'FFD0D0D0' } };
+	var borderStyle = { top: thinBorder, left: thinBorder, bottom: thinBorder, right: thinBorder };
 	for (var c = 1; c <= headers.length; c++) {
 		var hc = headerRow.getCell(c);
 		hc.value = headers[c - 1];
 		hc.font = { bold: true, color: { argb: 'FFFFFFFF' } };
 		hc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF06C755' } };
 		hc.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+		hc.border = borderStyle;
 	}
 
 	// 資料列
+	var thinBorder = { style: 'thin', color: { argb: 'FFD0D0D0' } };
+	var cellBorder = { top: thinBorder, left: thinBorder, bottom: thinBorder, right: thinBorder };
 	for (var i = 0; i < rows.length; i++) {
 		var rowVals = rows[i];
 		for (var c2 = 0; c2 < headers.length; c2++) {
@@ -54,6 +59,7 @@ async function addSheet(wb, sheetName, options) {
 			var cell = ws.getRow(rowIdx + 1 + i).getCell(colIdx);
 			cell.value = rowVals[c2] !== undefined ? rowVals[c2] : '';
 			cell.alignment = { horizontal: 'center', vertical: 'middle' };
+			cell.border = cellBorder;
 			if (options.highlightPositive && typeof cell.value === 'number' && cell.value > 0) {
 				cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } };
 				cell.font = { bold: true };

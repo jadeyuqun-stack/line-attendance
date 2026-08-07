@@ -1157,7 +1157,7 @@ function jsLib() {
     + 'async function setApprover(id,approverId,level){await fetch("/admin/api/employees/"+id+"/approver",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver_id:approverId||null,level:level||1})});}'
     + 'async function removeEmp(id,name){if(!confirm("確定移除 "+name+"？\\n打卡和請假記錄會保留。"))return;var r=await fetch("/admin/api/employees/"+id+"/deactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
-    + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n打卡和請假記錄會保留（匿名化）。\\n此操作無法復原！"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}';
+    + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n打卡和請假記錄會保留（匿名化）。\\n此操作無法復原！"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}'
 	    + 'async function setPassword(id){var p=prompt("設定/重設該員工密碼（主管端津貼登入用）：");if(!p)return;if(p.length<4){alert("密碼至少 4 字元");return;}var r=await fetch("/admin/api/employees/"+id+"/password",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:p})});var j=await r.json();j.success?alert("✅ 已設定"):alert("❌ "+j.error);}';
 }
 
@@ -2069,7 +2069,7 @@ router.get('/export/checkins', auth, async function(req, res) {
     var label = startDate === endDate ? startDate : startDate + '_' + endDate;
     var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
     var rows2d = data.map(function(r){ return [r['日期'],r['時間'],r['員工編號'],r['姓名'],r['部門'],r['類型'],r['位置'],r['GPS'],r['備註']]; });
-    excel.addSheet(wb, '打卡記錄', { title: title, headers: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'], rows: rows2d });
+    await excel.addSheet(wb, '打卡記錄', { title: title, headers: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'], rows: rows2d });
     await excel.send(res, wb, '打卡記錄_'+label+'.xlsx');
   } catch(e) {
     console.error('[Export] checkins error:', e);
@@ -2122,7 +2122,7 @@ router.get('/export/leaves', auth, async function(req, res) {
     var label2 = startDate === endDate ? startDate : startDate + '_' + endDate;
     var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
     var rows2d = data.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['假別'],r['開始日期'],r['開始時間'],r['結束日期'],r['結束時間'],r['時數(h)'],r['原因'],r['狀態'],r['駁回原因']]; });
-    excel.addSheet(wb, '請假記錄', { title: title, headers: ['員工編號','姓名','部門','假別','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'], rows: rows2d });
+    await excel.addSheet(wb, '請假記錄', { title: title, headers: ['員工編號','姓名','部門','假別','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'], rows: rows2d });
     await excel.send(res, wb, '請假記錄_'+label2+'.xlsx');
   } catch(e) {
     console.error('[Export] leaves error:', e);
@@ -2181,7 +2181,7 @@ router.get('/export/overtime', auth, async function(req, res) {
     var label3 = startDate === endDate ? startDate : startDate + '_' + endDate;
     var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
     var rows2d = data.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['日期'],r['開始時間'],r['結束時間'],r['總時數(h)'],r['2小時內(h)'],r['超過2小時(h)'],r['原因'],r['狀態'],r['駁回原因']]; });
-    excel.addSheet(wb, '加班記錄', { title: title, headers: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'], rows: rows2d });
+    await excel.addSheet(wb, '加班記錄', { title: title, headers: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'], rows: rows2d });
     await excel.send(res, wb, '加班記錄_'+label3+'.xlsx');
   } catch(e) {
     console.error('[Export] overtime error:', e);
@@ -2326,7 +2326,7 @@ var data = [];
 				// 檢查是否為六日或國定假日
 				if (status === '曠職') {
 					var _dow = new Date(r.work_date).getDay();
-					if (_dow === 0 || _dow === 6 || _holidays.indexOf(r.work_date) !== -1) {
+					if (_dow === 0 || _dow === 6 || _holidays2.indexOf(r.work_date) !== -1) {
 						status = '假日';
 					}
 				}
@@ -2374,7 +2374,7 @@ var data = [];
 		var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
 		var header22 = ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','考勤異常分鐘','考勤異常請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','補休剩餘(h)','年度事假(h)','年度病假(h)'];
 		var rows2d = data.map(function(r){ return [r['日期'],r['員工編號'],r['姓名'],r['部門'],r['上班時間'],r['下班時間'],r['總工時(h)'],r['淨工時(h)'],r['是否<9h'],r['考勤狀態'],r['考勤異常分鐘'],r['考勤異常請假時數'],r['請假假別'],r['備註'],r['特休額度(h)'],r['特休已用(h)'],r['特休剩餘(h)'],r['婚假(陪產假)剩餘(h)'],r['喪假剩餘(h)'],r['補休剩餘(h)'],r['年度事假(h)'],r['年度病假(h)']]; });
-		excel.addSheet(wb, '出勤彙總', { title: title, headers: header22, rows: rows2d });
+		await excel.addSheet(wb, '出勤彙總', { title: title, headers: header22, rows: rows2d });
 		await excel.send(res, wb, '出勤彙總_'+label+'.xlsx');
 	} catch(e) {
 		console.error('[Export] summary error:', e);
@@ -2400,7 +2400,7 @@ router.get('/export/monthly', auth, async function(req, res) {
 		var wb = excel.createWorkbook();
 		var label = startDate === endDate ? startDate : startDate + '_' + endDate;
 		var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
-		excel.addSheet(wb, '月結彙總', { title: title, headers: MONTHLY_HEADERS, rows: data, highlightPositive: true });
+		await excel.addSheet(wb, '月結彙總', { title: title, headers: MONTHLY_HEADERS, rows: data, highlightPositive: true });
 		await excel.send(res, wb, '月結彙總_'+label+'.xlsx');
 	} catch(e) {
 		console.error('[Export] monthly error:', e);
@@ -2564,12 +2564,12 @@ summaryData.push({
 		}
 			// Build styled sheets
 			var header22 = ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','考勤異常分鐘','考勤異常請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','補休剩餘(h)','年度事假(h)','年度病假(h)'];
-			excel.addSheet(wb, '出勤彙總', { title: title, headers: header22, rows: summaryData.map(function(r){ return [r['日期'],r['員工編號'],r['姓名'],r['部門'],r['上班時間'],r['下班時間'],r['總工時(h)'],r['淨工時(h)'],r['是否<9h'],r['考勤狀態'],r['考勤異常分鐘'],r['考勤異常請假時數'],r['請假假別'],r['備註'],r['特休額度(h)'],r['特休已用(h)'],r['特休剩餘(h)'],r['婚假(陪產假)剩餘(h)'],r['喪假剩餘(h)'],r['補休剩餘(h)'],r['年度事假(h)'],r['年度病假(h)']]; }) });
-			excel.addSheet(wb, '打卡紀錄', { title: title, headers: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'], rows: checkinData.map(function(r){ return [r['日期'],r['時間'],r['員工編號'],r['姓名'],r['部門'],r['類型'],r['位置'],r['GPS'],r['備註']]; }) });
-			excel.addSheet(wb, '請假紀錄', { title: title, headers: ['員工編號','姓名','部門','假別','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'], rows: leaveData.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['假別'],r['開始日期'],r['開始時間'],r['結束日期'],r['結束時間'],r['時數(h)'],r['原因'],r['狀態'],r['駁回原因']]; }) });
-			excel.addSheet(wb, '加班紀錄', { title: title, headers: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'], rows: otData.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['日期'],r['開始時間'],r['結束時間'],r['總時數(h)'],r['2小時內(h)'],r['超過2小時(h)'],r['原因'],r['狀態'],r['駁回原因']]; }) });
+			await excel.addSheet(wb, '出勤彙總', { title: title, headers: header22, rows: summaryData.map(function(r){ return [r['日期'],r['員工編號'],r['姓名'],r['部門'],r['上班時間'],r['下班時間'],r['總工時(h)'],r['淨工時(h)'],r['是否<9h'],r['考勤狀態'],r['考勤異常分鐘'],r['考勤異常請假時數'],r['請假假別'],r['備註'],r['特休額度(h)'],r['特休已用(h)'],r['特休剩餘(h)'],r['婚假(陪產假)剩餘(h)'],r['喪假剩餘(h)'],r['補休剩餘(h)'],r['年度事假(h)'],r['年度病假(h)']]; }) });
+			await excel.addSheet(wb, '打卡紀錄', { title: title, headers: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'], rows: checkinData.map(function(r){ return [r['日期'],r['時間'],r['員工編號'],r['姓名'],r['部門'],r['類型'],r['位置'],r['GPS'],r['備註']]; }) });
+			await excel.addSheet(wb, '請假紀錄', { title: title, headers: ['員工編號','姓名','部門','假別','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'], rows: leaveData.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['假別'],r['開始日期'],r['開始時間'],r['結束日期'],r['結束時間'],r['時數(h)'],r['原因'],r['狀態'],r['駁回原因']]; }) });
+			await excel.addSheet(wb, '加班紀錄', { title: title, headers: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'], rows: otData.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['日期'],r['開始時間'],r['結束時間'],r['總時數(h)'],r['2小時內(h)'],r['超過2小時(h)'],r['原因'],r['狀態'],r['駁回原因']]; }) });
 			var monthlyData = await buildMonthlySummary(startDate, endDate);
-			excel.addSheet(wb, '月結彙總', { title: title, headers: MONTHLY_HEADERS, rows: monthlyData, highlightPositive: true });
+			await excel.addSheet(wb, '月結彙總', { title: title, headers: MONTHLY_HEADERS, rows: monthlyData, highlightPositive: true });
 			await excel.send(res, wb, '考勤彙整_'+label+'.xlsx');
 
 	} catch(e) {

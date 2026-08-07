@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+var crypto = require('crypto');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -51,6 +52,7 @@ async function initDatabase() {
   try { await pool.query("ALTER TABLE employees ADD COLUMN sick_ytd_manual NUMERIC(5,1) DEFAULT 0"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN manager_mode TEXT DEFAULT 'normal'"); } catch(e) {}
   try { await pool.query("ALTER TABLE employees ADD COLUMN annual_leave_manual_reset_period TEXT DEFAULT ''"); } catch(e) {}
+  try { await pool.query("ALTER TABLE employees ADD COLUMN password_hash TEXT DEFAULT ''"); } catch(e) {}
 
   // 簽核層級欄位
   try { await pool.query("ALTER TABLE leave_requests ADD COLUMN approval_level INTEGER DEFAULT 1"); } catch(e) {}
@@ -161,6 +163,32 @@ async function initDatabase() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // 津貼項目表（全公司共用，主管與管理員皆可維護）
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS allowance_items (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) UNIQUE NOT NULL,
+      amount NUMERIC(10,2) DEFAULT 0,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  // 津貼記錄表（每月每人每項目一筆，重複寫入則更新金額）
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS allowances (
+      id SERIAL PRIMARY KEY,
+      employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+      month_label VARCHAR(7) NOT NULL,
+      item_id INTEGER REFERENCES allowance_items(id),
+      amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+      note TEXT DEFAULT '',
+      created_by INTEGER REFERENCES employees(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(employee_id, month_label, item_id)
+    )
+  `);
+
   const defaults = [
     ['company_name', process.env.COMPANY_NAME || '公司'],
     ['work_start_hour', process.env.WORK_START_HOUR || '8'],
@@ -181,6 +209,8 @@ async function initDatabase() {
     'CREATE INDEX IF NOT EXISTS idx_leaves_type_status ON leave_requests(leave_type, status)',
     'CREATE INDEX IF NOT EXISTS idx_overtime_employee_status ON overtime_requests(employee_id, status)',
     'CREATE INDEX IF NOT EXISTS idx_missed_employee_status ON missed_punch(employee_id, status)',
+    'CREATE INDEX IF NOT EXISTS idx_allowances_emp_month ON allowances(employee_id, month_label)',
+    'CREATE INDEX IF NOT EXISTS idx_allowances_month ON allowances(month_label)',
   ];
   for (var idxSql of indexes) {
     try { await pool.query(idxSql); } catch (e) { /* 索引可能已存在 */ }
@@ -993,6 +1023,8 @@ async function exportAllData() {
   result.missed_punch = (await pool.query('SELECT * FROM missed_punch ORDER BY id')).rows;
   result.salary_records = (await pool.query('SELECT * FROM salary_records ORDER BY id')).rows;
   result.pending_notifications = (await pool.query('SELECT * FROM pending_notifications ORDER BY id')).rows;
+  result.allowance_items = (await pool.query('SELECT * FROM allowance_items ORDER BY id')).rows;
+  result.allowances = (await pool.query('SELECT * FROM allowances ORDER BY id')).rows;
   result._exported_at = new Date().toISOString();
   result._version = '1.0';
   return result;
@@ -1012,11 +1044,13 @@ async function importAllData(data) {
     // 2. 清空所有表（由內而外）
     await client.query('DELETE FROM pending_notifications');
     await client.query('DELETE FROM salary_records');
+    await client.query('DELETE FROM allowances');
     await client.query('DELETE FROM missed_punch');
     await client.query('DELETE FROM overtime_requests');
     await client.query('DELETE FROM leave_requests');
     await client.query('DELETE FROM checkins');
     await client.query('DELETE FROM employees');
+    await client.query('DELETE FROM allowance_items');
     await client.query('DELETE FROM settings');
 
     // 3. 重設序列
@@ -1037,12 +1071,12 @@ async function importAllData(data) {
     if (data.employees && data.employees.length > 0) {
       for (var e of data.employees) {
         await client.query(
-          `INSERT INTO employees (id, employee_no, name, department, line_user_id, role, can_approve, status, created_at, updated_at, approver_id, approver2_id, approver3_id, hire_date, annual_leave_used_manual, marriage_leave_total, funeral_leave_total, comp_leave_total, personal_ytd_manual, sick_ytd_manual, manager_mode)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+          `INSERT INTO employees (id, employee_no, name, department, line_user_id, role, can_approve, status, created_at, updated_at, approver_id, approver2_id, approver3_id, hire_date, annual_leave_used_manual, marriage_leave_total, funeral_leave_total, comp_leave_total, personal_ytd_manual, sick_ytd_manual, manager_mode, annual_leave_manual_reset_period, password_hash)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
            ON CONFLICT (id) DO UPDATE SET name=$3, department=$4, role=$6, can_approve=$7, status=$8, hire_date=$14`,
           [e.id, e.employee_no, e.name, e.department||'', e.line_user_id, e.role||'員工', e.can_approve||false, e.status||'active', e.created_at, e.updated_at,
            e.approver_id, e.approver2_id, e.approver3_id, e.hire_date||'', e.annual_leave_used_manual||0, e.marriage_leave_total||0, e.funeral_leave_total||0,
-           e.comp_leave_total||0, e.personal_ytd_manual||0, e.sick_ytd_manual||0, e.manager_mode||'normal']
+           e.comp_leave_total||0, e.personal_ytd_manual||0, e.sick_ytd_manual||0, e.manager_mode||'normal', e.annual_leave_manual_reset_period||'', e.password_hash||'']
         );
       }
     }
@@ -1123,6 +1157,28 @@ async function importAllData(data) {
       await client.query("SELECT setval('pending_notifications_id_seq', $1)", [maxPn]);
     }
 
+    if (data.allowance_items && data.allowance_items.length > 0) {
+      for (var ai of data.allowance_items) {
+        await client.query(
+          'INSERT INTO allowance_items (id, name, amount, active, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING',
+          [ai.id, ai.name, ai.amount||0, ai.active===false ? false : true, ai.created_at||new Date().toISOString(), ai.updated_at||new Date().toISOString()]
+        );
+      }
+      var maxAi = data.allowance_items.reduce(function(m, i) { return i.id > m ? i.id : m; }, 0);
+      await client.query("SELECT setval('allowance_items_id_seq', $1)", [maxAi]);
+    }
+
+    if (data.allowances && data.allowances.length > 0) {
+      for (var alw of data.allowances) {
+        await client.query(
+          'INSERT INTO allowances (id, employee_id, month_label, item_id, amount, note, created_by, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING',
+          [alw.id, alw.employee_id, alw.month_label, alw.item_id, alw.amount||0, alw.note||'', alw.created_by, alw.created_at]
+        );
+      }
+      var maxAlw = data.allowances.reduce(function(m, a) { return a.id > m ? a.id : m; }, 0);
+      await client.query("SELECT setval('allowances_id_seq', $1)", [maxAlw]);
+    }
+
     // 5. 恢復 FK 檢查
     await client.query('SET session_replication_role = DEFAULT');
 
@@ -1136,6 +1192,8 @@ async function importAllData(data) {
       missed_punch: data.missed_punch ? data.missed_punch.length : 0,
       salary_records: data.salary_records ? data.salary_records.length : 0,
       pending_notifications: data.pending_notifications ? data.pending_notifications.length : 0,
+      allowance_items: data.allowance_items ? data.allowance_items.length : 0,
+      allowances: data.allowances ? data.allowances.length : 0,
     }};
   } catch (e) {
     await client.query('ROLLBACK');
@@ -1143,6 +1201,114 @@ async function importAllData(data) {
   } finally {
     client.release();
   }
+}
+
+// =========== 補休歸零 ===========
+async function resetAllCompLeave() {
+  var { rowCount } = await pool.query(
+    "UPDATE employees SET comp_leave_total=0, updated_at=NOW() WHERE status='active'"
+  );
+  return rowCount;
+}
+
+// =========== 主管津貼相關 ===========
+
+// 密碼 hash（scrypt + salt）
+async function setEmployeePassword(employeeId, password) {
+  if (!password) return false;
+  var salt = crypto.randomBytes(16).toString('hex');
+  var hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  await pool.query("UPDATE employees SET password_hash=$1, updated_at=NOW() WHERE id=$2", [salt + ':' + hash, employeeId]);
+  return true;
+}
+
+async function verifyEmployeePassword(employeeNo, password) {
+  var emp = await pool.query("SELECT * FROM employees WHERE TRIM(employee_no)=$1 AND status='active'", [String(employeeNo).trim()]);
+  if (emp.rows.length === 0) return null;
+  emp = emp.rows[0];
+  if (!emp.password_hash) return null;
+  var parts = emp.password_hash.split(':');
+  if (parts.length !== 2) return null;
+  var actual = crypto.scryptSync(String(password), parts[0], 64).toString('hex');
+  return crypto.timingSafeEqual(Buffer.from(actual,'hex'), Buffer.from(parts[1],'hex')) ? emp : null;
+}
+
+// 依部門查詢（主管用）
+async function listEmployeesByDepartment(department) {
+  var { rows } = await pool.query(
+    "SELECT * FROM employees WHERE department=$1 AND status='active' AND (role IS NULL OR role NOT IN ('老闆','boss')) ORDER BY employee_no",
+    [department]
+  );
+  return rows;
+}
+
+// =========== 津貼項目 ===========
+async function listAllowanceItems() {
+  var { rows } = await pool.query(
+    "SELECT * FROM allowance_items ORDER BY active DESC, sort_order"
+  );
+  return rows;
+}
+
+async function createAllowanceItem(name, amount) {
+  var { rows } = await pool.query(
+    "INSERT INTO allowance_items (name, amount) VALUES ($1,$2) ON CONFLICT (name) DO UPDATE SET active=true, amount=$2, updated_at=NOW() RETURNING *",
+    [name, amount]
+  );
+  return rows[0];
+}
+
+async function updateAllowanceItem(id, name, amount, active) {
+  var sql = "UPDATE allowance_items SET updated_at=NOW()";
+  var p = [], i = 1;
+  if (name !== undefined) { sql += ", name=$" + i++; p.push(name); }
+  if (amount !== undefined) { sql += ", amount=$" + i++; p.push(parseFloat(amount)); }
+  if (active !== undefined) { sql += ", active=$" + i++; p.push(active); }
+  sql += " WHERE id=$" + i; p.push(id);
+  await pool.query(sql, p);
+  return true;
+}
+
+// =========== 津貼記錄 ===========
+async function setAllowance(employeeId, monthLabel, itemId, amount, note, createdBy) {
+  await pool.query(
+    "INSERT INTO allowances (employee_id, month_label, item_id, amount, note, created_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (employee_id, month_label, item_id) DO UPDATE SET amount=$4, note=$5, created_by=$6",
+    [employeeId, monthLabel, itemId, amount, note || '', createdBy]
+  );
+  return true;
+}
+
+async function getAllowancesByEmployee(employeeId, monthLabel) {
+  var { rows } = await pool.query(
+    "SELECT a.*, ai.name AS item_name, ai.amount AS item_default FROM allowances a JOIN allowance_items ai ON a.item_id=ai.id WHERE a.employee_id=$1 AND a.month_label=$2 ORDER BY ai.sort_order, ai.name",
+    [employeeId, monthLabel]
+  );
+  return rows;
+}
+
+async function getAllowancesByMonth(monthLabel, department) {
+  var sql = "SELECT a.*, e.employee_no, e.name AS emp_name, e.department, ai.name AS item_name FROM allowances a JOIN employees e ON a.employee_id=e.id JOIN allowance_items ai ON a.item_id=ai.id WHERE a.month_label=$1";
+  var p = [monthLabel], i = 2;
+  if (department) { sql += " AND e.department=$" + i++; p.push(department); }
+  sql += " ORDER BY e.department, e.employee_no, ai.sort_order";
+  var { rows } = await pool.query(sql, p);
+  return rows;
+}
+
+async function getAllowanceTotals(startMonth, endMonth) {
+  var { rows } = await pool.query(
+    "SELECT employee_id, SUM(amount)::NUMERIC(10,2) AS total FROM allowances WHERE month_label>=$1 AND month_label<=$2 GROUP BY employee_id",
+    [startMonth, endMonth]
+  );
+  return rows;
+}
+
+async function getAllowanceFillingStatus(monthLabel) {
+  var { rows } = await pool.query(
+    "SELECT e.department, COUNT(DISTINCT e.id) AS total_emp, COUNT(DISTINCT a.employee_id) AS filled_emp, COUNT(DISTINCT e.id) - COUNT(DISTINCT a.employee_id) AS unfilled FROM employees e LEFT JOIN allowances a ON a.employee_id=e.id AND a.month_label=$1 WHERE e.status='active' AND (e.role IS NULL OR e.role NOT IN ('老闆','boss')) GROUP BY e.department ORDER BY e.department",
+    [monthLabel]
+  );
+  return rows;
 }
 
 module.exports = {
@@ -1158,4 +1324,7 @@ module.exports = {
   addPendingNotification, getPendingNotifications, clearPendingNotifications,
   calcPeriodHours, calculateAnnualLeaveEntitlement, getAnnualLeaveBalance, getMarriageLeaveBalance, getFuneralLeaveBalance, getCompLeaveBalance, getAnnualLeaveChangesThisMonth,
   exportAllData, importAllData,
+  resetAllCompLeave, setEmployeePassword, verifyEmployeePassword,
+  listEmployeesByDepartment, listAllowanceItems, createAllowanceItem, updateAllowanceItem,
+  setAllowance, getAllowancesByEmployee, getAllowancesByMonth, getAllowanceTotals, getAllowanceFillingStatus,
 };

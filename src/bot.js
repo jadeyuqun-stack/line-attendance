@@ -848,7 +848,7 @@ async function doQuery(emp, client, replyToken, _prefix) {
 
   var monthCheckins = await db.queryCheckins(null, monthStart, todayStr, 5000, 0);
   var allLeaves = await db.getLeaveRequests('approved', 2000);
-  var allOTs = await db.getOvertimeRequests('approved', 500);
+  var allOTs = await db.getOvertimeRequests('approved', 2000);
 
   var _titleExtra = emp.hire_date ? ' | 📅 入職日：' + emp.hire_date : '';
   var lines = ['📅 當月考勤明細（' + monthStart.substring(5) + ' ~ ' + todayStr.substring(5) + '）' + _titleExtra + ''];
@@ -1043,7 +1043,36 @@ async function doQuery(emp, client, replyToken, _prefix) {
     lines.push('\n🕐 加班：無');
   }
 
-  // 
+  // 上個月加班明細
+  var _prevS = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  var prevStart = _prevS.getFullYear() + '-' + String(_prevS.getMonth()+1).padStart(2,'0') + '-01';
+  var _prevE = new Date(now.getFullYear(), now.getMonth(), 0);
+  var prevEnd = _prevE.getFullYear() + '-' + String(_prevE.getMonth()+1).padStart(2,'0') + '-' + String(_prevE.getDate()).padStart(2,'0');
+  var prevOtRecords = [];
+  var prevOtTotalH = 0;
+  for (var _poi = 0; _poi < allOTs.length; _poi++) {
+    var _pmo = allOTs[_poi];
+    if (_pmo.employee_id !== emp.id) continue;
+    var _pos = typeof _pmo.start_time === 'string' ? _pmo.start_time.substring(0, 10) : '';
+    if (_pos < prevStart || _pos > prevEnd) continue;
+    var _pOtH = 0;
+    if (_pmo.start_time && _pmo.end_time) {
+      var _pDiff = new Date(_pmo.end_time) - new Date(_pmo.start_time);
+      if (_pDiff > 0) _pOtH = Math.round(_pDiff / 3600000 * 10) / 10;
+    }
+    prevOtRecords.push({ start: fmtDt(_pmo.start_time).substring(5), end: edtTime(_pmo.end_time), hours: _pOtH });
+    prevOtTotalH += _pOtH;
+  }
+  if (prevOtRecords.length > 0) {
+    lines.push('\n🕐 上個月加班（累計 ' + Math.round(prevOtTotalH * 10) / 10 + 'h）：');
+    for (var _por = 0; _por < prevOtRecords.length; _por++) {
+      lines.push('  ' + prevOtRecords[_por].start + ' ~ ' + prevOtRecords[_por].end + '（' + prevOtRecords[_por].hours + 'h）');
+    }
+  } else {
+    lines.push('\n🕐 上個月加班：無');
+  }
+
+  //
   // 入職日與年度請假統計
 
   try {

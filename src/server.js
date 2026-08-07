@@ -8,6 +8,7 @@ const { Client } = require('@line/bot-sdk');
 const db = require('./database');
 const bot = require('./bot');
 const admin = require('./admin');
+const emp = require('./emp');
 const report = require('./report');
 
 async function main() {
@@ -70,6 +71,7 @@ async function main() {
   });
 
   app.use('/admin', admin);
+  app.use('/emp', emp);
 
   // Rich Menu 診斷 / 設定
   app.get('/admin/setup-richmenu', async (req, res) => {

@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('./database');
 const XLSX = require('xlsx');
+var excel = require('./excel');
 const router = express.Router();
 
 function auth(req, res, next) {
@@ -111,6 +112,7 @@ function sidebar(active) {
     ['/admin/leaves', '🏖', '請假管理'],
     ['/admin/overtime', '🕐', '加班管理'],
     ['/admin/leave-balances', '🎯', '假期設定'],
+    ['/admin/allowances', '💰', '津貼項目'],
     ['/admin/salary', '💵', '薪資發送'],
     ['/admin/data', '📦', '資料彙整'],
     ['/admin/backup', '💾', '備份還原'],
@@ -606,7 +608,7 @@ router.get('/employees', auth, async (_, res) => {
       + '</td>'
       + '<td>'
       + '<button onclick="editLine('+e.id+',\''+nameEsc+'\',\''+esc(e.line_user_id||'')+'\')" class="btn-sm btn-blue">LINE</button> '
-      + '<button onclick="removeEmp('+e.id+',\''+nameEsc+'\')" class="btn-sm btn-red">移除</button>'
+      + '<button onclick="setPassword('+e.id+')" class="btn-sm btn-outline" title="設定津貼登入密碼">🔑</button> ' + '<button onclick="removeEmp('+e.id+',\''+nameEsc+'\')" class="btn-sm btn-red">移除</button>'
       + '</td></tr>';
   }
 
@@ -641,7 +643,7 @@ router.get('/employees', auth, async (_, res) => {
       + '<td>'
       + '<button onclick="editLine('+e.id+',\''+nameEsc+'\',\''+esc(e.line_user_id||'')+'\')" class="btn-sm btn-blue">LINE</button> '
 	      + (e.role==='經理'?'<button onclick="toggleManagerMode('+e.id+',\''+esc(e.manager_mode||'normal')+'\')" class="btn-sm '+(e.manager_mode==='test'?'btn':'btn-gray')+'">'+(e.manager_mode==='test'?'🔬 正常':'測試')+'</button> ':'')
-      + '<button onclick="removeEmp('+e.id+',\''+nameEsc+'\')" class="btn-sm btn-red">移除</button>'
+      + '<button onclick="setPassword('+e.id+')" class="btn-sm btn-outline" title="設定津貼登入密碼">🔑</button> ' + '<button onclick="removeEmp('+e.id+',\''+nameEsc+'\')" class="btn-sm btn-red">移除</button>'
       + '</td></tr>';
   }
 
@@ -718,7 +720,8 @@ router.get('/leave-balances', auth, async (req, res) => {
 	      + '<td class="c-year"><span class="editable" onclick="editField('+e.id+',\'sick_ytd_manual\',\''+esc(e.sick_ytd_manual||'0')+'\')">'+(_sickYTD>0?'<b style="color:#e67e22">'+(_sickYTD||'0')+'h</b>':'<span style="color:#bbb">0h</span>')+'</span></td>'
 	      + '</tr>';
   }
-  var body = '<style>.qt{border-collapse:collapse;width:100%}.qt th{background:#dfe6e9;color:#2d3436;font-size:12px;padding:8px 6px;position:sticky;top:0;z-index:1}.qt td{padding:8px 6px;font-size:13px;text-align:center}.qt .c-basic{background:#fafafa}.qt .c-annual{background:#e8f5e9}.qt .c-marriage{background:#fce4ec}.qt .c-funeral{background:#f3e5f5}.qt .c-comp{background:#fff8e1}.qt .c-year{background:#e3f2fd}.editable{cursor:pointer;border-bottom:1px dashed #999}.editable:hover{background:#ffeaa7!important}</style>'
+  var body = '<div class="card"><h3>⏰ 全部補休歸零</h3><p style="color:#666;font-size:13px;margin-bottom:12px">將全體在職員工的補休總額設為 0（剩餘同步歸零，歷史請假記錄保留）。此操作不可復原。</p><button class="btn btn-red" onclick="resetAllCompLeave()" style="font-size:14px;padding:10px 24px">⚠️ 全部補休歸零</button></div>'
+    + '<style>.qt{border-collapse:collapse;width:100%}.qt th{background:#dfe6e9;color:#2d3436;font-size:12px;padding:8px 6px;position:sticky;top:0;z-index:1}.qt td{padding:8px 6px;font-size:13px;text-align:center}.qt .c-basic{background:#fafafa}.qt .c-annual{background:#e8f5e9}.qt .c-marriage{background:#fce4ec}.qt .c-funeral{background:#f3e5f5}.qt .c-comp{background:#fff8e1}.qt .c-year{background:#e3f2fd}.editable{cursor:pointer;border-bottom:1px dashed #999}.editable:hover{background:#ffeaa7!important}</style>'
     + '<div class="card"><h3>🎯 假期額度設定</h3><p style="color:#666;font-size:13px;margin-bottom:16px">可針對各員工設定特休額度。點擊數值直接編輯，非零數字以<span style="color:#e67e22;font-weight:600">橘色</span>顯示，剩餘時數以<span style="color:#27ae60;font-weight:600">綠色</span>顯示。</p>'
     + '<div style="overflow-x:auto"><table class="qt"><tr><th class="c-basic">編號</th><th class="c-basic">姓名</th><th class="c-basic">部門</th><th class="c-basic">入職日</th><th class="c-annual">特休手動<br>補登(h)</th><th class="c-annual">特休已用(h)<br><small>系統計算</small></th><th class="c-annual">特休剩餘(h)</th><th class="c-marriage">婚假(陪產假)<br>總額(h)</th><th class="c-marriage">婚假剩餘(h)</th><th class="c-funeral">喪假總額(h)</th><th class="c-funeral">喪假剩餘(h)</th><th class="c-comp">補休總額(h)</th><th class="c-comp">補休剩餘(h)</th><th class="c-year">本年度<br>事假(h)</th><th class="c-year">本年度<br>病假(h)</th></tr>'
     + (rows||'<tr><td colspan="15" style="color:#999">尚無員工</td></tr>')
@@ -729,7 +732,9 @@ router.get('/leave-balances', auth, async (req, res) => {
     + '<li>本年度事假/病假：系統自動計算已核准時數，可手動補登調整。</li>'
     + '</ul></div>';
 	  + modalHtml();
-  body += '<script>'+jsLib()+'</script>';
+  body += '<script>'+jsLib()+'\n'
+    + 'async function resetAllCompLeave(){if(!confirm("⚠️ 確定將「全體在職員工」的補休額度全部歸零？\\n此操作不可復原！"))return;var r=await fetch("/admin/api/comp-leave/reset-all",{method:"PUT"});var j=await r.json();j.success?alert("✅ 已歸零 "+j.count+" 人補休"):alert("❌ 失敗："+(j.error||""));location.reload();}\n'
+    + '</script>';
   res.send(layout('假期設定', '假期設定', body));
 });
 
@@ -1109,6 +1114,18 @@ router.get('/trigger-report', auth, async (req, res) => {
   }
 });
 
+// 補休歸零（全體）
+router.put('/api/comp-leave/reset-all', auth, async function(req, res) {
+	var count = await db.resetAllCompLeave();
+	res.json({ success: true, count: count });
+});
+
+// 員工密碼設定
+router.put('/api/employees/:id/password', auth, express.json(), async function(req, res) {
+	var ok = await db.setEmployeePassword(parseInt(req.params.id), req.body.password);
+	ok ? res.json({ success: true }) : res.status(400).json({ error: '密碼不能為空' });
+});
+
 router.post('/api/settings', auth, express.json(), async (req, res) => {
   for (var k in req.body) await db.setSetting(k, req.body[k]);
   res.json({ success: true });
@@ -1141,6 +1158,7 @@ function jsLib() {
     + 'async function removeEmp(id,name){if(!confirm("確定移除 "+name+"？\\n打卡和請假記錄會保留。"))return;var r=await fetch("/admin/api/employees/"+id+"/deactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n打卡和請假記錄會保留（匿名化）。\\n此操作無法復原！"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}';
+	    + 'async function setPassword(id){var p=prompt("設定/重設該員工密碼（主管端津貼登入用）：");if(!p)return;if(p.length<4){alert("密碼至少 4 字元");return;}var r=await fetch("/admin/api/employees/"+id+"/password",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:p})});var j=await r.json();j.success?alert("✅ 已設定"):alert("❌ "+j.error);}';
 }
 
 // ===== 補打卡管理 =====
@@ -1469,6 +1487,72 @@ async function doSend(data, client, baseUrl) {
     + '</div></div><a href="/admin/salary" class="btn">返回薪資發送</a>';
 }
 
+
+// ===== 津貼項目管理 =====
+router.get('/allowances', auth, async function(_, res) {
+	var now = new Date();
+	var thisMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+	var filterMonth = _.query.month || thisMonth;
+	var items = await db.listAllowanceItems();
+	var itemRows = '';
+	for (var i = 0; i < items.length; i++) {
+		var it = items[i];
+		itemRows += '<tr>'
+			+ '<td>' + h(it.name) + '</td>'
+			+ '<td>' + (it.amount||0) + '</td>'
+			+ '<td>' + (it.active===false ? '<span class="badge badge-warn">已停用</span>' : '<span class="badge badge-in">啟用</span>') + '</td>'
+			+ '<td>'
+			+ '<button onclick="editAllowanceItem(' + it.id + ',\'' + h(it.name) + '\',' + (it.amount||0) + ',' + (it.active!==false) + ')" class="btn-sm btn-outline">✏️</button> '
+			+ '<button onclick="toggleAllowanceItem(' + it.id + ')" class="btn-sm btn-outline">' + (it.active===false ? '啟用' : '停用') + '</button>'
+			+ '</td></tr>';
+	}
+	var statusRows = '';
+	var statuses = await db.getAllowanceFillingStatus(filterMonth);
+	for (var s = 0; s < statuses.length; s++) {
+		var st = statuses[s];
+		statusRows += '<tr><td>' + h(st.department||'') + '</td><td>' + st.total_emp + '</td><td>' + st.filled_emp + '</td><td style="color:' + (st.unfilled>0?'#e74c3c':'#06c755') + '">' + st.unfilled + '</td></tr>';
+	}
+	var body = '<div class="card"><h3>📋 津貼項目清單</h3><p style="color:#666;font-size:13px;margin-bottom:12px">全公司共用項目（主管與管理員皆可維護）。新增/編輯名稱與金額、啟用/停用。</p>'
+		+ '<div class="form-inline" style="margin-bottom:16px"><div><label>項目名稱</label><input id="newName" placeholder="例如：伙食津貼" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px"></div><div><label>金額</label><input id="newAmt" type="number" step="1" value="0" style="width:100px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"></div><div style="padding-top:20px"><button onclick="addItem()" class="btn">➕ 新增</button></div></div>'
+		+ '<table><tr><th>名稱</th><th>金額</th><th>狀態</th><th>操作</th></tr>' + (itemRows||'<tr><td colspan="4">尚無津貼項目</td></tr>') + '</table></div>'
+		+ '<div class="card"><h3>📊 各部門填寫狀況</h3><div class="form-inline" style="margin-bottom:12px"><div><label>月份</label><input type="month" id="statusMonth" value="' + filterMonth + '" onchange="changeStatusMonth()" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px"></div></div>'
+		+ '<table><tr><th>部門</th><th>應填人數</th><th>已填人數</th><th>未填人數</th></tr>' + (statusRows||'<tr><td colspan="4">尚無資料</td></tr>') + '</table></div>'
+		+ '<script>'
+		+ 'function changeStatusMonth(){var m=document.getElementById("statusMonth").value;if(m)location.href="/admin/allowances?month="+m;}'
+		+ 'async function addItem(){var n=document.getElementById("newName").value.trim();var a=parseFloat(document.getElementById("newAmt").value)||0;if(!n){alert("請輸入項目名稱");return;}var r=await fetch("/admin/api/allowance-items",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n,amount:a})});var j=await r.json();j.success?location.reload():alert("❌ "+j.error);}'
+		+ 'async function editAllowanceItem(id,oldName,oldAmt,active){var n=prompt("項目名稱：",oldName);if(!n)return;var a=parseFloat(prompt("金額：",oldAmt));if(isNaN(a))a=0;var r=await fetch("/admin/api/allowance-items/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n,amount:a})});var j=await r.json();j.success?location.reload():alert("❌ "+j.error);}'
+		+ 'async function toggleAllowanceItem(id){var r=await fetch("/admin/api/allowance-items/"+id+"/toggle",{method:"PUT"});var j=await r.json();j.success?location.reload():alert("❌ "+j.error);}'
+		+ '</script>';
+	res.send(layout('津貼項目', '津貼項目管理', body));
+});
+
+// 津貼項目 API（後台）
+router.get('/api/allowance-items', auth, async function(req, res) {
+	var items = await db.listAllowanceItems();
+	res.json(items);
+});
+router.post('/api/allowance-items', auth, express.json(), async function(req, res) {
+	if (!req.body.name) return res.status(400).json({ error: '項目名稱必填' });
+	var item = await db.createAllowanceItem(req.body.name, parseFloat(req.body.amount)||0);
+	res.json({ success: true, item: item });
+});
+router.put('/api/allowance-items/:id', auth, express.json(), async function(req, res) {
+	await db.updateAllowanceItem(parseInt(req.params.id), req.body.name, req.body.amount, undefined);
+	res.json({ success: true });
+});
+router.put('/api/allowance-items/:id/toggle', auth, async function(req, res) {
+	var items = await db.listAllowanceItems();
+	var current = items.find(function(it) { return it.id === parseInt(req.params.id); });
+	if (!current) return res.status(404).json({ error: '找不到項目' });
+	await db.updateAllowanceItem(parseInt(req.params.id), undefined, undefined, !current.active);
+	res.json({ success: true });
+});
+router.get('/api/allowance-status', auth, async function(req, res) {
+	var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+	var statuses = await db.getAllowanceFillingStatus(month);
+	res.json(statuses);
+});
+
 // ===== 資料彙整 =====
 router.get('/data', auth, async function(_, res) {
 	var now = new Date();
@@ -1476,7 +1560,8 @@ router.get('/data', auth, async function(_, res) {
 	var todayStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
 
 	var cards = [
-		{ icon: '📦', title: '全部匯出', desc: '出勤彙總 + 打卡記錄 + 請假記錄 + 加班記錄（四個 Sheet 合一）', color: '#06c755', url: '/admin/export/all' },
+		{ icon: '📊', title: '月結彙總', desc: '22 欄逐人彙總（出勤/請假/異常/曠職/加班/津貼）', color: '#3498db', url: '/admin/export/monthly' },
+		{ icon: '📦', title: '全部匯出', desc: '出勤彙總 + 打卡記錄 + 請假記錄 + 加班記錄 + 月結彙總（五個 Sheet 合一）', color: '#06c755', url: '/admin/export/all' },
 	];
 
 	var cardHtml = '';
@@ -1761,6 +1846,174 @@ async function exportLeaveHours(startStr, endStr) {
   return total;
 }
 
+
+// ===== 月結彙總匯出（共用函式） =====
+var MONTHLY_HEADERS = ['員工編號','姓名','部門','出勤天數','請假天數(整日)','請假時數合計(h)','特休(h)','事假(h)','病假(h)','補休(h)','公假(h)','婚假/陪產假(h)','喪假(h)','考勤異常次數','考勤異常分鐘合計','考勤異常請假時數合計(h)','曠職天數','未下班次數','加班總時數合計(h)','加班-2小時內(h)','加班-超過2小時(h)','津貼(元)'];
+
+async function buildMonthlySummary(startDate, endDate) {
+	var summaryRows = await db.getCheckinSummary(startDate, endDate);
+	var leaves = await db.getLeaveRequests('approved', 2000);
+	var ots = await db.getOvertimeRequests('approved', 2000);
+	var missedPunches = await db.getMissedPunches('approved', 500);
+	var holidays = [];
+	try { holidays = JSON.parse(await db.getSetting('tw_holidays') || '[]'); } catch(e) {}
+	var workStartH = parseInt(await db.getSetting('work_start_hour') || '8');
+	var lateBufMin = parseInt(await db.getSetting('late_buffer_minutes') || '30');
+	var lateThreshold = workStartH * 60 + lateBufMin;
+	var startMonth = String(startDate).substring(0, 7);
+	var endMonth = String(endDate).substring(0, 7);
+	var allowanceTotals = await db.getAllowanceTotals(startMonth, endMonth);
+	var allowanceMap = {};
+	for (var ai = 0; ai < allowanceTotals.length; ai++) allowanceMap[allowanceTotals[ai].employee_id] = allowanceTotals[ai].total;
+
+	// 依 employee_id 分組彙總
+	var empSummary = {};
+	var allEmpIds = {};
+	// source1: 打卡彙總
+	for (var i = 0; i < summaryRows.length; i++) {
+		var r = summaryRows[i];
+		var eid = r.employee_id;
+		allEmpIds[eid] = true;
+		if (!empSummary[eid]) empSummary[eid] = { no: r.employee_no, name: r.name, dept: r.department||'', workDays:0, leaveDays:0, leaveHours:0, annualH:0, personalH:0, sickH:0, compH:0, officialH:0, marriageH:0, funeralH:0, anomalyCnt:0, anomalyMin:0, anomalyLeaveH:0, absentCnt:0, noOutCnt:0, otTotalH:0, otIn2H:0, otOver2H:0 };
+		var ci = r.check_in_time ? new Date(r.check_in_time) : null;
+		var co = r.check_out_time ? new Date(r.check_out_time) : null;
+		var wd = r.work_date ? String(r.work_date).substring(0,10) : '';
+		var dow = new Date(wd).getDay();
+		var isHol = dow === 0 || dow === 6 || holidays.indexOf(wd) !== -1;
+		if (!ci && !isHol) {
+			// 檢查是否請假或補打卡覆蓋
+			var lCover = false, mpCover = false;
+			for (var lj = 0; lj < leaves.length; lj++) {
+				var el = leaves[lj];
+				if (el.employee_id == eid && el.status === 'approved' && dateOverlaps(el.start_date, el.end_date, wd)) { lCover = true; break; }
+			}
+			for (var mj = 0; mj < missedPunches.length; mj++) {
+				var mp = missedPunches[mj];
+				if (mp.employee_id == eid && mp.punch_date == wd) { mpCover = true; break; }
+			}
+			if (!lCover && !mpCover) empSummary[eid].absentCnt++;
+		}
+		if (ci) {
+			if (!isHol) {
+				var lCovered2 = false;
+				for (var lk = 0; lk < leaves.length; lk++) {
+					var el2 = leaves[lk];
+					if (el2.employee_id == eid && el2.status === 'approved' && dateOverlaps(el2.start_date, el2.end_date, wd)) { lCovered2 = true; break; }
+				}
+				if (!lCovered2) empSummary[eid].workDays++;
+			}
+			var ciMins = ci.getHours() * 60 + ci.getMinutes();
+			if (ciMins > lateThreshold && !isHol) {
+				empSummary[eid].anomalyCnt++;
+				empSummary[eid].anomalyMin += (ciMins - lateThreshold);
+				// 考勤異常請假時數
+				for (var ln = 0; ln < leaves.length; ln++) {
+					var el3 = leaves[ln];
+					if (el3.employee_id == eid && el3.status === 'approved' && dateOverlaps(el3.start_date, el3.end_date, wd)) {
+						try { var _clampH = await db.calcPeriodHours(wd + 'T00:00:00', wd + 'T23:59:59'); empSummary[eid].anomalyLeaveH += _clampH; } catch(ex2) {}
+						break;
+					}
+				}
+			}
+			if (!co) empSummary[eid].noOutCnt++;
+		}
+	}
+	// source2: 請假彙總
+	var leaveByEmp = {};
+	for (var li = 0; li < leaves.length; li++) {
+		var l = leaves[li];
+		if (!leaveByEmp[l.employee_id]) leaveByEmp[l.employee_id] = [];
+		leaveByEmp[l.employee_id].push(l);
+	}
+	var empIdArr = Object.keys(allEmpIds);
+	for (var ei = 0; ei < empIdArr.length; ei++) {
+		var eidN = parseInt(empIdArr[ei]);
+		if (!empSummary[eidN]) empSummary[eidN] = { no: '', name: '', dept: '', workDays:0, leaveDays:0, leaveHours:0, annualH:0, personalH:0, sickH:0, compH:0, officialH:0, marriageH:0, funeralH:0, anomalyCnt:0, anomalyMin:0, anomalyLeaveH:0, absentCnt:0, noOutCnt:0, otTotalH:0, otIn2H:0, otOver2H:0 };
+		var empLeaves = leaveByEmp[eidN] || [];
+		var countedLeaveDates = {};
+		for (var lj2 = 0; lj2 < empLeaves.length; lj2++) {
+			var elv = empLeaves[lj2];
+			if (elv.status !== 'approved') continue;
+			var lStart = (typeof elv.start_date === 'string' ? elv.start_date.substring(0,10) : '');
+			var lEnd = (typeof elv.end_date === 'string' ? elv.end_date.substring(0,10) : lStart);
+			if (!lStart) continue;
+			var cEnd = lEnd || lStart;
+			// 逐日迭代請假區間
+			var cur = new Date(lStart);
+			var eCur = new Date(cEnd);
+			while (cur <= eCur) {
+				var ds = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+				if (ds >= String(startDate).substring(0,10) && ds <= String(endDate).substring(0,10)) {
+					var dow2 = cur.getDay();
+					if (dow2 !== 0 && dow2 !== 6 && holidays.indexOf(ds) === -1) {
+						var key = eidN + '|' + ds;
+						if (!countedLeaveDates[key]) {
+							countedLeaveDates[key] = true;
+							empSummary[eidN].leaveDays++;
+						}
+					}
+				}
+				cur.setDate(cur.getDate() + 1);
+			}
+			// 請假時數
+			var clampStart = elv.start_date;
+			var clampEnd = elv.end_date || clampStart;
+			if (typeof clampStart === 'string' && clampStart < startDate) clampStart = startDate + 'T00:00:00';
+			if (typeof clampEnd === 'string' && clampEnd > endDate) clampEnd = endDate + 'T23:59:59';
+			try {
+				var lh = await db.calcPeriodHours(clampStart, clampEnd);
+				empSummary[eidN].leaveHours += lh;
+				if (elv.leave_type === 'annual') empSummary[eidN].annualH += lh;
+				else if (elv.leave_type === 'personal') empSummary[eidN].personalH += lh;
+				else if (elv.leave_type === 'sick') empSummary[eidN].sickH += lh;
+				else if (elv.leave_type === 'comp') empSummary[eidN].compH += lh;
+				else if (elv.leave_type === 'official') empSummary[eidN].officialH += lh;
+				else if (elv.leave_type === 'marriage') empSummary[eidN].marriageH += lh;
+				else if (elv.leave_type === 'funeral') empSummary[eidN].funeralH += lh;
+			} catch(ex) {}
+		}
+	}
+	// source3: 加班彙總
+	for (var oi = 0; oi < ots.length; oi++) {
+		var ot = ots[oi];
+		if (ot.status !== 'approved') continue;
+		var otStart = typeof ot.start_time === 'string' ? ot.start_time.substring(0,10) : '';
+		if (otStart < String(startDate).substring(0,10) || otStart > String(endDate).substring(0,10)) continue;
+		if (!empSummary[ot.employee_id]) continue;
+		var otH = 0;
+		if (ot.start_time && ot.end_time) {
+			var diffMs = new Date(ot.end_time) - new Date(ot.start_time);
+			if (diffMs > 0) otH = Math.round(diffMs / 3600000 * 10) / 10;
+		}
+		empSummary[ot.employee_id].otTotalH += otH;
+		empSummary[ot.employee_id].otIn2H += Math.min(otH, 2);
+		empSummary[ot.employee_id].otOver2H += Math.max(0, Math.round((otH - 2) * 10) / 10);
+	}
+	// 轉成陣列
+	var data = [];
+	for (var ei2 = 0; ei2 < empIdArr.length; ei2++) {
+		var _eid = parseInt(empIdArr[ei2]);
+		var sm = empSummary[_eid];
+		var allowanceAmt = allowanceMap[_eid] || '';
+		data.push([
+			sm.no, sm.name, sm.dept,
+			sm.workDays, sm.leaveDays, Math.round(sm.leaveHours * 10) / 10,
+			Math.round(sm.annualH * 10) / 10, Math.round(sm.personalH * 10) / 10,
+			Math.round(sm.sickH * 10) / 10, Math.round(sm.compH * 10) / 10,
+			Math.round(sm.officialH * 10) / 10, Math.round(sm.marriageH * 10) / 10,
+			Math.round(sm.funeralH * 10) / 10,
+			sm.anomalyCnt, sm.anomalyMin, Math.round(sm.anomalyLeaveH * 10) / 10,
+			sm.absentCnt, sm.noOutCnt,
+			Math.round(sm.otTotalH * 10) / 10, Math.round(sm.otIn2H * 10) / 10,
+			Math.round(sm.otOver2H * 10) / 10,
+			allowanceAmt
+		]);
+	}
+	data.sort(function(a, b) { return String(a[0]).localeCompare(String(b[0])); });
+	return data;
+}
+
+
 router.get('/export/checkins', auth, async function(req, res) {
   try {
     var startDate = req.query.start || '';
@@ -1812,14 +2065,12 @@ router.get('/export/checkins', auth, async function(req, res) {
     // 按日期排序
     data.sort(function(a, b) { return a['日期'].localeCompare(b['日期']) || a['時間'].localeCompare(b['時間']); });
 
-    var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(data, { header: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'] });
-    XLSX.utils.book_append_sheet(wb, ws, '打卡記錄');
-    var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    var wb = excel.createWorkbook();
     var label = startDate === endDate ? startDate : startDate + '_' + endDate;
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('打卡記錄_'+label+'.xlsx'));
-    res.end(buf);
+    var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
+    var rows2d = data.map(function(r){ return [r['日期'],r['時間'],r['員工編號'],r['姓名'],r['部門'],r['類型'],r['位置'],r['GPS'],r['備註']]; });
+    excel.addSheet(wb, '打卡記錄', { title: title, headers: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'], rows: rows2d });
+    await excel.send(res, wb, '打卡記錄_'+label+'.xlsx');
   } catch(e) {
     console.error('[Export] checkins error:', e);
     res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
@@ -1867,14 +2118,12 @@ router.get('/export/leaves', auth, async function(req, res) {
         '駁回原因': l.reject_reason || ''
       });
     }
-    var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','假別','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'] });
-    XLSX.utils.book_append_sheet(wb, ws, '請假記錄');
-    var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    var wb = excel.createWorkbook();
     var label2 = startDate === endDate ? startDate : startDate + '_' + endDate;
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('請假記錄_'+label2+'.xlsx'));
-    res.end(buf);
+    var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
+    var rows2d = data.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['假別'],r['開始日期'],r['開始時間'],r['結束日期'],r['結束時間'],r['時數(h)'],r['原因'],r['狀態'],r['駁回原因']]; });
+    excel.addSheet(wb, '請假記錄', { title: title, headers: ['員工編號','姓名','部門','假別','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'], rows: rows2d });
+    await excel.send(res, wb, '請假記錄_'+label2+'.xlsx');
   } catch(e) {
     console.error('[Export] leaves error:', e);
     res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
@@ -1928,14 +2177,12 @@ router.get('/export/overtime', auth, async function(req, res) {
         '駁回原因': ot.reject_reason || ''
       });
     }
-    var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(data, { header: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'] });
-    XLSX.utils.book_append_sheet(wb, ws, '加班記錄');
-    var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    var wb = excel.createWorkbook();
     var label3 = startDate === endDate ? startDate : startDate + '_' + endDate;
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('加班記錄_'+label3+'.xlsx'));
-    res.end(buf);
+    var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
+    var rows2d = data.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['日期'],r['開始時間'],r['結束時間'],r['總時數(h)'],r['2小時內(h)'],r['超過2小時(h)'],r['原因'],r['狀態'],r['駁回原因']]; });
+    excel.addSheet(wb, '加班記錄', { title: title, headers: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'], rows: rows2d });
+    await excel.send(res, wb, '加班記錄_'+label3+'.xlsx');
   } catch(e) {
     console.error('[Export] overtime error:', e);
     res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
@@ -2122,16 +2369,13 @@ var data = [];
 		}
 
 		// 建立 Excel
-		var wb = XLSX.utils.book_new();
-		var ws = XLSX.utils.json_to_sheet(data, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','考勤異常分鐘','考勤異常請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','補休剩餘(h)','年度事假(h)','年度病假(h)']
-		});
-		XLSX.utils.book_append_sheet(wb, ws, '出勤彙總');
-		var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+		var wb = excel.createWorkbook();
 		var label = startDate === endDate ? startDate : startDate + '_' + endDate;
-		res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-		res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('出勤彙總_'+label+'.xlsx'));
-		res.end(buf);
+		var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
+		var header22 = ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','考勤異常分鐘','考勤異常請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','補休剩餘(h)','年度事假(h)','年度病假(h)'];
+		var rows2d = data.map(function(r){ return [r['日期'],r['員工編號'],r['姓名'],r['部門'],r['上班時間'],r['下班時間'],r['總工時(h)'],r['淨工時(h)'],r['是否<9h'],r['考勤狀態'],r['考勤異常分鐘'],r['考勤異常請假時數'],r['請假假別'],r['備註'],r['特休額度(h)'],r['特休已用(h)'],r['特休剩餘(h)'],r['婚假(陪產假)剩餘(h)'],r['喪假剩餘(h)'],r['補休剩餘(h)'],r['年度事假(h)'],r['年度病假(h)']]; });
+		excel.addSheet(wb, '出勤彙總', { title: title, headers: header22, rows: rows2d });
+		await excel.send(res, wb, '出勤彙總_'+label+'.xlsx');
 	} catch(e) {
 		console.error('[Export] summary error:', e);
 		res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
@@ -2139,6 +2383,32 @@ var data = [];
 });
 
 // ===== 彙整匯出（四 sheet 合一） =====
+router.get('/export/monthly', auth, async function(req, res) {
+	try {
+		var startDate = req.query.start || '';
+		var endDate = req.query.end || '';
+		if (!startDate) {
+			var month = req.query.month || (new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0'));
+			var parts = month.split('-');
+			var y = parseInt(parts[0]), m = parseInt(parts[1]);
+			startDate = y+'-'+String(m).padStart(2,'0')+'-01';
+			var lastDay = new Date(y, m, 0).getDate();
+			endDate = y+'-'+String(m).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+		}
+		if (!endDate) endDate = startDate;
+		var data = await buildMonthlySummary(startDate, endDate);
+		var wb = excel.createWorkbook();
+		var label = startDate === endDate ? startDate : startDate + '_' + endDate;
+		var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
+		excel.addSheet(wb, '月結彙總', { title: title, headers: MONTHLY_HEADERS, rows: data, highlightPositive: true });
+		await excel.send(res, wb, '月結彙總_'+label+'.xlsx');
+	} catch(e) {
+		console.error('[Export] monthly error:', e);
+		res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');
+	}
+});
+
+
 router.get('/export/all', auth, async function(req, res) {
 	try {
 		var startDate = req.query.start || '';
@@ -2153,7 +2423,9 @@ router.get('/export/all', auth, async function(req, res) {
 		}
 		if (!endDate) endDate = startDate;
 
-		var wb = XLSX.utils.book_new();
+		var label = startDate === endDate ? startDate : startDate + '_' + endDate;
+		var title = startDate === endDate ? startDate : startDate + ' ~ ' + endDate;
+		var wb = excel.createWorkbook();
 
 		// ===== Sheet 1: 出勤彙總 =====
 		var summaryRows = await db.getCheckinSummary(startDate, endDate);
@@ -2290,120 +2562,16 @@ summaryData.push({
 				'年度病假(h)': (await _getALB2(r.employee_id))._ytdS || 0
 			});
 		}
-		var ws1 = XLSX.utils.json_to_sheet(summaryData, {
-			header: ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','考勤異常分鐘','考勤異常請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','補休剩餘(h)','年度事假(h)','年度病假(h)']
-		});
-		XLSX.utils.book_append_sheet(wb, ws1, '出勤彙總');
+			// Build styled sheets
+			var header22 = ['日期','員工編號','姓名','部門','上班時間','下班時間','總工時(h)','淨工時(h)','是否<9h','考勤狀態','考勤異常分鐘','考勤異常請假時數','請假假別','備註','特休額度(h)','特休已用(h)','特休剩餘(h)','婚假(陪產假)剩餘(h)','喪假剩餘(h)','補休剩餘(h)','年度事假(h)','年度病假(h)'];
+			excel.addSheet(wb, '出勤彙總', { title: title, headers: header22, rows: summaryData.map(function(r){ return [r['日期'],r['員工編號'],r['姓名'],r['部門'],r['上班時間'],r['下班時間'],r['總工時(h)'],r['淨工時(h)'],r['是否<9h'],r['考勤狀態'],r['考勤異常分鐘'],r['考勤異常請假時數'],r['請假假別'],r['備註'],r['特休額度(h)'],r['特休已用(h)'],r['特休剩餘(h)'],r['婚假(陪產假)剩餘(h)'],r['喪假剩餘(h)'],r['補休剩餘(h)'],r['年度事假(h)'],r['年度病假(h)']]; }) });
+			excel.addSheet(wb, '打卡紀錄', { title: title, headers: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'], rows: checkinData.map(function(r){ return [r['日期'],r['時間'],r['員工編號'],r['姓名'],r['部門'],r['類型'],r['位置'],r['GPS'],r['備註']]; }) });
+			excel.addSheet(wb, '請假紀錄', { title: title, headers: ['員工編號','姓名','部門','假別','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'], rows: leaveData.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['假別'],r['開始日期'],r['開始時間'],r['結束日期'],r['結束時間'],r['時數(h)'],r['原因'],r['狀態'],r['駁回原因']]; }) });
+			excel.addSheet(wb, '加班紀錄', { title: title, headers: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'], rows: otData.map(function(r){ return [r['員工編號'],r['姓名'],r['部門'],r['日期'],r['開始時間'],r['結束時間'],r['總時數(h)'],r['2小時內(h)'],r['超過2小時(h)'],r['原因'],r['狀態'],r['駁回原因']]; }) });
+			var monthlyData = await buildMonthlySummary(startDate, endDate);
+			excel.addSheet(wb, '月結彙總', { title: title, headers: MONTHLY_HEADERS, rows: monthlyData, highlightPositive: true });
+			await excel.send(res, wb, '考勤彙整_'+label+'.xlsx');
 
-		// ===== Sheet 2: 打卡紀錄 =====
-		var records = await db.queryCheckins(null, startDate, endDate, 10000, 0);
-		var missedAll = await db.getMissedPunches('approved', 500);
-		var checkinData = [];
-		for (var ci2 = 0; ci2 < records.length; ci2++) {
-			var cr = records[ci2];
-			var ts = cr.check_time ? new Date(cr.check_time) : new Date();
-			checkinData.push({
-				'日期': ts.getFullYear()+'-'+String(ts.getMonth()+1).padStart(2,'0')+'-'+String(ts.getDate()).padStart(2,'0'),
-				'時間': String(ts.getHours()).padStart(2,'0')+':'+String(ts.getMinutes()).padStart(2,'0'),
-				'員工編號': cr.employee_no || '-',
-				'姓名': cr.name || '-',
-				'部門': cr.department || '',
-				'類型': cr.type === 'check_in' ? '上班' : '下班',
-				'位置': (cr.ahdress || '').substring(0, 80),
-				'GPS': cr.in_range === false ? '超出範圍' : '範圍內',
-				'備註': ''
-			});
-		}
-		for (var mp2 = 0; mp2 < missedAll.length; mp2++) {
-			var mpRec = missedAll[mp2];
-			if (mpRec.punch_date < startDate || mpRec.punch_date > endDate) continue;
-			checkinData.push({
-				'日期': mpRec.punch_date,
-				'時間': mpRec.punch_time || '',
-				'員工編號': mpRec.employee_no || '-',
-				'姓名': mpRec.name || '-',
-				'部門': mpRec.department || '',
-				'類型': mpRec.punch_type === 'check_in' ? '上班(補卡)' : '下班(補卡)',
-				'位置': '',
-				'GPS': '補打卡',
-				'備註': mpRec.reason || ''
-			});
-		}
-		checkinData.sort(function(a, b) { return a['日期'].localeCompare(b['日期']) || a['時間'].localeCompare(b['時間']); });
-		var ws2 = XLSX.utils.json_to_sheet(checkinData, { header: ['日期','時間','員工編號','姓名','部門','類型','位置','GPS','備註'] });
-		XLSX.utils.book_append_sheet(wb, ws2, '打卡紀錄');
-
-		// ===== Sheet 3: 請假紀錄 =====
-		var allLeaves = await db.getLeaveRequests('', 2000);
-		var statusLabels = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-		var typeLabels2 = { annual: '特休', personal: '事假', sick: '病假', official: '公假', outing: '外出', marriage: '婚假(陪產假)', funeral: '喪假', comp: '補休', other: '其他' };
-		var leaveData = [];
-		for (var lv = 0; lv < allLeaves.length; lv++) {
-			var lr = allLeaves[lv];
-			var lStart = typeof lr.start_date === 'string' ? (lr.start_date.indexOf(' ')!==-1 ? lr.start_date.split(' ')[0] : lr.start_date.split('T')[0]) : '';
-			var lEnd = typeof lr.end_date === 'string' ? (lr.end_date.indexOf(' ')!==-1 ? lr.end_date.split(' ')[0] : lr.end_date.split('T')[0]) : lStart;
-			if (lEnd < startDate || lStart > endDate) continue;
-			var hours = await exportLeaveHours(lr.start_date, lr.end_date);
-			var lsDt = lr.start_date ? edt(lr.start_date) : { date: '', time: '' };
-			var leDt = lr.end_date ? edt(lr.end_date) : { date: '', time: '' };
-			leaveData.push({
-				'員工編號': lr.employee_no || '-',
-				'姓名': lr.name || '-',
-				'部門': lr.department || '',
-				'假別': typeLabels2[lr.leave_type] || lr.leave_type,
-				'開始日期': lsDt.date,
-				'開始時間': lsDt.time,
-				'結束日期': leDt.date,
-				'結束時間': leDt.time,
-				'時數(h)': hours,
-				'原因': lr.reason || '',
-				'狀態': statusLabels[lr.status] || lr.status,
-				'駁回原因': lr.reject_reason || ''
-			});
-		}
-		var ws3 = XLSX.utils.json_to_sheet(leaveData, { header: ['員工編號','姓名','部門','假別','開始日期','開始時間','結束日期','結束時間','時數(h)','原因','狀態','駁回原因'] });
-		XLSX.utils.book_append_sheet(wb, ws3, '請假紀錄');
-
-		// ===== Sheet 4: 加班紀錄 =====
-		var allOT = await db.getOvertimeRequests('', 2000);
-		var statusLabels2 = { approved: '已核准', rejected: '已駁回', pending: '待審核' };
-		var otData = [];
-		for (var oi = 0; oi < allOT.length; oi++) {
-			var ot = allOT[oi];
-			var otStart = typeof ot.start_time === 'string' ? (ot.start_time.indexOf(' ')!==-1 ? ot.start_time.split(' ')[0] : ot.start_time.split('T')[0]) : '';
-			if (otStart < startDate || otStart > endDate) continue;
-			var otHours = 0, otIn2 = 0, otOver2 = 0;
-			if (ot.start_time && ot.end_time) {
-				var diffMs = new Date(ot.end_time) - new Date(ot.start_time);
-				if (diffMs > 0) otHours = Math.round(diffMs / 3600000 * 10) / 10;
-				if (otHours <= 2) { otIn2 = otHours; otOver2 = 0; }
-				else { otIn2 = 2; otOver2 = Math.round((otHours - 2) * 10) / 10; }
-			}
-			var osDt = ot.start_time ? edt(ot.start_time) : { date: '', time: '' };
-			var oeDt = ot.end_time ? edt(ot.end_time) : { date: '', time: '' };
-			otData.push({
-				'員工編號': ot.employee_no || '-',
-				'姓名': ot.name || '-',
-				'部門': ot.department || '',
-				'日期': osDt.date,
-				'開始時間': osDt.time,
-				'結束時間': oeDt.time,
-				'總時數(h)': otHours,
-				'2小時內(h)': otIn2,
-				'超過2小時(h)': otOver2,
-				'原因': ot.reason || '',
-				'狀態': statusLabels2[ot.status] || ot.status,
-				'駁回原因': ot.reject_reason || ''
-			});
-		}
-		var ws4 = XLSX.utils.json_to_sheet(otData, { header: ['員工編號','姓名','部門','日期','開始時間','結束時間','總時數(h)','2小時內(h)','超過2小時(h)','原因','狀態','駁回原因'] });
-		XLSX.utils.book_append_sheet(wb, ws4, '加班紀錄');
-
-		var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-		var label = startDate === endDate ? startDate : startDate + '_' + endDate;
-		res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-		res.setHeader('Content-Disposition', 'attachment; filename=' + encodeURIComponent('考勤彙整_'+label+'.xlsx'));
-		res.end(buf);
 	} catch(e) {
 		console.error('[Export] all error:', e);
 		res.status(500).send('匯出失敗：' + e.message + '<br><a href="javascript:history.back()">返回</a>');

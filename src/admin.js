@@ -1949,7 +1949,11 @@ async function buildMonthlySummary(startDate, endDate) {
 				}
 				cur.setDate(cur.getDate() + 1);
 			}
-			// 請假時數
+			// 與匯出範圍無重疊的請假 → 不計入（避免 clamp 起訖顛倒回傳 0.5h）
+			var s10 = String(startDate).substring(0,10);
+			var e10 = String(endDate).substring(0,10);
+			if (lEnd < s10 || lStart > e10) continue;
+			// 請假時數（clamp 到範圍內）
 			var clampStart = elv.start_date;
 			var clampEnd = elv.end_date || clampStart;
 			if (typeof clampStart === 'string' && clampStart < startDate) clampStart = startDate + 'T00:00:00';

@@ -1458,8 +1458,8 @@ async function handlePostback(postback, uid, client, replyToken) {
     var designatedApprover = leaveEmp ? leaveEmp[levelCol] : null;
     var isDesignated = designatedApprover && designatedApprover === approver.id;
     // can_approve：可簽任意層級但限指定員工
-    var isAnyLevelDes = leaveEmp && (leaveEmp.approver_id===approver.id || leaveEmp.approver2_id===approver.id);
-    if (!isDesignated && !(approver.can_approve && isAnyLevelDes)) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+    var noAppLv = leaveEmp && !leaveEmp.approver_id && !leaveEmp.approver2_id;
+    if (!isDesignated && !(approver.can_approve && noAppLv)) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
     if (leave.status !== 'pending') return client.replyMessage(replyToken, [withMenu('申請已處理過')]);
 
     if (data.indexOf('leave_approve_') === 0) {
@@ -1491,8 +1491,8 @@ async function handlePostback(postback, uid, client, replyToken) {
     var otDesignatedApprover = otEmp ? otEmp[otLevelCol] : null;
     var otDesignated = otDesignatedApprover && otDesignatedApprover === otApprover.id;
     // can_approve：可簽任意層級但限指定員工
-    var otAnyLevelDes = otEmp && (otEmp.approver_id===otApprover.id || otEmp.approver2_id===otApprover.id);
-    if (!otDesignated && !(otApprover.can_approve && otAnyLevelDes)) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
+    var otNoAppr = otEmp && !otEmp.approver_id && !otEmp.approver2_id;
+    if (!otDesignated && !(otApprover.can_approve && otNoAppr)) return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
     if (ot.status !== 'pending') return client.replyMessage(replyToken, [withMenu('已處理過')]);
 
     if (data.indexOf('ot_approve_') === 0) {

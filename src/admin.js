@@ -599,7 +599,7 @@ router.get('/employees', auth, async (_, res) => {
       + '<td>'+h(e.employee_no)+'</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'name\',\''+nameEsc+'\')">'+h(e.name)+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'department\',\''+deptEsc+'\')">'+(e.department||'點此設定')+'</span></td>'
-      + '<td><span class="editable" onclick="editField('+e.id+',\'role\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
+      + '<td><span class="editable" onclick="editRole('+e.id+',\''+nameEsc+'\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
 	      + '<td><span class="editable" onclick="editField('+e.id+',\'hire_date\',\''+esc(e.hire_date||'')+'\')">'+(e.hire_date||'<span style="color:#999">設定</span>')+'</span></td>'
       + '<td>'+(e.line_user_id?'<span class="badge badge-in">已綁定</span>':'<span class="badge badge-out">未綁定</span>')+'</td>'
       + '<td>'
@@ -633,7 +633,7 @@ router.get('/employees', auth, async (_, res) => {
       + '<td>'+h(e.employee_no)+'</td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'name\',\''+nameEsc+'\')">'+h(e.name)+'</span></td>'
       + '<td><span class="editable" onclick="editField('+e.id+',\'department\',\''+deptEsc+'\')">'+(e.department||'點此設定')+'</span></td>'
-      + '<td><span class="editable" onclick="editField('+e.id+',\'role\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
+      + '<td><span class="editable" onclick="editRole('+e.id+',\''+nameEsc+'\',\''+roleEsc+'\')">'+(e.role||'員工')+'</span></td>'
 	      + '<td><span class="editable" onclick="editField('+e.id+',\'hire_date\',\''+esc(e.hire_date||'')+'\')">'+(e.hire_date||'<span style="color:#999">設定</span>')+'</span></td>'
       + '<td>'+(e.line_user_id?'<span class="badge badge-in">已綁定</span>':'<span class="badge badge-out">未綁定</span>')+'</td>'
       + '<td><button onclick="toggleApprove('+e.id+','+e.can_approve+')" class="btn-sm '+(e.can_approve?'btn':'btn-gray')+'">'+(e.can_approve?'可簽核':'設為簽核人')+'</button></td>'
@@ -658,7 +658,8 @@ router.get('/employees', auth, async (_, res) => {
     + '<button type="submit" class="btn">新增</button></form></div>'
     + '<div class="card"><h3>👥 在職員工</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>職稱</th><th>入職日</th><th>LINE</th><th>簽核</th><th>L1簽核</th><th>L2簽核</th><th>操作</th></tr>'+(rows||'<tr><td colspan="10">尚無員工</td></tr>')+'</table></div>'
     + inactiveList
-    + modalHtml();
+    + modalHtml()
+    + roleModalHtml();
 
   body += '<script>'+jsLib()+'\ndocument.getElementById("empForm").onsubmit=async function(e){e.preventDefault();var r=await fetch("/admin/api/employees",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({employee_no:document.getElementById("no").value,name:document.getElementById("ename").value,department:document.getElementById("dept").value,role:document.getElementById("role").value||"員工",can_approve:document.getElementById("canApprove").checked,hire_date:document.getElementById("hireDate").value})});var j=await r.json();j.success?location.reload():alert(j.error);};</script>';
   res.send(layout('員工管理', '員工管理', body));
@@ -1146,6 +1147,12 @@ function dateOverlaps(startStr, endStr, targetDate) {
 function modalHtml() {
   return '<div id="modal" class="modal"><div><h3>綁定 LINE ID</h3><p id="modalEmp" style="color:#999;margin-bottom:12px"></p><label>LINE User ID</label><input id="lineIdInput" placeholder="貼上員工的 LINE User ID"><p style="color:#999;font-size:12px;margin:8px 0">💡 員工在 LINE Bot 輸入「我的ID」取得</p><div class="actions"><button onclick="closeModal()" class="btn-sm btn-gray">取消</button><button onclick="saveLine()" class="btn-sm btn">儲存</button></div></div></div>';
 }
+function roleModalHtml() {
+  var roles = ['採樣工程師', '分析工程師', '行政人員', '業務專員', '副理', '副主任', '主任', '經理', '董事長'];
+  var opts = roles.map(function(r) { return '<option value="' + r + '">' + r + '</option>'; }).join('');
+  return '<div id="roleModal" class="modal"><div><h3>修改職稱</h3><p id="roleEmp" style="color:#999;margin-bottom:12px"></p><select id="roleSelect" style="width:100%;padding:10px;font-size:15px;margin-bottom:12px">' + opts + '</select><div class="actions"><button onclick="closeRoleModal()" class="btn-sm btn-gray">取消</button><button onclick="saveRole()" class="btn-sm btn">儲存</button></div></div></div>';
+}
+
 function jsLib() {
   return 'var editId=null;'
     + 'function editLine(id,name,currentId){editId=id;document.getElementById("modalEmp").textContent="員工："+name;document.getElementById("lineIdInput").value=currentId||"";document.getElementById("modal").style.display="flex";}'
@@ -1159,6 +1166,7 @@ function jsLib() {
     + 'async function reactivateEmp(id,name){if(!confirm("確定復原 "+name+"？"))return;var r=await fetch("/admin/api/employees/"+id+"/reactivate",{method:"PUT"});if(r.ok)location.reload();else alert("操作失敗");}'
     + 'async function hardDeleteEmp(id,name){if(!confirm("⚠️ 永久刪除 "+name+"？\\n\\n打卡和請假記錄會保留（匿名化）。\\n此操作無法復原！"))return;var r=await fetch("/admin/api/employees/"+id+"/hard",{method:"DELETE"});if(r.ok)location.reload();else alert("操作失敗");}'
 	    + 'async function setPassword(id){var p=prompt("設定/重設該員工密碼（主管端津貼登入用）：");if(!p)return;if(p.length<4){alert("密碼至少 4 字元");return;}var r=await fetch("/admin/api/employees/"+id+"/password",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:p})});var j=await r.json();j.success?alert("✅ 已設定"):alert("❌ "+j.error);}';
+	    + 'var roleEditId=null;function editRole(id,name,current){roleEditId=id;document.getElementById("roleEmp").textContent="員工："+name;var sel=document.getElementById("roleSelect");sel.value=current||"採樣工程師";document.getElementById("roleModal").style.display="flex";}function closeRoleModal(){document.getElementById("roleModal").style.display="none";}async function saveRole(){var val=document.getElementById("roleSelect").value;var r=await fetch("/admin/api/employees/"+roleEditId,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({role:val})});if(r.ok)location.reload();else alert("儲存失敗");}';
 }
 
 // ===== 補打卡管理 =====

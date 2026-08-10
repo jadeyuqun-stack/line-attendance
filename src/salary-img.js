@@ -4,11 +4,31 @@
  */
 var XLSX = require('xlsx');
 var canvas = require('canvas');
+var fs = require('fs');
 
 var TITLE = '115年7月薪資';
 
-canvas.registerFont('/System/Library/Fonts/STHeiti Medium.ttc', { family: 'CnFont' });
-canvas.registerFont('/System/Library/Fonts/STHeiti Light.ttc', { family: 'CnFontLight' });
+// 字型註冊（macOS / Linux / bot.js 下載的字型），失敗不阻擋模組載入
+var _fontCandidates = [
+  '/System/Library/Fonts/STHeiti Medium.ttc',
+  '/System/Library/Fonts/PingFang.ttc',
+  '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttf',
+  '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+  '/tmp/cn-font-subset.ttf',
+];
+var FONT_FAMILY = 'CnFont';
+(function() {
+  for (var i = 0; i < _fontCandidates.length; i++) {
+    try {
+      if (fs.existsSync(_fontCandidates[i])) {
+        canvas.registerFont(_fontCandidates[i], { family: FONT_FAMILY });
+        return;
+      }
+    } catch (e) {}
+  }
+})();
 
 function addr(col, row) { return col + row; }
 function nextCol(letter) { return String.fromCharCode(letter.charCodeAt(0) + 1); }

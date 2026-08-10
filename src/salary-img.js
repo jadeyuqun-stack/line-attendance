@@ -46,6 +46,16 @@ function rocDate(str) {
   return s;
 }
 
+// 依月份標籤（115年9月）計算結算區間（民國）
+function monthRange(monthLabel) {
+  var m = String(monthLabel || '').match(/(\d+)\s*年\s*(\d+)/) || String(monthLabel || '').match(/(\d+)\/(\d+)/);
+  if (!m) return { start: '115/07/01', end: '115/07/31' };
+  var yRoc = parseInt(m[1]), mo = parseInt(m[2]);
+  var lastDay = new Date(yRoc + 1911, mo, 0).getDate();
+  var f = function(day) { return String(yRoc).padStart(3, '0') + '/' + String(mo).padStart(2, '0') + '/' + String(day).padStart(2, '0'); };
+  return { start: f(1), end: f(lastDay) };
+}
+
 // 解析薪資 Excel（Salary sample 格式）→ [{name, items}]
 function parseSalaryWorkbook(buffer) {
   var wb = XLSX.read(buffer);
@@ -55,7 +65,7 @@ function parseSalaryWorkbook(buffer) {
   for (var r = 2; r <= 400; r++) {
     for (var i = 0; i < colLetters.length; i++) {
       var c = ws[addr(colLetters[i], r)];
-      if (c && c.v === TITLE) titles.push({ row: r, colIdx: i });
+      if (c && typeof c.v === 'string' && /^\d+年\d+月薪資$/.test(c.v)) titles.push({ row: r, colIdx: i });
     }
   }
   var employees = [];
@@ -140,6 +150,11 @@ function renderSalaryImage(emp) {
   var hol = emp.leave || { name: '特休', used: 0, remaining: 0, thisGrant: 0, period: '' };
   var TITLE_USE = emp.title ? emp.title : '';
 
+  var now2 = new Date();
+  var payDay = rocDate(now2.getFullYear() + '/' + (now2.getMonth() + 1) + '/' + now2.getDate());
+  var mr = monthRange(emp.monthLabel);
+  var titleText = (emp.monthLabel ? emp.monthLabel + '薪資' : TITLE);
+
   var W = 1500, M = 50, COL_W = (W - M * 2) / 3;
   var INFO_H = 40, TH_H = 46, ROW_H = 40;
   var titleH = 120, infoH = 3 * INFO_H + 10;
@@ -163,7 +178,7 @@ function renderSalaryImage(emp) {
   ctx.textAlign = 'center';
   ctx.fillText('玉群環境科技', W / 2, y + 48);
   ctx.font = 'bold 28px CnFont';
-  ctx.fillText(TITLE, W / 2, y + 96);
+  ctx.fillText(titleText, W / 2, y + 96);
   y += titleH;
 
   // 員工資訊
@@ -172,7 +187,7 @@ function renderSalaryImage(emp) {
   ctx.fillStyle = '#333';
   var infoRows = [
     '工號：' + (emp.no || emp.name) + '　　姓名：' + emp.name + '　　部門：' + (emp.dept || '') + '　　到職日期：' + rocDate(extra.hire_date),
-    '發放日期：115/08/10　　結算區間：115/07/01 ~ 115/07/31　　職稱：' + TITLE_USE,
+    '發放日期：' + payDay + '　　結算區間：' + mr.start + ' ~ ' + mr.end + '　　職稱：' + TITLE_USE,
   ];
   for (var i = 0; i < infoRows.length; i++) { ctx.fillText(infoRows[i], M, y + INFO_H / 2); y += INFO_H; }
   ctx.strokeStyle = '#2f5496'; ctx.lineWidth = 2;

@@ -1346,6 +1346,7 @@ router.post('/salary/upload-excel', auth, upload.single('excel'), async function
       if (!dbEmp) continue;
       if (!dbEmp.line_user_id) { unboundCount++; continue; }
       var empObj = await buildSalaryEmp(dbEmp, p.items);
+      empObj.monthLabel = monthLabel;
       var png = salaryImg.renderSalaryImage(empObj);
       salaryImages[dbEmp.id] = { buffer: png, mimetype: 'image/png' };
       await db.saveSalaryRecords([{ id: dbEmp.id, content: '', hasImg: true, month_label: monthLabel }], monthLabel);
@@ -1357,6 +1358,12 @@ router.post('/salary/upload-excel', auth, upload.single('excel'), async function
     console.error('[Salary] excel error:', e);
     res.redirect('/admin/salary?err=1');
   }
+});
+
+router.post('/salary/clear', auth, async function(req, res) {
+  salaryImages = {};
+  await db.deleteSalaryRecords();
+  res.redirect('/admin/salary?cleared=1');
 });
 
 router.post('/salary/send-one', auth, express.urlencoded({ extended: true }), async function(req, res) {
@@ -1463,11 +1470,21 @@ router.get('/salary', auth, async function(_, res) {
   // 狀態訊息
   if (_.query.err) body += '<div class="card" style="border-color:#e74c3c"><p style="color:#e74c3c">❌ 上傳失敗：請確認檔案為 .xlsx 格式</p></div>';
   if (_.query.ok) body += '<div class="card" style="border-color:#06c755"><p style="color:#06c755">✅ 已產生 ' + _.query.ok + ' 人薪資圖片' + (_.query.unbound ? '（' + _.query.unbound + ' 人未綁定 LINE 未產圖）' : '') + '</p></div>';
+  if (_.query.cleared) body += '<div class="card" style="border-color:#06c755"><p style="color:#06c755">🗑 已清除所有已產生薪資圖片</p></div>';
+  // 月份下拉選項（近 12 個月）
+  var monthOpts = '';
+  var _mNow = new Date();
+  for (var _mi = 0; _mi < 12; _mi++) {
+    var _md = new Date(_mNow.getFullYear(), _mNow.getMonth() - _mi, 1);
+    var _mlabel = (_md.getFullYear() - 1911) + '年' + (_md.getMonth() + 1) + '月';
+    var _msel = (_mi === 0) ? ' selected' : '';
+    monthOpts += '<option value="' + _mlabel + '"' + _msel + '>' + _mlabel + '</option>';
+  }
   // 上傳 Excel 卡片
   body += '<div class="card"><h3>📤 上傳薪資 Excel</h3>'
-    + '<p style="color:#999;margin-bottom:12px">上傳薪資 Excel 檔（如 Salary sample 07.xlsx），系統會自動為每位員工產生薪資圖片，可單筆/批量/預約發送。</p>'
+    + '<p style="color:#999;margin-bottom:12px">上傳薪資 Excel 檔（如 Salary sample 07.xlsx），系統會自動為每位員工產生薪資圖片（月份、結算區間、發放日自動帶入），可單筆/批量/預約發送。</p>'
     + '<form method="POST" action="/admin/salary/upload-excel" enctype="multipart/form-data" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">'
-    + '<div><label style="font-size:12px;display:block;margin-bottom:4px">月份標籤</label><input name="monthLabel" value="' + h(monthLabel) + '" placeholder="例如：115年7月" style="width:140px"></div>'
+    + '<div><label style="font-size:12px;display:block;margin-bottom:4px">薪資月份</label><select name="monthLabel" style="width:140px">' + monthOpts + '</select></div>'
     + '<div><label style="font-size:12px;display:block;margin-bottom:4px">Excel 檔案</label><input type="file" name="excel" accept=".xlsx" required></div>'
     + '<button class="btn">📤 上傳並產生圖片</button>'
     + '</form></div>';
@@ -1488,10 +1505,11 @@ router.get('/salary', auth, async function(_, res) {
         + '</div></div>';
     }
     body += '<div class="card"><h3>🖼 已產生薪資圖片（' + imgIds.length + ' 人）</h3>'
+      + '<div style="margin-bottom:12px"><form method="POST" action="/admin/salary/clear" onsubmit="return confirm(\'確定清除所有已產生薪資圖片？\')"><button class="btn-sm btn-red">🗑 一鍵清除已產生薪資圖片</button></form></div>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px">' + cards + '</div>'
       + '<div style="margin-top:16px;display:flex;gap:12px;align-items:end;flex-wrap:wrap">'
       + '<button onclick="selectAllChk(true)" class="btn-sm btn-outline">全選</button> '
-      + '<button onclick="selectAllChk(false)" class="btn-sm btn-outline">取消</button> '
+      + '<button onclick="selectAllChk(false)" class="btn-sm btn-outline">取消全選</button> '
       + '<form method="POST" action="/admin/salary/send-all" id="batchForm" style="display:inline-flex;gap:8px;align-items:end">'
       + '<input type="hidden" name="ids" id="batchIds">'
       + '<div><label style="font-size:12px;display:block;margin-bottom:4px">預約發送時間（選填）</label><input type="datetime-local" name="scheduled" style="width:220px"></div>'

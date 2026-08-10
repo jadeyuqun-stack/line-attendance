@@ -114,8 +114,8 @@ function categorize(items) {
     if (lb.indexOf('工作獎金') !== -1) { bonus += it.value; continue; }
     if (SKIP_LABELS.some(function(k) { return lb.indexOf(k) !== -1; })) continue;
     if (DAILY_BASE.indexOf(lb) !== -1) { dailyBreak.push(it); continue; }
-    if (DED_LABELS.some(function(k) { return lb.indexOf(k) !== -1; })) { ded.push(Math.abs(it.value)); continue; }
-    if (it.value < 0) ded.push(Math.abs(it.value));
+    if (DED_LABELS.some(function(k) { return lb.indexOf(k) !== -1; })) { ded.push({ label: lb.replace(/\s+/g, ''), value: Math.abs(it.value) }); continue; }
+    if (it.value < 0) ded.push({ label: lb.replace(/\s+/g, ''), value: Math.abs(it.value) });
     else extras.push(it);
   }
   var dailySub = dailyBreak.reduce(function(s, x) { return s + x.value; }, 0);
@@ -144,7 +144,7 @@ function fmtAmt(v) {
 function renderSalaryImage(emp) {
   var cat = categorize(emp.items || []);
   var earn = cat.mainEarn, ded = cat.ded, non = cat.non;
-  var A = sumRows(earn), B = ded.reduce(function(s, x) { return s + x; }, 0), nonSum = sumRows(non);
+  var A = sumRows(earn), B = ded.reduce(function(s, x) { return s + x.value; }, 0), nonSum = sumRows(non);
   var net = Math.round((A - B - cat.cash) * 100) / 100;
   var extra = { no: emp.no, dept: emp.dept, role: emp.title, hire_date: emp.hireDate };
   var hol = emp.leave || { name: '特休', used: 0, remaining: 0, thisGrant: 0, period: '' };
@@ -233,7 +233,7 @@ function renderSalaryImage(emp) {
     drawRowAt(x1, ryEarn + ROW_H, '工作天數', (cat.days != null ? cat.days : 0) + ' 天', { small: true });
     ryEarn += 2 * ROW_H;
   }
-  for (var d = 0; d < ded.length; d++) { drawRowAt(x2, ryDed, '扣款', fmtAmt(ded[d])); ryDed += ROW_H; }
+  for (var d = 0; d < ded.length; d++) { drawRowAt(x2, ryDed, ded[d].label, fmtAmt(ded[d].value)); ryDed += ROW_H; }
   for (var n = 0; n < non.length; n++) { drawRowAt(x3, ryNon, non[n].label, fmtAmt(non[n].value)); ryNon += ROW_H; }
 
   var sumY = Math.max(ryEarn, ryDed, ryNon);

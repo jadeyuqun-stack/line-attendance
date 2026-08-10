@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('./database');
 const XLSX = require('xlsx');
 var excel = require('./excel');
+var salaryImg = require('./salary-img');
 const router = express.Router();
 
 function auth(req, res, next) {
@@ -1298,6 +1299,117 @@ var multer = require('multer');
 var upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 var salaryImages = {};
 
+// 入職日週期：入職日 ~ 隔年入職日前天（民國年）
+function leavePeriod(hire) {
+  if (!hire) return '';
+  var hh = String(hire).split('/');
+  var hireD = new Date(Number(hh[0]), Number(hh[1]) - 1, Number(hh[2]));
+  var now = new Date();
+  var annivThis = new Date(now.getFullYear(), hireD.getMonth(), hireD.getDate());
+  var start, end;
+  if (now >= annivThis) { start = annivThis; end = new Date(now.getFullYear() + 1, hireD.getMonth(), hireD.getDate()); }
+  else { start = new Date(now.getFullYear() - 1, hireD.getMonth(), hireD.getDate()); end = annivThis; }
+  end.setDate(end.getDate() - 1);
+  function f(d) { return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0'); }
+  return f(start) + ' ~ ' + f(end);
+}
+
+// 組薪資圖所需資料（職稱=角色、特休=系統餘額）
+async function buildSalaryEmp(dbEmp, items) {
+  var bal = await db.getAnnualLeaveBalance(dbEmp.id);
+  return {
+    name: String(dbEmp.name).replace(/褀/g, '祺'),
+    no: dbEmp.employee_no,
+    dept: dbEmp.department,
+    title: dbEmp.role || '員工',
+    hireDate: dbEmp.hire_date,
+    leave: { name: '特休', used: Math.round((bal.used_hours||0)*10)/10, remaining: Math.round((bal.remaining_hours||0)*10)/10, thisGrant: Math.round((bal.entitlement_hours||0)*10)/10, period: leavePeriod(dbEmp.hire_date) },
+    items: items
+  };
+}
+
+// ===== 薪資 Excel 上傳與發送（新流程） =====
+router.post('/salary/upload-excel', auth, upload.single('excel'), async function(req, res) {
+  if (!req.file) return res.redirect('/admin/salary?err=1');
+  try {
+    var parsed = salaryImg.parseSalaryWorkbook(req.file.buffer);
+    var emps = await db.listActiveEmployees();
+    var empMap = {};
+    for (var i = 0; i < emps.length; i++) empMap[String(emps[i].name).replace(/褀/g,'祺')] = emps[i];
+    var monthLabel = req.body.monthLabel || '';
+    salaryImages = {};
+    await db.deleteSalaryRecords();
+    var count = 0, unboundCount = 0;
+    for (var j = 0; j < parsed.length; j++) {
+      var p = parsed[j];
+      var dbEmp = empMap[p.name];
+      if (!dbEmp) continue;
+      if (!dbEmp.line_user_id) { unboundCount++; continue; }
+      var empObj = await buildSalaryEmp(dbEmp, p.items);
+      var png = salaryImg.renderSalaryImage(empObj);
+      salaryImages[dbEmp.id] = { buffer: png, mimetype: 'image/png' };
+      await db.saveSalaryRecords([{ id: dbEmp.id, content: '', hasImg: true, month_label: monthLabel }], monthLabel);
+      count++;
+    }
+    var q = '?ok=' + count + (unboundCount ? '&unbound=' + unboundCount : '');
+    res.redirect('/admin/salary' + q);
+  } catch(e) {
+    console.error('[Salary] excel error:', e);
+    res.redirect('/admin/salary?err=1');
+  }
+});
+
+router.post('/salary/send-one', auth, express.urlencoded({ extended: true }), async function(req, res) {
+  var id = parseInt(req.body.id);
+  var emp = await db.getEmployeeById(id);
+  var img = salaryImages[id];
+  if (!emp || !img) return res.redirect('/admin/salary');
+  var baseUrl = req.protocol + '://' + req.get('host');
+  try {
+    await req.app.locals.lineClient.pushMessage(emp.line_user_id, [
+      { type: 'image', originalContentUrl: baseUrl + '/admin/salary/img/' + id, previewImageUrl: baseUrl + '/admin/salary/img/' + id }
+    ]);
+    res.send('<div class="card"><h3>✅ 已發送給 ' + h(emp.name) + '</h3></div><a href="/admin/salary" class="btn">返回</a>');
+  } catch(e) {
+    console.error('[Salary] send-one fail:', e.message);
+    res.send('<div class="card"><h3>❌ 發送失敗：' + h(e.message) + '</h3></div><a href="/admin/salary" class="btn">返回</a>');
+  }
+});
+
+router.post('/salary/send-all', auth, express.urlencoded({ extended: true }), async function(req, res) {
+  var ids = (req.body.ids || '').split(',').map(Number).filter(Boolean);
+  var scheduled = req.body.scheduled;
+  var baseUrl = req.protocol + '://' + req.get('host');
+  var client = req.app.locals.lineClient;
+  if (scheduled) {
+    var target = new Date(scheduled);
+    if (target > new Date()) {
+      var delay = target - new Date();
+      console.log('[Salary] 排程發送 ' + ids.length + ' 人：' + scheduled);
+      setTimeout(async function() {
+        for (var i = 0; i < ids.length; i++) {
+          var emp = await db.getEmployeeById(ids[i]);
+          var img = salaryImages[ids[i]];
+          if (emp && img && emp.line_user_id) {
+            try { await client.pushMessage(emp.line_user_id, [{ type: 'image', originalContentUrl: baseUrl + '/admin/salary/img/' + ids[i], previewImageUrl: baseUrl + '/admin/salary/img/' + ids[i] }]); } catch(e) { console.error('[Salary] 排程發送失敗', emp.name, e.message); }
+          }
+        }
+      }, delay);
+      return res.send('<div class="card"><h3>⏰ 已排程</h3><p>將於 ' + scheduled + ' 發送給 ' + ids.length + ' 位員工（請勿關閉此頁面）。</p></div><a href="/admin/salary" class="btn">返回</a>');
+    }
+  }
+  var sent = 0, failed = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var emp = await db.getEmployeeById(ids[i]);
+    var img = salaryImages[ids[i]];
+    if (emp && img && emp.line_user_id) {
+      try { await client.pushMessage(emp.line_user_id, [{ type: 'image', originalContentUrl: baseUrl + '/admin/salary/img/' + ids[i], previewImageUrl: baseUrl + '/admin/salary/img/' + ids[i] }]); sent++; }
+      catch(e) { failed++; }
+    } else { failed++; }
+  }
+  res.send('<div class="card"><h3>📨 發送完成</h3><p>✅ 成功 ' + sent + ' 筆，❌ 失敗 ' + failed + ' 筆。</p></div><a href="/admin/salary" class="btn">返回</a>');
+});
+
 router.get('/salary', auth, async function(_, res) {
   var emps = await db.listActiveEmployees();
   var bound = emps.filter(function(e) { return e.line_user_id; });
@@ -1343,7 +1455,49 @@ router.get('/salary', auth, async function(_, res) {
       + '</td></tr>';
   }
 
-  var body = '<div class="card"><h3>💵 輸入薪資內容（已儲存：'+(Object.keys(savedMap).length||0)+' 人，'+h(monthLabel)+'）</h3>'
+  var body = '';
+  // 狀態訊息
+  if (_.query.err) body += '<div class="card" style="border-color:#e74c3c"><p style="color:#e74c3c">❌ 上傳失敗：請確認檔案為 .xlsx 格式</p></div>';
+  if (_.query.ok) body += '<div class="card" style="border-color:#06c755"><p style="color:#06c755">✅ 已產生 ' + _.query.ok + ' 人薪資圖片' + (_.query.unbound ? '（' + _.query.unbound + ' 人未綁定 LINE 未產圖）' : '') + '</p></div>';
+  // 上傳 Excel 卡片
+  body += '<div class="card"><h3>📤 上傳薪資 Excel</h3>'
+    + '<p style="color:#999;margin-bottom:12px">上傳薪資 Excel 檔（如 Salary sample 07.xlsx），系統會自動為每位員工產生薪資圖片，可單筆/批量/預約發送。</p>'
+    + '<form method="POST" action="/admin/salary/upload-excel" enctype="multipart/form-data" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">'
+    + '<div><label style="font-size:12px;display:block;margin-bottom:4px">月份標籤</label><input name="monthLabel" value="' + h(monthLabel) + '" placeholder="例如：115年7月" style="width:140px"></div>'
+    + '<div><label style="font-size:12px;display:block;margin-bottom:4px">Excel 檔案</label><input type="file" name="excel" accept=".xlsx" required></div>'
+    + '<button class="btn">📤 上傳並產生圖片</button>'
+    + '</form></div>';
+  // 已產生薪資圖片網格
+  var imgIds = Object.keys(salaryImages);
+  if (imgIds.length > 0) {
+    var cards = '';
+    for (var ii = 0; ii < imgIds.length; ii++) {
+      var iid = parseInt(imgIds[ii]);
+      var ie = empMap[iid];
+      if (!ie) continue;
+      cards += '<div style="border:1px solid #eee;border-radius:10px;padding:12px;text-align:center">'
+        + '<div style="font-weight:700;margin-bottom:8px">' + h(ie.name) + '（' + h(ie.employee_no) + '）</div>'
+        + '<a href="/admin/salary/img/' + iid + '" target="_blank"><img src="/admin/salary/img/' + iid + '" style="max-width:240px;border:1px solid #ddd;border-radius:6px"></a>'
+        + '<div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;align-items:center">'
+        + '<label style="display:flex;align-items:center;gap:4px"><input type="checkbox" class="salaryChk" value="' + iid + '"> 選取</label>'
+        + '<form method="POST" action="/admin/salary/send-one"><input type="hidden" name="id" value="' + iid + '"><button class="btn-sm btn">📨 單筆發送</button></form>'
+        + '</div></div>';
+    }
+    body += '<div class="card"><h3>🖼 已產生薪資圖片（' + imgIds.length + ' 人）</h3>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px">' + cards + '</div>'
+      + '<div style="margin-top:16px;display:flex;gap:12px;align-items:end;flex-wrap:wrap">'
+      + '<button onclick="selectAllChk(true)" class="btn-sm btn-outline">全選</button> '
+      + '<button onclick="selectAllChk(false)" class="btn-sm btn-outline">取消</button> '
+      + '<form method="POST" action="/admin/salary/send-all" id="batchForm" style="display:inline-flex;gap:8px;align-items:end">'
+      + '<input type="hidden" name="ids" id="batchIds">'
+      + '<div><label style="font-size:12px;display:block;margin-bottom:4px">預約發送時間（選填）</label><input type="datetime-local" name="scheduled" style="width:220px"></div>'
+      + '<button type="button" onclick="batchSend(\'now\')" class="btn">📨 批量發送</button>'
+      + '<button type="button" onclick="batchSend(\'schedule\')" class="btn btn-outline">⏰ 預約發送</button>'
+      + '</form></div></div>'
+      + '<script>function selectAllChk(on){document.querySelectorAll(".salaryChk").forEach(function(c){c.checked=on;});}'
+      + 'function batchSend(mode){var ids=[];document.querySelectorAll(".salaryChk:checked").forEach(function(c){ids.push(c.value);});if(ids.length===0){alert("請先勾選人員");return;}document.getElementById("batchIds").value=ids.join(",");var f=document.getElementById("batchForm");if(mode==="schedule"){var t=f.querySelector("[name=scheduled]").value;if(!t){alert("請選擇預約時間");return;}}f.submit();}</script>';
+  }
+  body += '<div class="card"><h3>💵 輸入薪資內容（已儲存：'+(Object.keys(savedMap).length||0)+' 人，'+h(monthLabel)+'）</h3>'
     + '<p style="color:#999;margin-bottom:16px">填寫後先儲存，再選擇排程發送或立即發送。</p>'
     + '<form id="salaryForm" method="POST" action="/admin/salary/preview" enctype="multipart/form-data">'
     + '<table><tr><th>#</th><th>編號</th><th>姓名</th><th>部門</th><th>LINE</th><th>薪資內容（可上傳圖片）</th></tr>'

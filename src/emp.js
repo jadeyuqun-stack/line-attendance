@@ -84,7 +84,7 @@ router.get('/login', function(req, res) {
 router.post('/login', express.urlencoded({ extended: true }), async function(req, res) {
 	var emp = await db.verifyEmployeePassword(req.body.employee_no, req.body.password);
 	if (!emp) return res.redirect('/emp/login?err=1');
-	var supervisorRoles = ['主任', '經理', '簽核人員'];
+	var supervisorRoles = ['主任', '副主任', '副理', '經理', '簽核人員'];
 	if (supervisorRoles.indexOf(emp.role) === -1) return res.redirect('/emp/login?err=1');
 	req.session.empId = emp.id;
 	res.redirect('/emp/allowances');

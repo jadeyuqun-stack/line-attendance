@@ -92,8 +92,8 @@ const APPROVER_BUTTONS = {
 function getMenu(emp) {
   if (!emp) return GPS_BUTTONS;
   var role = emp.role || '';
-  if (role === '老闆' || role === 'boss') return GPS_BUTTONS;
-  if (role === '簽核人員' || role === '經理' || role === '主任' || emp.can_approve) return APPROVER_BUTTONS;
+  if (role === '老闆' || role === 'boss' || role === '董事長') return GPS_BUTTONS;
+  if (role === '簽核人員' || role === '經理' || role === '主任' || role === '副主任' || role === '副理' || emp.can_approve) return APPROVER_BUTTONS;
   return GPS_BUTTONS;
 }
 function withMenu(text, emp) {
@@ -137,7 +137,7 @@ var _pendingApprovalCache = {};
 async function checkPendingApprovals(client, uid, replyToken) {
   try {
     var emp = await db.getEmployeeByLineId(uid);
-    if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆')) return false;
+    if (!emp || (!emp.can_approve && ['簽核人員','經理','主任','副主任','副理','老闆','董事長','boss'].indexOf(emp.role) === -1)) return false;
     var leaves = await db.getLeaveRequests('pending', 50);
     var ots = await db.getOvertimeRequests('pending', 50);
     var mps = await db.getMissedPunches('pending', 50);
@@ -258,7 +258,7 @@ async function handleText(text, uid, client, replyToken) {
   // 待簽核提醒：有新項目時顯示提示，但不阻擋指令
   var _pendingMsg = _notifMsg;
   try {
-    if (emp && (emp.can_approve || emp.role === '經理' || emp.role === '老闆' || emp.role === '簽核人員')) {
+    if (emp && (emp.can_approve || ['簽核人員','經理','主任','副主任','副理','老闆','董事長','boss'].indexOf(emp.role) !== -1)) {
       var _isApprovalCmd = cmd === '待簽核' || cmd === '查看待簽核' || cmd === 'pending' || cmd === '核准全部';
       var _isInApprovalFlow = states.has(uid) && (states.get(uid).flow === 'approval_browse' || states.get(uid).flow === 'reject_leave' || states.get(uid).flow === 'reject_ot' || states.get(uid).flow === 'reject_missed');
       if (!_isApprovalCmd && !_isInApprovalFlow) {
@@ -350,7 +350,7 @@ function isMyTurnMissedPunch(emp, approver) {
 }
 
 async function getOverdueApprovalReminder(emp) {
-  if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆' && emp.role !== '簽核人員')) return null;
+  if (!emp || (!emp.can_approve && ['簽核人員','經理','主任','副主任','副理','老闆','董事長','boss'].indexOf(emp.role) === -1)) return null;
   var hoursStr = await db.getSetting('approval_remind_hours') || '0';
   var hours = parseInt(hoursStr);
   if (hours <= 0) return null;
@@ -383,7 +383,7 @@ async function getOverdueApprovalReminder(emp) {
 
 // 計算該簽核人員目前當階待簽核總數（只看自己該階的項目）
 async function countPendingForApprover(emp) {
-  if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆' && emp.role !== '簽核人員')) return 0;
+  if (!emp || (!emp.can_approve && ['簽核人員','經理','主任','副主任','副理','老闆','董事長','boss'].indexOf(emp.role) === -1)) return 0;
   try {
     var pl = await db.getLeaveRequests('pending', 200);
     var po = await db.getOvertimeRequests('pending', 200);
@@ -409,7 +409,7 @@ async function countPendingForApprover(emp) {
 }
 
 async function checkPendingApprovalsCmd(emp, client, replyToken, uid, _prefix) {
-  if (!emp || (!emp.can_approve && emp.role !== '經理' && emp.role !== '老闆' && emp.role !== '簽核人員')) {
+  if (!emp || (!emp.can_approve && ['簽核人員','經理','主任','副主任','副理','老闆','董事長','boss'].indexOf(emp.role) === -1)) {
     return client.replyMessage(replyToken, [withMenu('❌ 無簽核權限')]);
   }
   try {
@@ -633,7 +633,7 @@ if (_prefix) _msg.unshift({ type: "text", text: _prefix });
 async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
   if (uid) states.delete(uid);
   // 簽核人員/經理/老闆可用批次核准（can_approve 亦可用）
-  var isApproverRole = emp.role === '簽核人員' || emp.role === '經理' || emp.role === '老闆';
+  var isApproverRole = ['簽核人員','經理','主任','副主任','副理','老闆','董事長','boss'].indexOf(emp.role) !== -1;
   if (!emp.can_approve && !isApproverRole) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ 無簽核權限')] : [withMenu('❌ 無簽核權限')]);
   var leaves = await db.getLeaveRequests('pending', 200);
   var ots = await db.getOvertimeRequests('pending', 200);
@@ -659,7 +659,7 @@ async function batchApproveAll(emp, client, replyToken, _prefix, uid) {
 
 async function batchRejectAll(emp, client, replyToken, _prefix, uid) {
   if (uid) states.delete(uid);
-  var isApproverRole2 = emp.role === '簽核人員' || emp.role === '經理' || emp.role === '老闆';
+  var isApproverRole2 = ['簽核人員','經理','主任','副主任','副理','老闆','董事長','boss'].indexOf(emp.role) !== -1;
   if (!emp.can_approve && !isApproverRole2) return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu('❌ 無簽核權限')] : [withMenu('❌ 無簽核權限')]);
   var leaves = await db.getLeaveRequests('pending', 200);
   var ots = await db.getOvertimeRequests('pending', 200);
@@ -720,7 +720,7 @@ async function handleLocation(msg, uid, client, replyToken) {
 
 // ===== Check-in Flex =====
 async function doCheckIn(emp, client, replyToken, loc, gps) {
-  if (emp.role === '老闆' || emp.role === 'boss') return client.replyMessage(replyToken, [{ type: 'text', text: '您不需要打卡。' }]);
+  if (emp.role === '老闆' || emp.role === 'boss' || emp.role === '董事長') return client.replyMessage(replyToken, [{ type: 'text', text: '您不需要打卡。' }]);
   const today = await db.getTodayCheckins(emp.id);
   if (today.some(r => r.type === 'check_in')) {
     return client.replyMessage(replyToken, [withMenu('⚠️ 今天已上班打卡')]);
@@ -752,7 +752,7 @@ async function doCheckIn(emp, client, replyToken, loc, gps) {
 }
 
 async function doCheckOut(emp, client, replyToken, loc, gps) {
-  if (emp.role === '老闆' || emp.role === 'boss') return client.replyMessage(replyToken, [{ type: 'text', text: '您不需要打卡。' }]);
+  if (emp.role === '老闆' || emp.role === 'boss' || emp.role === '董事長') return client.replyMessage(replyToken, [{ type: 'text', text: '您不需要打卡。' }]);
   const today = await db.getTodayCheckins(emp.id);
   if (!today.some(r => r.type === 'check_in')) return client.replyMessage(replyToken, [withMenu('⚠️ 尚未上班打卡')]);
   if (today.some(r => r.type === 'check_out')) return client.replyMessage(replyToken, [withMenu('⚠️ 今天已下班打卡')]);
@@ -2009,19 +2009,19 @@ var _richMenuId8 = null;
 // 角色是否可查詢全體（經理/老闆）
 function canQueryAll(emp) {
   var role = emp.role || '';
-  return role === '經理' || role === '老闆' || role === 'boss';
+  return role === '經理' || role === '老闆' || role === 'boss' || role === '董事長';
 }
 
 // 角色是否為簽核人員（只能查自己簽核的員工）
 function isApproverRole(emp) {
   var role = emp.role || '';
-  return role === '簽核人員';
+  return role === '簽核人員' || role === '副理' || role === '副主任';
 }
 
 // 角色是否為主任（可查詢採樣+分析部門）
 function isDirector(emp) {
   var role = emp.role || '';
-  return role === '主任';
+  return role === '主任' || role === '副主任';
 }
 
 // 取得主任可查詢的部門員工 ID
@@ -2040,7 +2040,7 @@ async function getDirectorDepartmentEmployeeIds() {
 // 查詢被簽核人員當天考勤（考勤異常/曠職/請假/GPS超出範圍）
 async function queryTodayAttendance(emp, client, replyToken) {
   var role = emp.role || '';
-  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && role !== '主任' && !emp.can_approve) {
+  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '董事長' && role !== '簽核人員' && role !== '主任' && role !== '副主任' && role !== '副理' && !emp.can_approve) {
     return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
   }
 
@@ -2245,7 +2245,7 @@ async function queryTodayAttendance(emp, client, replyToken) {
 // 查詢被簽核人員當月考勤（考勤異常+請假備註/請假/加班細項與累加，1號～當天）
 async function queryMonthAttendance(emp, client, replyToken) {
   var role = emp.role || '';
-  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '簽核人員' && role !== '主任' && !emp.can_approve) {
+  if (role !== '經理' && role !== '老闆' && role !== 'boss' && role !== '董事長' && role !== '簽核人員' && role !== '主任' && role !== '副主任' && role !== '副理' && !emp.can_approve) {
     return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
   }
 
@@ -2751,7 +2751,7 @@ async function assignRichMenu(uid, role, token) {
   try {
     var t = token || process.env.LINE_CHANNEL_ACCESS_TOKEN;
     var headers = { 'Authorization': 'Bearer ' + t };
-    if (role === '老闆' || role === 'boss') {
+    if (role === '老闆' || role === 'boss' || role === '董事長') {
       // 老闆使用 4 格選單
       if (!_richMenuIdBoss) _richMenuIdBoss = await db.getSetting('richmenu_boss_id');
       if (!_richMenuIdBoss) {
@@ -2769,7 +2769,7 @@ async function assignRichMenu(uid, role, token) {
       console.log('[RichMenu] 8格選單尚未建立，請先至 /admin/setup-richmenu');
       return false;
     }
-    if (role === '經理' || role === '簽核人員' || role === '主任') {
+    if (role === '經理' || role === '簽核人員' || role === '主任' || role === '副主任' || role === '副理') {
       // 連結 8 格選單
       var res = await fetch('https://api.line.me/v2/bot/user/' + uid + '/richmenu/' + _richMenuId8, { method: 'POST', headers });
       console.log('[RichMenu] assign 8-btn to', uid, 'role:', role, 'status:', res.status);
@@ -3237,7 +3237,7 @@ var _richMenuIdBoss = null;
 // 查詢公司今日考勤狀態（考勤異常/曠職/GPS超出/請假）
 async function queryBossTodayStatus(emp, client, replyToken) {
 	var role = emp.role || '';
-	if (role !== '老闆' && role !== 'boss') {
+	if (role !== '老闆' && role !== 'boss' && role !== '董事長') {
 		return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
 	}
 
@@ -3402,7 +3402,7 @@ async function queryBossTodayStatus(emp, client, replyToken) {
 // 當月公司人員請假累計
 async function queryBossMonthLeaves(emp, client, replyToken) {
 	var role = emp.role || '';
-	if (role !== '老闆' && role !== 'boss') {
+	if (role !== '老闆' && role !== 'boss' && role !== '董事長') {
 		return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
 	}
 
@@ -3519,7 +3519,7 @@ async function queryBossMonthLeaves(emp, client, replyToken) {
 // 當月公司人員考勤異常累計
 async function queryBossMonthLates(emp, client, replyToken) {
 	var role = emp.role || '';
-	if (role !== '老闆' && role !== 'boss') {
+	if (role !== '老闆' && role !== 'boss' && role !== '董事長') {
 		return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
 	}
 
@@ -3591,7 +3591,7 @@ async function queryBossMonthLates(emp, client, replyToken) {
 // 當月公司人員加班累計
 async function queryBossMonthOvertime(emp, client, replyToken) {
 	var role = emp.role || '';
-	if (role !== '老闆' && role !== 'boss') {
+	if (role !== '老闆' && role !== 'boss' && role !== '董事長') {
 		return client.replyMessage(replyToken, [withMenu('❌ 無查詢權限')]);
 	}
 

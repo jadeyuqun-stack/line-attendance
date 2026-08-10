@@ -262,7 +262,7 @@ async function listActiveEmployees() {
 }
 // 考勤用：排除老闆（老闆不打卡、不列入統計）
 async function listAttendanceEmployees() {
-  const { rows } = await pool.query("SELECT * FROM employees WHERE status='active' AND (role IS NULL OR role NOT IN ('老闆','boss')) ORDER BY employee_no");
+  const { rows } = await pool.query("SELECT * FROM employees WHERE status='active' AND (role IS NULL OR role NOT IN ('老闆','boss','董事長')) ORDER BY employee_no");
   return rows;
 }
 // 取得簽核人員負責的員工（L1/L2/L3 任一級）
@@ -407,7 +407,7 @@ async function getCheckinSummary(start, end) {
     FROM employees e
     CROSS JOIN generate_series($1::date, $2::date, '1 day'::interval) AS d(work_date)
     LEFT JOIN checkins c ON c.employee_id = e.id AND c.check_time::date = d.work_date
-    WHERE e.status = 'active' AND (e.role IS NULL OR e.role NOT IN ('老闆','boss'))
+    WHERE e.status = 'active' AND (e.role IS NULL OR e.role NOT IN ('老闆','boss','董事長'))
     GROUP BY e.id, e.employee_no, e.name, e.department, d.work_date
     ORDER BY e.employee_no, d.work_date`;
   var { rows } = await pool.query(sql, [start, end]);
@@ -415,7 +415,7 @@ async function getCheckinSummary(start, end) {
 }
 
 async function getTodaySummary() {
-  const { rows: r1 } = await pool.query("SELECT COUNT(*)::int AS total FROM employees WHERE status='active' AND (role IS NULL OR role NOT IN ('老闆','boss'))");
+  const { rows: r1 } = await pool.query("SELECT COUNT(*)::int AS total FROM employees WHERE status='active' AND (role IS NULL OR role NOT IN ('老闆','boss','董事長'))");
   const { rows: r2 } = await pool.query("SELECT COUNT(DISTINCT employee_id)::int AS ci FROM checkins WHERE (check_time AT TIME ZONE 'Asia/Taipei')::date=(NOW() AT TIME ZONE 'Asia/Taipei')::date AND type='check_in'");
   const { rows: r3 } = await pool.query("SELECT COUNT(DISTINCT employee_id)::int AS co FROM checkins WHERE (check_time AT TIME ZONE 'Asia/Taipei')::date=(NOW() AT TIME ZONE 'Asia/Taipei')::date AND type='check_out'");
   return {
@@ -1242,7 +1242,7 @@ async function verifyEmployeePassword(employeeNo, password) {
 // 依部門查詢（主管用）
 async function listEmployeesByDepartment(department) {
   var { rows } = await pool.query(
-    "SELECT * FROM employees WHERE department=$1 AND status='active' AND (role IS NULL OR role NOT IN ('老闆','boss')) ORDER BY employee_no",
+    "SELECT * FROM employees WHERE department=$1 AND status='active' AND (role IS NULL OR role NOT IN ('老闆','boss','董事長')) ORDER BY employee_no",
     [department]
   );
   return rows;
@@ -1314,7 +1314,7 @@ async function getAllowanceTotals(startDate, endDate) {
 
 async function getAllowanceFillingStatus(monthLabel) {
   var { rows } = await pool.query(
-    "SELECT e.department, COUNT(DISTINCT e.id) AS total_emp, COUNT(DISTINCT a.employee_id) AS filled_emp, COUNT(DISTINCT e.id) - COUNT(DISTINCT a.employee_id) AS unfilled FROM employees e LEFT JOIN allowances a ON a.employee_id=e.id AND a.month_label=$1 WHERE e.status='active' AND (e.role IS NULL OR e.role NOT IN ('老闆','boss')) GROUP BY e.department ORDER BY e.department",
+    "SELECT e.department, COUNT(DISTINCT e.id) AS total_emp, COUNT(DISTINCT a.employee_id) AS filled_emp, COUNT(DISTINCT e.id) - COUNT(DISTINCT a.employee_id) AS unfilled FROM employees e LEFT JOIN allowances a ON a.employee_id=e.id AND a.month_label=$1 WHERE e.status='active' AND (e.role IS NULL OR e.role NOT IN ('老闆','boss','董事長')) GROUP BY e.department ORDER BY e.department",
     [monthLabel]
   );
   return rows;

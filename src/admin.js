@@ -1364,7 +1364,7 @@ router.post('/salary/send-one', auth, express.urlencoded({ extended: true }), as
   var emp = await db.getEmployeeById(id);
   var img = salaryImages[id];
   if (!emp || !img) return res.redirect('/admin/salary');
-  var baseUrl = req.protocol + '://' + req.get('host');
+  var baseUrl = process.env.APP_URL || ('https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host')));
   try {
     await req.app.locals.lineClient.pushMessage(emp.line_user_id, [
       { type: 'image', originalContentUrl: baseUrl + '/admin/salary/img/' + id, previewImageUrl: baseUrl + '/admin/salary/img/' + id }
@@ -1372,14 +1372,18 @@ router.post('/salary/send-one', auth, express.urlencoded({ extended: true }), as
     res.send('<div class="card"><h3>✅ 已發送給 ' + h(emp.name) + '</h3></div><a href="/admin/salary" class="btn">返回</a>');
   } catch(e) {
     console.error('[Salary] send-one fail:', e.message);
-    res.send('<div class="card"><h3>❌ 發送失敗：' + h(e.message) + '</h3></div><a href="/admin/salary" class="btn">返回</a>');
+    var detail = '';
+    if (e.response && e.response.data) detail = JSON.stringify(e.response.data);
+    else if (e.originalError && e.originalError.data) detail = JSON.stringify(e.originalError.data);
+    else detail = e.message || String(e);
+    res.send('<div class="card"><h3>❌ 發送失敗：' + h(detail) + '</h3><p style="color:#999">圖片 URL：' + h(process.env.APP_URL || ('https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || ''))) + '/admin/salary/img/' + id + '</p></div><a href="/admin/salary" class="btn">返回</a>');
   }
 });
 
 router.post('/salary/send-all', auth, express.urlencoded({ extended: true }), async function(req, res) {
   var ids = (req.body.ids || '').split(',').map(Number).filter(Boolean);
   var scheduled = req.body.scheduled;
-  var baseUrl = req.protocol + '://' + req.get('host');
+  var baseUrl = process.env.APP_URL || ('https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host')));
   var client = req.app.locals.lineClient;
   if (scheduled) {
     var target = new Date(scheduled);
@@ -1608,14 +1612,14 @@ router.post('/salary/send', auth, express.urlencoded({ extended: true }), async 
         + '</div><a href="/admin/salary" class="btn">返回</a>';
       // 啟動排程
       setTimeout(async function() {
-        await doSend(data, req.app.locals.lineClient, req.protocol + '://' + req.get('host'));
+        await doSend(data, req.app.locals.lineClient, process.env.APP_URL || ('https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host'))));
       }, delay);
       return res.send(layout('排程中', '薪資發送', result));
     }
   }
 
   // 立即發送
-  var result = await doSend(data, req.app.locals.lineClient, req.protocol + '://' + req.get('host'));
+  var result = await doSend(data, req.app.locals.lineClient, process.env.APP_URL || ('https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host'))));
   delete req.session.salaryData;
   res.send(layout('發送完成', '薪資發送', result));
 });

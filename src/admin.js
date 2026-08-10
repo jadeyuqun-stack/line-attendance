@@ -1471,23 +1471,27 @@ router.get('/salary', auth, async function(_, res) {
   if (_.query.err) body += '<div class="card" style="border-color:#e74c3c"><p style="color:#e74c3c">❌ 上傳失敗：請確認檔案為 .xlsx 格式</p></div>';
   if (_.query.ok) body += '<div class="card" style="border-color:#06c755"><p style="color:#06c755">✅ 已產生 ' + _.query.ok + ' 人薪資圖片' + (_.query.unbound ? '（' + _.query.unbound + ' 人未綁定 LINE 未產圖）' : '') + '</p></div>';
   if (_.query.cleared) body += '<div class="card" style="border-color:#06c755"><p style="color:#06c755">🗑 已清除所有已產生薪資圖片</p></div>';
-  // 月份下拉選項（近 12 個月）
-  var monthOpts = '';
+  // 年份／月份分開下拉（可選未來月份）
   var _mNow = new Date();
-  for (var _mi = 0; _mi < 12; _mi++) {
-    var _md = new Date(_mNow.getFullYear(), _mNow.getMonth() - _mi, 1);
-    var _mlabel = (_md.getFullYear() - 1911) + '年' + (_md.getMonth() + 1) + '月';
-    var _msel = (_mi === 0) ? ' selected' : '';
-    monthOpts += '<option value="' + _mlabel + '"' + _msel + '>' + _mlabel + '</option>';
+  var _curYearRoc = _mNow.getFullYear() - 1911;
+  var _curMonth = _mNow.getMonth() + 1;
+  var yearOpts = '', monthOpts = '';
+  for (var _y = _curYearRoc - 1; _y <= _curYearRoc + 1; _y++) {
+    yearOpts += '<option value="' + _y + '"' + (_y === _curYearRoc ? ' selected' : '') + '>' + _y + '年</option>';
+  }
+  for (var _mo = 1; _mo <= 12; _mo++) {
+    monthOpts += '<option value="' + _mo + '"' + (_mo === _curMonth ? ' selected' : '') + '>' + _mo + '月</option>';
   }
   // 上傳 Excel 卡片
   body += '<div class="card"><h3>📤 上傳薪資 Excel</h3>'
     + '<p style="color:#999;margin-bottom:12px">上傳薪資 Excel 檔（如 Salary sample 07.xlsx），系統會自動為每位員工產生薪資圖片（月份、結算區間、發放日自動帶入），可單筆/批量/預約發送。</p>'
-    + '<form method="POST" action="/admin/salary/upload-excel" enctype="multipart/form-data" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">'
-    + '<div><label style="font-size:12px;display:block;margin-bottom:4px">薪資月份</label><select name="monthLabel" style="width:140px">' + monthOpts + '</select></div>'
+    + '<form id="salaryForm2" method="POST" action="/admin/salary/upload-excel" enctype="multipart/form-data" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">'
+    + '<div><label style="font-size:12px;display:block;margin-bottom:4px">薪資年月</label><div style="display:flex;gap:4px;align-items:center"><select id="salYear" style="width:80px">' + yearOpts + '</select><span>年</span><select id="salMonth" style="width:70px">' + monthOpts + '</select></div></div>'
     + '<div><label style="font-size:12px;display:block;margin-bottom:4px">Excel 檔案</label><input type="file" name="excel" accept=".xlsx" required></div>'
+    + '<input type="hidden" name="monthLabel" id="salMonthLabel" value="' + _curYearRoc + '年' + _curMonth + '月">'
     + '<button class="btn">📤 上傳並產生圖片</button>'
-    + '</form></div>';
+    + '</form>'
+    + '<script>document.getElementById("salaryForm2").onsubmit=function(){var y=document.getElementById("salYear").value;var m=document.getElementById("salMonth").value;document.getElementById("salMonthLabel").value=y+"年"+m+"月";};</script></div>';
   // 已產生薪資圖片網格
   var imgIds = Object.keys(salaryImages);
   if (imgIds.length > 0) {
@@ -1498,7 +1502,7 @@ router.get('/salary', auth, async function(_, res) {
       if (!ie) continue;
       cards += '<div style="border:1px solid #eee;border-radius:10px;padding:12px;text-align:center">'
         + '<div style="font-weight:700;margin-bottom:8px">' + h(ie.name) + '（' + h(ie.employee_no) + '）</div>'
-        + '<a href="/admin/salary/img/' + iid + '" target="_blank"><img src="/admin/salary/img/' + iid + '" style="max-width:240px;border:1px solid #ddd;border-radius:6px"></a>'
+        + '<a href="/admin/salary/img/' + iid + '" target="_blank"><img src="/admin/salary/img/' + iid + '?t=' + Date.now() + '" style="max-width:240px;border:1px solid #ddd;border-radius:6px"></a>'
         + '<div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;align-items:center">'
         + '<label style="display:flex;align-items:center;gap:4px"><input type="checkbox" class="salaryChk" value="' + iid + '"> 選取</label>'
         + '<form method="POST" action="/admin/salary/send-one"><input type="hidden" name="id" value="' + iid + '"><button class="btn-sm btn">📨 單筆發送</button></form>'
@@ -1607,7 +1611,7 @@ router.get('/salary/img/:id', function(req, res) {
   var img = salaryImages[parseInt(req.params.id)];
   if (!img) return res.status(404).end();
   res.set('Content-Type', img.mimetype);
-  res.set('Cache-Control', 'public, max-age=300');
+  res.set('Cache-Control', 'no-cache, must-revalidate');
   res.send(img.buffer);
 });
 

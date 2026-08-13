@@ -846,7 +846,7 @@ router.get('/leaves', auth, async (req, res) => {
       personMap[l.employee_no].total += hours;
       if (startStr && startStr.indexOf(thisMonth) === 0) personMap[l.employee_no].month += hours;
     }
-    rows += '<tr><td>'+cb+'</td><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(leaveTypeLabels[l.leave_type] || l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(l.reason||'')+'</td><td>'+statusBadge+(l.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(l.reject_reason)+'</small>':'')+'</td><td>'+actionHtml+'</td></tr>';
+    rows += '<tr><td>'+cb+'</td><td>'+h(l.employee_no)+'</td><td>'+h(l.name)+'</td><td>'+h(l.department||'')+'</td><td>'+h(leaveTypeLabels[l.leave_type] || l.leave_type)+'</td><td>'+leaveTime+'</td><td>'+hours+'h</td><td>'+h(cleanReason(l.reason))+'</td><td>'+statusBadge+(l.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(cleanReason(l.reject_reason))+'</small>':'')+'</td><td>'+actionHtml+'</td></tr>';
   }
   // 個人彙總表格
   var personRows = '';
@@ -1136,6 +1136,8 @@ router.post('/api/settings', auth, express.json(), async (req, res) => {
 // ===== 輔助 =====
 function h(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function esc(s) { return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+// 清洗原因文字：若原因內含「請輸入…原因：」的提示前綴（使用者把提示訊息貼回），只保留之後的實際內容
+function cleanReason(s) { var str = String(s||''); var markers = ['請輸入請假原因：','請輸入加班原因：','請輸入原因：','請輸入駁回原因：']; for (var i=0;i<markers.length;i++){ var idx=str.lastIndexOf(markers[i]); if(idx!==-1) str=str.substring(idx+markers[i].length); } return str.trim(); }
 function fmt(ts) { var d = new Date(ts); return d.getFullYear()+' '+(d.getMonth()+1)+'月'+d.getDate()+'日 '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function dateOverlaps(startStr, endStr, targetDate) {
   if (!startStr) return false;
@@ -1195,7 +1197,7 @@ router.get('/missed', auth, async function(_, res) {
     var ah = '';
     if (r.status === 'pending') ah = '<button onclick="approveMp('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectMp('+r.id+')" class="btn-sm btn-red">駁回</button>';
     ah += ' <button onclick="deleteMp('+r.id+')" class="btn-sm btn-red" title="刪除">🗑</button>';
-    rows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.punch_type==='check_in'?'🔵補上班':'🔴補下班')+'</td><td>'+h(r.punch_date)+' '+h(r.punch_time)+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(r.reject_reason)+'</small>':'')+'</td><td>'+ah+'</td></tr>';
+    rows += '<tr><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+(r.punch_type==='check_in'?'🔵補上班':'🔴補下班')+'</td><td>'+h(r.punch_date)+' '+h(r.punch_time)+'</td><td>'+h(cleanReason(r.reason))+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(cleanReason(r.reject_reason))+'</small>':'')+'</td><td>'+ah+'</td></tr>';
   }
   var body = '<div class="tabs"><a href="?status=" class="'+(status===''?'active':'')+'">全部</a><a href="?status=pending" class="'+(status==='pending'?'active':'')+'">⏳ 待審核</a><a href="?status=approved" class="'+(status==='approved'?'active':'')+'">✅ 已核准</a></div>';
   body += '<div class="card"><table><tr><th>編號</th><th>姓名</th><th>類型</th><th>時間</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="7">無補打卡記錄</td></tr>')+'</table></div>';
@@ -1271,7 +1273,7 @@ router.get('/overtime', auth, async function(_, res) {
     var otCb = r.status === 'pending' ? '<input type="checkbox" class="otCb" value="'+r.id+'" style="width:auto;height:auto">' : '';
     if (r.status === 'pending') ah = '<button onclick="approveOt('+r.id+')" class="btn-sm btn">核准</button> <button onclick="rejectOt('+r.id+')" class="btn-sm btn-red">駁回</button>';
     ah += ' <button onclick="deleteOt('+r.id+')" class="btn-sm btn-red" title="刪除">🗑</button>';
-    rows += '<tr><td>'+otCb+'</td><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+h(r.department||'')+'</td><td>'+h(r.start_time)+' ~ '+h(r.end_time)+'</td><td>'+otHoursTxt+'</td><td>'+h(r.reason||'')+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(r.reject_reason)+'</small>':'')+'</td><td>'+ah+'</td></tr>';
+    rows += '<tr><td>'+otCb+'</td><td>'+h(r.employee_no)+'</td><td>'+h(r.name)+'</td><td>'+h(r.department||'')+'</td><td>'+h(r.start_time)+' ~ '+h(r.end_time)+'</td><td>'+otHoursTxt+'</td><td>'+h(cleanReason(r.reason))+'</td><td>'+sb+(r.reject_reason?'<br><small style="color:#e74c3c">駁回：'+h(cleanReason(r.reject_reason))+'</small>':'')+'</td><td>'+ah+'</td></tr>';
   }
   var opts = '<option value="">全部員工</option>';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'"'+(filterEid===emps[j].id?' selected':'')+'>'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
@@ -2292,7 +2294,7 @@ router.get('/export/checkins', auth, async function(req, res) {
         '類型': mp.punch_type === 'check_in' ? '上班(補卡)' : '下班(補卡)',
         '位置': '',
         'GPS': '補打卡',
-        '備註': mp.reason || ''
+        '備註': cleanReason(mp.reason)
       });
     }
     // 按日期排序
@@ -2346,9 +2348,9 @@ router.get('/export/leaves', auth, async function(req, res) {
         '結束日期': leDt.date,
         '結束時間': leDt.time,
         '時數(h)': hours,
-        '原因': l.reason || '',
+        '原因': cleanReason(l.reason),
         '狀態': statusLabels[l.status] || l.status,
-        '駁回原因': l.reject_reason || ''
+        '駁回原因': cleanReason(l.reject_reason)
       });
     }
     var wb = excel.createWorkbook();
@@ -2405,9 +2407,9 @@ router.get('/export/overtime', auth, async function(req, res) {
         '總時數(h)': otHours,
         '2小時內(h)': otIn2,
         '超過2小時(h)': otOver2,
-        '原因': ot.reason || '',
+        '原因': cleanReason(ot.reason),
         '狀態': statusLabels2[ot.status] || ot.status,
-        '駁回原因': ot.reject_reason || ''
+        '駁回原因': cleanReason(ot.reject_reason)
       });
     }
     var wb = excel.createWorkbook();
@@ -2829,7 +2831,7 @@ summaryData.push({
 					'類型': mpRec.punch_type === 'check_in' ? '上班(補卡)' : '下班(補卡)',
 					'位置': '',
 					'GPS': '補打卡',
-					'備註': mpRec.reason || ''
+					'備註': cleanReason(mpRec.reason)
 				});
 			}
 			checkinData.sort(function(a, b) { return a['日期'].localeCompare(b['日期']) || a['時間'].localeCompare(b['時間']); });
@@ -2857,9 +2859,9 @@ summaryData.push({
 					'結束日期': leDt.date,
 					'結束時間': leDt.time,
 					'時數(h)': hours,
-					'原因': lr.reason || '',
+					'原因': cleanReason(lr.reason),
 					'狀態': statusLabels[lr.status] || lr.status,
-					'駁回原因': lr.reject_reason || ''
+					'駁回原因': cleanReason(lr.reject_reason)
 				});
 			}
 
@@ -2890,9 +2892,9 @@ summaryData.push({
 					'總時數(h)': otHours,
 					'2小時內(h)': otIn2,
 					'超過2小時(h)': otOver2,
-					'原因': ot.reason || '',
+					'原因': cleanReason(ot.reason),
 					'狀態': statusLabels2[ot.status] || ot.status,
-					'駁回原因': ot.reject_reason || ''
+					'駁回原因': cleanReason(ot.reject_reason)
 				});
 			}
 

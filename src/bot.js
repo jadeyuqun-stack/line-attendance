@@ -441,14 +441,14 @@ async function checkPendingApprovalsCmd(emp, client, replyToken, uid, _prefix) {
       if (it.type === 'leave') {
         var lh2 = leaveHours(it.data.start_date, it.data.end_date);
         msg += '    ' + leaveTypeLabel(it.data.leave_type) + '：' + fmtDt(it.data.start_date) + ' ~ ' + fmtDt(it.data.end_date) + '（' + lh2 + 'h）\n';
-        if (it.data.reason) msg += '    原因：' + it.data.reason + '\n';
+        if (it.data.reason) msg += '    原因：' + cleanReasonText(it.data.reason) + '\n';
       } else if (it.type === 'ot') {
         var oh2 = calcHours(it.data.start_time, it.data.end_time);
         msg += '    ' + fmtDt(it.data.start_time) + ' ~ ' + fmtDt(it.data.end_time) + '（' + oh2 + 'h）\n';
-        if (it.data.reason) msg += '    原因：' + it.data.reason + '\n';
+        if (it.data.reason) msg += '    原因：' + cleanReasonText(it.data.reason) + '\n';
       } else {
         msg += '    ' + (it.data.punch_type === 'check_in' ? '🔵補上班' : '🔴補下班') + '：' + it.data.punch_date + ' ' + (it.data.punch_time || '') + '\n';
-        if (it.data.reason) msg += '    原因：' + it.data.reason + '\n';
+        if (it.data.reason) msg += '    原因：' + cleanReasonText(it.data.reason) + '\n';
       }
       msg += '\n';
     }
@@ -488,7 +488,7 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
       detailText += '員工：' + item.empName + '（' + item.empNo + '）\n';
       detailText += '假別：' + leaveTypeLabel(item.data.leave_type) + '\n';
       detailText += '時間：' + fmtDt(item.data.start_date) + ' ~ ' + fmtDt(item.data.end_date) + '（' + lh + ' 小時）\n';
-      detailText += '原因：' + (item.data.reason || '未填寫');
+      detailText += '原因：' + cleanReasonText(item.data.reason || '未填寫');
       return client.replyMessage(replyToken, [{ type: 'text', text: detailText, quickReply: { items: [
         { type: 'action', action: { type: 'message', label: '✅ 核准', text: '核准' } },
         { type: 'action', action: { type: 'message', label: '❌ 駁回', text: '駁回 ' } },
@@ -500,7 +500,7 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
       var detailText = '🕐 加班申請\n';
       detailText += '員工：' + item.empName + '（' + item.empNo + '）\n';
       detailText += '時間：' + fmtDt(item.data.start_time) + ' ~ ' + fmtDt(item.data.end_time) + '（' + oh + ' 小時）\n';
-      detailText += '原因：' + (item.data.reason || '未填寫');
+      detailText += '原因：' + cleanReasonText(item.data.reason || '未填寫');
       return client.replyMessage(replyToken, [{ type: 'text', text: detailText, quickReply: { items: [
         { type: 'action', action: { type: 'message', label: '✅ 核准', text: '核准' } },
         { type: 'action', action: { type: 'message', label: '❌ 駁回', text: '駁回 ' } },
@@ -512,7 +512,7 @@ async function handleApprovalBrowseInput(text, uid, client, replyToken, emp) {
       detailText += '員工：' + item.empName + '（' + item.empNo + '）\n';
       detailText += '類型：' + (item.data.punch_type === 'check_in' ? '🔵補上班' : '🔴補下班') + '\n';
       detailText += '日期：' + item.data.punch_date + ' ' + item.data.punch_time + '\n';
-      detailText += '原因：' + (item.data.reason || '未填寫');
+      detailText += '原因：' + cleanReasonText(item.data.reason || '未填寫');
       return client.replyMessage(replyToken, [{ type: 'text', text: detailText, quickReply: { items: [
         { type: 'action', action: { type: 'message', label: '✅ 核准', text: '核准' } },
         { type: 'action', action: { type: 'message', label: '❌ 駁回', text: '駁回 ' } },
@@ -1241,6 +1241,17 @@ if (_prefix) _msg.unshift({ type: "text", text: _prefix });
   return client.replyMessage(replyToken, _msg);
 }
 
+// 清洗原因文字：若使用者把提示訊息（含時間文字）一併貼回，只保留「請輸入…原因：」之後的實際內容
+function cleanReasonText(text) {
+  var s = String(text || '').trim();
+  var markers = ['請輸入請假原因：', '請輸入加班原因：', '請輸入原因：', '請輸入駁回原因：'];
+  for (var i = 0; i < markers.length; i++) {
+    var idx = s.lastIndexOf(markers[i]);
+    if (idx !== -1) s = s.substring(idx + markers[i].length);
+  }
+  return s.trim();
+}
+
 async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
   const state = states.get(uid);
   // 補打卡先處理，避免被請假攔截
@@ -1255,7 +1266,7 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
       return client.replyMessage(replyToken, [{ type: 'text', text: '📝 請選擇補卡日期時間', quickReply: { items: items } }]);
     }
     if (state.step === "reason") {
-      state.reason = text;
+      state.reason = cleanReasonText(text);
       try {
         var mpId = await db.createMissedPunch(emp.id, state.punchType, state.punchDate, state.punchTime, state.reason);
         states.delete(uid);
@@ -1283,7 +1294,7 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
     return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')] : [withDatePicker('🏖 請假：' + (state.typeLabel || text) + (_balText || '') + '\n\n選擇「開始日期時間」後請點「傳送」', 'leave_start')]);
   }
   if (state.flow === "overtime" && state.step === 'reason') {
-    state.reason = text;
+    state.reason = cleanReasonText(text);
     try {
       var otId = await db.createOvertimeRequest(emp.id, state.otStart, state.otEnd, state.reason);
       states.delete(uid);
@@ -1291,7 +1302,7 @@ async function handleFlow(text, uid, client, replyToken, emp, _prefix) {
     } catch(e) { console.error('[ot] error:', e.message || e, e.stack || ''); states.delete(uid); return client.replyMessage(replyToken, _prefix ? [{ type: 'text', text: _prefix }, withMenu("❌ 申請失敗")] : [withMenu("❌ 申請失敗")]); }
   }
   if (!state.flow && state.step === 'reason') {
-    state.reason = text;
+    state.reason = cleanReasonText(text);
     try {
       // 特休/婚假/喪假 額度檢查（測試模式跳過）
       if (state.type === 'annual' || state.type === 'marriage' || state.type === 'funeral' || state.type === 'comp') {
@@ -1519,7 +1530,7 @@ async function handleRejectReason(text, uid, client, replyToken, approver) {
     states.delete(uid);
     return client.replyMessage(replyToken, [withMenu('已取消駁回')]);
   }
-  var reason = text;
+  var reason = cleanReasonText(text);
 
   try {
     if (state.flow === 'reject_leave') {
@@ -2018,23 +2029,35 @@ function isApproverRole(emp) {
   return role === '簽核人員' || role === '副理' || role === '副主任';
 }
 
-// 角色是否為主任（可查詢採樣+分析部門）
-function isDirector(emp) {
-  var role = emp.role || '';
-  return role === '主任' || role === '副主任';
+// 取得主任可查詢的部門員工 ID（採樣 + 分析）
+async function getDirectorDepartmentEmployeeIds() {
+  return await getDepartmentEmployeeIds(['採樣', '分析']);
 }
 
-// 取得主任可查詢的部門員工 ID
-async function getDirectorDepartmentEmployeeIds() {
+// 取得某部門所有考勤員工 ID（傳字串或陣列）
+async function getDepartmentEmployeeIds(dept) {
   var allEmps = await db.listAttendanceEmployees();
+  var target = Array.isArray(dept) ? dept : [dept];
   var ids = {};
   for (var i = 0; i < allEmps.length; i++) {
-    var e = allEmps[i];
-    if (e.department === '採樣' || e.department === '分析') {
-      ids[e.id] = true;
-    }
+    if (target.indexOf(allEmps[i].department) !== -1) ids[allEmps[i].id] = true;
   }
   return ids;
+}
+
+// 取得該主管可查詢考勤的員工 ID 集合（null = 全部人員）
+async function getQueryScopeIds(emp) {
+  var role = emp.role || '';
+  if (canQueryAll(emp)) return null;
+  if (role === '主任') return await getDirectorDepartmentEmployeeIds();
+  if (role === '副主任') return await getDepartmentEmployeeIds(emp.department);
+  if (isApproverRole(emp) || emp.can_approve) {
+    var designated = await db.getDesignatedEmployeeIds(emp.id);
+    var ids = {};
+    for (var d = 0; d < designated.length; d++) ids[designated[d].id] = true;
+    return ids;
+  }
+  return {};
 }
 
 // 查詢被簽核人員當天考勤（考勤異常/曠職/請假/GPS超出範圍）
@@ -2050,17 +2073,7 @@ async function queryTodayAttendance(emp, client, replyToken) {
   var startM = parseInt(await db.getSetting('work_start_minute') || '0');
   var lateThreshold = startH * 60 + startM + lateMin;
 
-  var designatedIds = {};
-  if (isApproverRole(emp) && !canQueryAll(emp)) {
-    var designated = await db.getDesignatedEmployeeIds(emp.id);
-    for (var d = 0; d < designated.length; d++) {
-      designatedIds[designated[d].id] = true;
-    }
-  }
-  // 主任：僅限查詢採樣+分析部門
-  if (isDirector(emp)) {
-    designatedIds = await getDirectorDepartmentEmployeeIds();
-  }
+  var designatedIds = await getQueryScopeIds(emp) || {};
 
   var allCheckins = await db.queryCheckins(null, today, today, 2000, 0);
   var allLeaves = await db.getLeaveRequests('approved', 500);
@@ -2259,17 +2272,7 @@ async function queryMonthAttendance(emp, client, replyToken) {
   var startM = parseInt(await db.getSetting('work_start_minute') || '0');
   var lateThreshold = startH * 60 + startM + lateMin;
 
-  var designatedIds = {};
-  if (isApproverRole(emp) && !canQueryAll(emp)) {
-    var designated = await db.getDesignatedEmployeeIds(emp.id);
-    for (var d = 0; d < designated.length; d++) {
-      designatedIds[designated[d].id] = true;
-    }
-  }
-	  // 主任：僅限查詢採樣+分析部門
-	  if (isDirector(emp)) {
-	    designatedIds = await getDirectorDepartmentEmployeeIds();
-	  }
+  var designatedIds = await getQueryScopeIds(emp) || {};
 
   var allCheckins = await db.queryCheckins(null, monthStart, today, 5000, 0);
   var allLeaves = await db.getLeaveRequests('approved', 2000);

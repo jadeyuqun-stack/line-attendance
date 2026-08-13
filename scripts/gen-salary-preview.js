@@ -255,6 +255,7 @@ function computeLeave(name) {
   } catch (e) {}
   var ent = calcEntitlement(hire);
   var remaining = Math.max(0, Math.round((ent.h - usedAnnual) * 10) / 10);
+
   return {
     name: '特休', used: Math.round(usedAnnual * 10) / 10, remaining: remaining,
     pending: 0, prevBal: 0, thisGrant: ent.h, settled: remaining,
@@ -267,7 +268,7 @@ function render(emp) {
   var cat = categorize(emp.items);
   var earn = cat.mainEarn, ded = cat.ded, non = cat.non;
   var A = sumRows(earn), B = sumRows(ded), nonSum = sumRows(non);
-  var net = Math.round((A - B) * 100) / 100;   // 最終金額進位到小數2位
+  var net = Math.round((A - B - cat.cash) * 100) / 100;   // 匯付所得 = A - B - 日薪減扣款(現金)
   var extra = empExtra[emp.name] || {};
 
   var W = 1500, M = 50, COL_W = (W - M * 2) / 3;
@@ -323,7 +324,7 @@ function render(emp) {
     ctx.textAlign = 'center';
     ctx.fillText(title, cx + COL_W / 2, y + TH_H / 2);
   }
-  colHeader(x1, '應付項目'); colHeader(x2, '應扣項目'); colHeader(x3, '不計入項目');
+  colHeader(x1, '應付項目'); colHeader(x2, '應扣項目'); colHeader(x3, '不計入項目(匯入勞退專用帳戶)');
   y += TH_H;
 
   ctx.font = 'bold 18px CnFont';
@@ -384,16 +385,14 @@ function render(emp) {
   ctx.fillRect(M, y, W - M * 2, ROW_H + 8);
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 24px CnFont';
-  ctx.textAlign = 'left'; ctx.fillText('匯付所得（A-B）', M + 16, y + (ROW_H + 8) / 2);
+  ctx.textAlign = 'left'; ctx.fillText('匯付所得（A-B-日薪減扣款）', M + 16, y + (ROW_H + 8) / 2);
   ctx.textAlign = 'right'; ctx.fillText(fmtAmt(net), W - M - 16, y + (ROW_H + 8) / 2);
   y += ROW_H + 8;
-  // 現金(日薪減扣款) 行
-  ctx.fillStyle = '#fdf6ec';
+  // 現金(日薪減扣款) 行（與上行匯付所得相同樣式）
+  ctx.fillStyle = '#2f5496';
   ctx.fillRect(M, y, W - M * 2, ROW_H);
-  ctx.strokeStyle = '#f0c36d'; ctx.lineWidth = 1;
-  ctx.strokeRect(M, y, W - M * 2, ROW_H);
-  ctx.fillStyle = '#b45309';
-  ctx.font = 'bold 20px CnFont';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 24px CnFont';
   ctx.textAlign = 'left'; ctx.fillText('現金(日薪減扣款)', M + 16, y + ROW_H / 2);
   ctx.textAlign = 'right'; ctx.fillText(fmtAmt(cat.cash), W - M - 16, y + ROW_H / 2);
   y += ROW_H + 14;

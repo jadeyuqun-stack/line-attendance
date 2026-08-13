@@ -372,7 +372,7 @@ router.get('/records', auth, async (req, res) => {
   }
   var opts = '';
   for (var j = 0; j < emps.length; j++) opts += '<option value="'+emps[j].id+'">'+h(emps[j].employee_no)+' '+h(emps[j].name)+'</option>';
-  // 本月考勤異常統計（含遲到/早退/未下班/曠職）
+  // 本月考勤異常統計（遲到/早退/曠職；未下班不算考勤異常）
   var monthStart = new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0")+"-01";
   // 月模式：異常統計也看整個月；日模式只看當天
   var anMonthStart, anEndDate;
@@ -437,16 +437,15 @@ router.get('/records', auth, async (req, res) => {
       var _onLeave3 = monthLeaveMap[_key3];
       var _hasMissed3 = monthMissedMap[_key3];
       if (_onLeave3 || _hasMissed3) continue;
-      if (!anomalyMap[_eid]) anomalyMap[_eid] = { name: _emp.name, no: _emp.employee_no, dept: _emp.department, lateCount: 0, earlyCount: 0, absentCount: 0, noOutCount: 0, totalLateMin: 0, details: [] };
+      if (!anomalyMap[_eid]) anomalyMap[_eid] = { name: _emp.name, no: _emp.employee_no, dept: _emp.department, lateCount: 0, earlyCount: 0, absentCount: 0, totalLateMin: 0, details: [] };
       // 曠職：無打卡記錄
       if (!_md || !_md.checkIn) { anomalyMap[_eid].absentCount++; anomalyMap[_eid].details.push(_label3 + " 曠職"); continue; }
       // 遲到
       var _ciH3 = new Date(_md.checkIn.check_time).getHours(), _ciM3 = new Date(_md.checkIn.check_time).getMinutes();
       var _lateMin3 = _ciH3*60+_ciM3 - (startH2*60+buf2);
       if (_lateMin3 > 0) { anomalyMap[_eid].lateCount++; anomalyMap[_eid].totalLateMin += _lateMin3; anomalyMap[_eid].details.push(_label3 + " 遲到" + _lateMin3 + "分"); }
-      // 早退 / 未下班
-      if (!_md.checkOut) { anomalyMap[_eid].noOutCount++; anomalyMap[_eid].details.push(_label3 + " 未下班"); }
-      else {
+      // 早退（當天未下班不計為考勤異常）
+      if (_md.checkOut) {
         var _ci3 = new Date(_md.checkIn.check_time), _co3 = new Date(_md.checkOut.check_time);
         var _th3 = Math.round(Math.max(0,(_co3-_ci3)/3600000)*10)/10;
         var _ls6x = new Date(_ci3); _ls6x.setHours(12,0,0,0);
@@ -460,12 +459,12 @@ router.get('/records', auth, async (req, res) => {
   var anomalyKeys = Object.keys(anomalyMap);
   var lateSummary = "";
   if (anomalyKeys.length > 0) {
-    lateSummary = '<div class="card"><h3>⚠️ 本月考勤異常統計</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>遲到</th><th>早退</th><th>未下班</th><th>曠職</th><th>總次數</th><th>累計遲到</th><th>異常日期</th></tr>';
+    lateSummary = '<div class="card"><h3>⚠️ 本月考勤異常統計</h3><table><tr><th>編號</th><th>姓名</th><th>部門</th><th>遲到</th><th>早退</th><th>曠職</th><th>總次數</th><th>累計遲到</th><th>異常日期</th></tr>';
     for (var k = 0; k < anomalyKeys.length; k++) {
       var am = anomalyMap[anomalyKeys[k]];
-      var totalAnomaly = am.lateCount + am.earlyCount + am.noOutCount + am.absentCount;
+      var totalAnomaly = am.lateCount + am.earlyCount + am.absentCount;
       if (totalAnomaly === 0) continue;
-      lateSummary += '<tr><td>'+h(am.no)+'</td><td>'+h(am.name)+'</td><td>'+h(am.dept||'')+'</td><td>'+am.lateCount+'</td><td>'+am.earlyCount+'</td><td>'+am.noOutCount+'</td><td>'+am.absentCount+'</td><td style="font-weight:600">'+totalAnomaly+'</td><td>'+(am.totalLateMin||0)+'分</td><td style="font-size:12px">'+(am.details||[]).join('<br>')+'</td></tr>';
+      lateSummary += '<tr><td>'+h(am.no)+'</td><td>'+h(am.name)+'</td><td>'+h(am.dept||'')+'</td><td>'+am.lateCount+'</td><td>'+am.earlyCount+'</td><td>'+am.absentCount+'</td><td style="font-weight:600">'+totalAnomaly+'</td><td>'+(am.totalLateMin||0)+'分</td><td style="font-size:12px">'+(am.details||[]).join('<br>')+'</td></tr>';
     }
     lateSummary += "</table></div>";
   }
@@ -870,9 +869,8 @@ router.get('/leaves', auth, async (req, res) => {
     + '<a href="?status=rejected" class="'+(status==='rejected'?'active':'')+'">❌ 已駁回</a>'
     + '</div>'
     + '<div style="margin-bottom:8px"><button onclick="batchAction(\"leave\",\"approved\")" class="btn-sm btn">✅ 批次核准</button> <button onclick="batchAction(\"leave\",\"rejected\")" class="btn-sm btn-red">❌ 批次駁回</button></div>'
-    + '<div class="card"><table><tr><th><input type="checkbox" onclick="toggleAll(\"leaveCb\")" style="width:auto;height:auto"></th><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期時間</th><th>時數</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="10">無請假記錄</td></tr>')+'</table></div>'
+    + '<div class="card"><table><tr><th></th><th>編號</th><th>姓名</th><th>部門</th><th>假別</th><th>日期時間</th><th>時數</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="10">無請假記錄</td></tr>')+'</table></div>'
     + '<script>async function approveLeave(id){await fetch("/admin/api/leaves/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectLeave(id){var reason=prompt("請輸入駁回原因：");if(reason===null)return;await fetch("/admin/api/leaves/"+id+"/reject",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason})});location.reload();}async function clearLeaves(){if(!confirm("⚠️ 確定刪除所有請假記錄？"))return;await fetch("/admin/api/leaves/clear",{method:"DELETE"});location.reload();}async function deleteLeave(id){if(!confirm("確定刪除此筆請假？"))return;await fetch("/admin/api/leaves/"+id,{method:"DELETE"});location.reload();}'
-    + 'function toggleAll(cls){var cbs=document.querySelectorAll("."+cls);for(var i=0;i<cbs.length;i++)cbs[i].checked=event.target.checked;}'
     + 'async function batchAction(type,action){var cbs=document.querySelectorAll(".leaveCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+ (action==="approved"?"核准":"駁回") +" "+ids.length+" 筆？"))return;await fetch("/admin/api/"+type+"s/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
   res.send(layout('請假管理', '請假管理', body));
 });
@@ -1280,8 +1278,8 @@ router.get('/overtime', auth, async function(_, res) {
   var filterBar = '<div class="card"><form class="inline" method="GET"><div><label>員工</label><select name="eid">'+opts+'</select></div><div><label>狀態</label><select name="status"><option value=""'+(status===''?' selected':'')+'>全部</option><option value="pending"'+(status==='pending'?' selected':'')+'>待審核</option><option value="approved"'+(status==='approved'?' selected':'')+'>已核准</option><option value="rejected"'+(status==='rejected'?' selected':'')+'>已駁回</option></select></div><div><label>月份</label><input name="month" value="'+h(filterMonth)+'" placeholder="2026-06" style="width:120px"></div><button class="btn">🔍 篩選</button></form></div>';
   var body = filterBar
     + '<div style="margin-bottom:8px"><button onclick="batchOt(\"approved\")" class="btn-sm btn">✅ 批次核准</button> <button onclick="batchOt(\"rejected\")" class="btn-sm btn-red">❌ 批次駁回</button></div>'
-    + '<div class="card"><table><tr><th><input type="checkbox" onclick="toggleAll(\"otCb\")" style="width:auto;height:auto"></th><th>編號</th><th>姓名</th><th>部門</th><th>時間</th><th>時數</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="9">無加班記錄</td></tr>')+'</table></div>'
-    + '<div style="margin-top:12px"><button onclick="clearOt()" class="btn-sm btn-red">🗑 清除所有加班記錄</button></div><script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){var reason=prompt("請輸入駁回原因：");if(reason===null)return;await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason})});location.reload();}async function clearOt(){if(!confirm("⚠️ 確定刪除所有加班記錄？"))return;await fetch("/admin/api/overtime/clear",{method:"DELETE"});location.reload();}async function deleteOt(id){if(!confirm("確定刪除此筆加班？"))return;await fetch("/admin/api/overtime/"+id,{method:"DELETE"});location.reload();}function toggleAll(cls){var cbs=document.querySelectorAll("."+cls);for(var i=0;i<cbs.length;i++)cbs[i].checked=event.target.checked;}async function batchOt(action){var cbs=document.querySelectorAll(".otCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+(action==="approved"?"核准":"駁回")+" "+ids.length+" 筆？"))return;await fetch("/admin/api/overtimes/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
+    + '<div class="card"><table><tr><th></th><th>編號</th><th>姓名</th><th>部門</th><th>時間</th><th>時數</th><th>原因</th><th>狀態</th><th>操作</th></tr>'+(rows||'<tr><td colspan="9">無加班記錄</td></tr>')+'</table></div>'
+    + '<div style="margin-top:12px"><button onclick="clearOt()" class="btn-sm btn-red">🗑 清除所有加班記錄</button></div><script>async function approveOt(id){await fetch("/admin/api/overtime/"+id+"/approve",{method:"PUT"});location.reload();}async function rejectOt(id){var reason=prompt("請輸入駁回原因：");if(reason===null)return;await fetch("/admin/api/overtime/"+id+"/reject",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason})});location.reload();}async function clearOt(){if(!confirm("⚠️ 確定刪除所有加班記錄？"))return;await fetch("/admin/api/overtime/clear",{method:"DELETE"});location.reload();}async function deleteOt(id){if(!confirm("確定刪除此筆加班？"))return;await fetch("/admin/api/overtime/"+id,{method:"DELETE"});location.reload();}async function batchOt(action){var cbs=document.querySelectorAll(".otCb:checked");var ids=[];for(var i=0;i<cbs.length;i++)ids.push(parseInt(cbs[i].value));if(ids.length===0){alert("請勾選項目");return;}if(!confirm("確定"+(action==="approved"?"核准":"駁回")+" "+ids.length+" 筆？"))return;await fetch("/admin/api/overtimes/batch",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:ids,action:action})});location.reload();}</script>';
   res.send(layout('加班管理', '加班管理', body));
 });
 
